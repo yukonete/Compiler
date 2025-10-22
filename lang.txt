@@ -1,0 +1,14 @@
+﻿a: type = expression;
+a: type;
+
+a = 1;
+
+if (expression) {
+	stmt1;
+} else {
+	stmt2;
+}
+
+while (expression) {
+	stmt1;
+}
