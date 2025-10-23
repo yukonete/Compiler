@@ -5,8 +5,7 @@
 
 #include <memory>
 #include <span>
-#include <format>
-#include <iostream>
+#include <print>
 #include <source_location>
 
 #include <cstdint>
@@ -42,8 +41,7 @@ template <typename... Args>
 [[noreturn]] void Panic(std::format_string<Args...> fmt, Args&&... args, 
                         std::source_location loc = std::source_location::current()) 
 {
-    auto msg = std::format(fmt, std::forward<Args>(args)...);
-    std::cerr << msg;
+    std::println(stderr, fmt, std::forward<Args>(args)...);
     std::terminate();
 }
 

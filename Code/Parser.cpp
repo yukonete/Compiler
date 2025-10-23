@@ -1,11 +1,14 @@
-﻿#include "Base.h"
+﻿#include <print>
+#include <vector>
+
+#include "Base.h"
 
 #include "Parser.h"
 #include "Lexer.h"
 
 using namespace Ast;
 
-Parser::Parser(Lex::Lexer *lexer, Arena *arena) : lexer_{lexer}, arena_{arena} {}
+Parser::Parser(Lex::Lexer *lexer, Arena *arena, FILE *log) : lexer_{lexer}, arena_{arena}, log_{log} {}
 
 ParseProgramResult Parser::ParseProgram() 
 {
@@ -16,8 +19,10 @@ ParseProgramResult Parser::ParseProgram()
 		auto statement = ParseStatement();
 		program.statements.push_back(statement);
 
-		if (statement->type == NodeType::invalid) 
+		if (current_statement_invalid_)
 		{
+			current_statement_invalid_ = false;
+			statement->type = NodeType::invalid;
 			invalid = true;
 		}
 	}
@@ -30,6 +35,8 @@ Statement* Parser::ParseStatement()
 	{ 
 		const auto token_type = lexer_->PeekNextToken().type;
 		switch (token_type) {
+#pragma warning( push )
+#pragma warning( disable : 4063 )
 			using enum Lex::TokenType;
 
 		case identifier: {
@@ -45,44 +52,91 @@ Statement* Parser::ParseStatement()
 
 		case keyword_if: return ParseIfStatement();
 		case keyword_while: return ParseWhileStatement();
+		case Lex::TokenType{'{'}: return ParseBlockStatement();
+#pragma warning( pop )
 		}
 		return ParseExpressionStatement();
 	};
 
 	auto statement = parse_statement();
 	Assert(statement);
-	if (current_statement_invalid_) 
-	{
-		current_statement_invalid_ = false;
-		statement->type = NodeType::invalid;
-	}
 	return statement;
 }
 
-Statement* Parser::ParseInvalidStatement()
-{
-	auto statement = arena_->PushItem<Statement>(NodeType::invalid);
-	return statement;
+void Parser::EatTokensUntilSemicolon() {
+	while (!(NextTokenIs(Lex::TokenType{';'}) || NextTokenIs(Lex::TokenType::invalid))) {
+		lexer_->EatToken();
+	}
+	lexer_->EatToken();
 }
 
 ExpressionStatement* Parser::ParseExpressionStatement()
 {
 	auto statement = arena_->PushItem<ExpressionStatement>();
-	current_statement_invalid_ = true;
+	statement->expression = ParseExpression();
 	return statement;
 }
 
 IfStatement* Parser::ParseIfStatement()
 {
 	auto statement = arena_->PushItem<IfStatement>();
-	current_statement_invalid_ = true;
+	AssumeToken(Lex::TokenType::keyword_if);
+	if (!ExpectToken(Lex::TokenType{'('}))
+	{
+		return statement;
+	}
+	statement->condition = ParseExpression();
+	if (!ExpectToken(Lex::TokenType{ ')' }))
+	{
+		return statement;
+	}
+	if (!ExpectToken(Lex::TokenType{'{'})) 
+	{
+		return statement;
+	}
+	lexer_->UneatToken();
+	statement->true_branch = ParseBlockStatement();
+	if (!NextTokenIs(Lex::TokenType::keyword_else)) 
+	{
+		return statement;
+	}
+
+	lexer_->EatToken();
+	if (NextTokenIs(Lex::TokenType::keyword_if)) 
+	{
+		statement->false_branch = ParseIfStatement();
+		return statement;
+	}
+
+	// TODO: Change error message to be something like: "Only block and if statements are allowed here"
+	if (!ExpectToken(Lex::TokenType{'{'}))
+	{
+		return statement;
+	}
+	statement->false_branch = ParseBlockStatement();
+
 	return statement;
 }
 
 WhileStatement* Parser::ParseWhileStatement()
 {
 	auto statement = arena_->PushItem<WhileStatement>();
-	current_statement_invalid_ = true;
+	AssumeToken(Lex::TokenType::keyword_while);
+	if (!ExpectToken(Lex::TokenType{'('}))
+	{
+		return statement;
+	}
+	statement->condition = ParseExpression();
+	if (!ExpectToken(Lex::TokenType{')'}))
+	{
+		return statement;
+	}
+	if (!ExpectToken(Lex::TokenType{ '{' }))
+	{
+		return statement;
+	}
+	lexer_->UneatToken();
+	statement->body = ParseBlockStatement();
 	return statement;
 }
 
@@ -90,6 +144,7 @@ VariableDeclarationStatement* Parser::ParseVariableDeclarationStatement()
 {
 	auto statement = arena_->PushItem<VariableDeclarationStatement>();
 	statement->identifier = AssumeToken(Lex::TokenType::identifier).Identifier();
+	AssumeToken(Lex::TokenType{':'});
 	
 	if (!ExpectToken(Lex::TokenType::identifier)) 
 	{
@@ -98,26 +153,53 @@ VariableDeclarationStatement* Parser::ParseVariableDeclarationStatement()
 
 	statement->type_identifier = expected_token_.Identifier();
 	
-	if (NextTokenIs('=')) 
+	if (NextTokenIs(Lex::TokenType{'='}))
 	{
 		lexer_->EatToken();
 		statement->value = ParseExpression();
 	}
 	
-	ExpectToken(';');
+	ExpectToken(Lex::TokenType{';'});
 	return statement;
 }
 
 AssignmentStatement* Parser::ParseAssignmentStatement()
 {
 	auto statement = arena_->PushItem<AssignmentStatement>();
-	current_statement_invalid_ = true;
+	statement->identifier = AssumeToken(Lex::TokenType::identifier).Identifier();
+	AssumeToken(Lex::TokenType{'='});
+	statement->value = ParseExpression();
+
+	ExpectToken(Lex::TokenType{';'});
 	return statement;
+}
+
+BlockStatement* Parser::ParseBlockStatement()
+{
+	auto block = arena_->PushItem<BlockStatement>();
+	AssumeToken(Lex::TokenType{'{'});
+
+	// TODO: How many statements we can expect on average? Reserve that amount.
+	std::vector<Statement*> temp;
+	while (!(NextTokenIs(Lex::TokenType{'}'}) || NextTokenIs(Lex::TokenType::invalid))) 
+	{
+		const auto statement = ParseStatement();
+		temp.push_back(statement);
+	}
+	lexer_->EatToken();
+
+	block->statements = arena_->PushArray<Statement*>(temp.size());
+	std::ranges::copy(temp, block->statements.begin());
+
+	return block;
 }
 
 Expression* Parser::ParseExpression()
 {
 	auto expression = arena_->PushItem<Expression>(Ast::NodeType::invalid);
+	// Temporary
+	ExpectToken(Lex::TokenType{';'});
+	current_statement_invalid_ = true;
 	return expression;
 }
 
@@ -127,14 +209,15 @@ const Lex::Token& Parser::AssumeToken(Lex::TokenType type)
 	Assert(token.type == type);
 	lexer_->EatToken();
 	return token;
-}
+} 
 
 bool Parser::ExpectToken(Lex::TokenType type) 
 {
 	const auto& token = lexer_->PeekNextToken();
 	if (token.type != type) 
 	{
-		// TODO: Compiler error and skip tokens until next ;
+		LogError(token, "Expected {}. Got {}.", type, token.type);
+		EatTokensUntilSemicolon();
 		current_statement_invalid_ = true;
 		return false;
 	}
@@ -144,17 +227,7 @@ bool Parser::ExpectToken(Lex::TokenType type)
 	return true;
 }
 
-bool Parser::ExpectToken(char type) 
-{
-	return ExpectToken(static_cast<Lex::TokenType>(type));
-}
-
 bool Parser::NextTokenIs(Lex::TokenType type) 
 {
 	return lexer_->PeekNextToken().type == type;
-}
-
-bool Parser::NextTokenIs(char type) 
-{
-	return lexer_->PeekNextToken().type == static_cast<Lex::TokenType>(type);
 }

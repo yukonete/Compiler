@@ -1,12 +1,12 @@
 ﻿#pragma once
 
+#include <algorithm>
 #include <unordered_map>
 #include <string>
-#include <ctype.h>
-#include <map>
 #include <vector>
 #include <variant>
-#include <stdint.h>
+#include <format>
+#include <sstream>
 
 #include "Base.h"
 
@@ -104,6 +104,7 @@ public:
 
 	const Token& PreviousToken() const;
 	void EatToken();
+	void UneatToken();
 
 private:
 	void Tokenize();
@@ -124,3 +125,28 @@ private:
 };
 
 }
+
+template <>
+struct std::formatter<Lex::TokenType>
+{
+	template<class ParseContext>
+	constexpr ParseContext::iterator parse(ParseContext &ctx)
+	{
+		return ctx.begin();
+	}
+
+	template<class FmtContext>
+	FmtContext::iterator format(Lex::TokenType type, FmtContext &ctx) const
+	{
+		auto out = ctx.out();
+		auto type_string = Lex::TokenTypeToString(type);
+		if (type_string.empty()) 
+		{
+			*out = static_cast<char>(type);
+			out++;
+			return out;
+		}
+
+		return std::ranges::copy(type_string, out).out;
+	}
+};

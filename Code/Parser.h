@@ -3,6 +3,7 @@
 #include <vector>
 #include <string_view>
 #include <optional>
+#include <print>
 
 #include "Base.h"
 #include "Lexer.h"
@@ -85,7 +86,9 @@ struct IfStatement : public Statement
 	IfStatement() : Statement(NodeType::statement_if) {}
 	Expression *condition = nullptr;
 	BlockStatement *true_branch = nullptr;
-	std::optional<BlockStatement*> false_branch;
+
+	// This can be Block or If
+	std::optional<Statement*> false_branch;
 };
 
 struct WhileStatement : public Statement 
@@ -93,6 +96,12 @@ struct WhileStatement : public Statement
 	WhileStatement() : Statement(NodeType::statement_if) {}
 	Expression *condition = nullptr;
 	BlockStatement *body = nullptr;
+};
+
+struct BlockStatement : public Statement
+{
+	BlockStatement() : Statement(NodeType::statement_block) {}
+	std::span<Statement*> statements;
 };
 
 struct AssignmentStatement : public Statement 
@@ -154,34 +163,43 @@ struct ParseProgramResult
 class Parser 
 {
 public:
-	Parser(Lex::Lexer *lexer, Arena *arena);
+	Parser(Lex::Lexer *lexer, Arena *arena, FILE *log = stderr);
 	ParseProgramResult ParseProgram();
 private:
 	Statement* ParseStatement();
-
-	// Eats tokens untill ; so that next statement can be correctly parsed
-	Statement* ParseInvalidStatement();
 
 	ExpressionStatement* ParseExpressionStatement();
 	IfStatement* ParseIfStatement();
 	WhileStatement* ParseWhileStatement();
 	VariableDeclarationStatement* ParseVariableDeclarationStatement();
 	AssignmentStatement* ParseAssignmentStatement();
+	BlockStatement* ParseBlockStatement();
 
 	Expression* ParseExpression();
 	TrueLiteral* ParseTrueLiteral();
 	FalseLiteral* ParseFalseLiteral();
 
 	const Lex::Token& AssumeToken(Lex::TokenType type);
+	
+	// If next token is not expected token this function will eat tokens until ";", log the error and
+	// set current_statement_invalid_ to true.
+	// Otherwise expected token will be stored in expected_token_ (and token will be eaten).
 	bool ExpectToken(Lex::TokenType type);
-	bool ExpectToken(char type);
+
+	void EatTokensUntilSemicolon();
 
 	bool NextTokenIs(Lex::TokenType type);
-	bool NextTokenIs(char type);
+
+	template <typename ...Args>
+	void LogError(const Lex::Token &token, std::format_string<Args...> fmt, Args&&... args) {
+		std::print(log_, "({}, {}): ", token.start.line, token.start.column);
+		std::println(log_, fmt, std::forward<Args>(args)...);
+	}
 
 	Lex::Lexer *lexer_;
 	Arena *arena_;
 	Lex::Token expected_token_;
+	FILE *log_;
 	bool current_statement_invalid_ = false;
 };
 

@@ -65,6 +65,18 @@ void Lexer::EatToken()
     tokens_cursor_ += 1;
 }
 
+void Lexer::UneatToken() 
+{
+	if (tokens_cursor_ > 0) 
+	{
+		tokens_cursor_ -= 1;
+	} 
+	else 
+	{
+		Panic("No previous token");
+	}
+}
+
 void Lexer::Tokenize() 
 {
 	SkipWhitespaces();
