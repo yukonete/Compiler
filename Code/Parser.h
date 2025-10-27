@@ -24,8 +24,7 @@ enum class NodeType
 	statement_expression,
 
 	expression_integer_literal,
-	expression_true_literal,
-	expression_false_literal,
+	expression_bool_literal,
 	expression_identifier,
 	expression_unary_operator,
 	expression_binary_operator,
@@ -93,7 +92,7 @@ struct IfStatement : public Statement
 
 struct WhileStatement : public Statement 
 {
-	WhileStatement() : Statement(NodeType::statement_if) {}
+	WhileStatement() : Statement(NodeType::statement_while) {}
 	Expression *condition = nullptr;
 	BlockStatement *body = nullptr;
 };
@@ -144,14 +143,10 @@ struct BinaryOperator : public Expression
 	Expression *right = nullptr;
 };
 
-struct TrueLiteral : public Expression 
+struct BoolLiteral : public Expression 
 {
-	TrueLiteral() : Expression(NodeType::expression_true_literal) {}
-};
-
-struct FalseLiteral : public Expression 
-{
-	FalseLiteral() : Expression(NodeType::expression_false_literal) {}
+	BoolLiteral() : Expression(NodeType::expression_bool_literal) {}
+	bool value = false;
 };
 
 struct ParseProgramResult 
@@ -159,6 +154,18 @@ struct ParseProgramResult
 	Program program;
 	bool valid = false;
 };
+
+enum class Precedence
+{
+	lowest,
+	equals, // ==, !=
+	comparison, // <, <=, >, >=
+	plus, // +, -
+	multiply, // *, /, %
+	prefix // -, !
+};
+
+std::string NodeToString(const Node *node, int tabs = 0);
 
 class Parser 
 {
@@ -175,9 +182,9 @@ private:
 	AssignmentStatement* ParseAssignmentStatement();
 	BlockStatement* ParseBlockStatement();
 
-	Expression* ParseExpression();
-	TrueLiteral* ParseTrueLiteral();
-	FalseLiteral* ParseFalseLiteral();
+	Expression* ParseExpression(Precedence precedence = Precedence::lowest);
+	Expression* ParseUnaryExpression();
+	Expression* ParseBinaryExpression(Expression *left);
 
 	const Lex::Token& AssumeToken(Lex::TokenType type);
 	

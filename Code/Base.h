@@ -38,12 +38,15 @@ using intptr = intptr_t;
 #define Assert(condition) assert(condition)
 
 template <typename... Args>
-[[noreturn]] void Panic(std::format_string<Args...> fmt, Args&&... args, 
-                        std::source_location loc = std::source_location::current()) 
+[[noreturn]] void panic(std::format_string<Args...> fmt, 
+                        std::source_location loc, 
+                        Args&&... args)
 {
     std::println(stderr, fmt, std::forward<Args>(args)...);
     std::terminate();
 }
+
+#define Panic(fmt, ...) panic(fmt, std::source_location::current(), ##__VA_ARGS__);
 
 // Defer macro/thing from Jonathan Blow.
 #define CONCAT_INTERNAL(x,y) x##y

@@ -427,6 +427,7 @@ std::string_view Lex::TokenTypeToString(TokenType type)
         case divide_assign: return "/=";
         case modulo_assign: return "%=";
         case return_arrow: return "->";
+		case less_equals: return "<=";
         case identifier: return "identifier";
         case integer: return "integer";
         case invalid: return "invalid";

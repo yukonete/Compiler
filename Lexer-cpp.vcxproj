@@ -115,7 +115,8 @@
       <LanguageStandard>stdcpp23</LanguageStandard>
       <TreatWarningAsError>true</TreatWarningAsError>
       <ExceptionHandling>false</ExceptionHandling>
-      <DisableSpecificWarnings>4530;4100</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4530;4100;4063</DisableSpecificWarnings>
+      <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -132,8 +133,9 @@
       <ConformanceMode>true</ConformanceMode>
       <TreatWarningAsError>true</TreatWarningAsError>
       <ExceptionHandling>false</ExceptionHandling>
-      <DisableSpecificWarnings>4530;4100</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4530;4100;4063</DisableSpecificWarnings>
       <LanguageStandard>stdcpp23</LanguageStandard>
+      <UseStandardPreprocessor>true</UseStandardPreprocessor>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
