@@ -151,6 +151,7 @@
     <ClInclude Include="Code\Base.h" />
     <ClInclude Include="Code\Lexer.h" />
     <ClInclude Include="Code\Parser.h" />
+    <ClInclude Include="Code\Types.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="lang.txt" />

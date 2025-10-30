@@ -8,180 +8,114 @@
 
 using namespace Ast;
 
-Parser::Parser(Lex::Lexer *lexer, Arena *arena, FILE *log) : lexer_{lexer}, arena_{arena}, log_{log} {}
+Parser::Parser(Lexer *lexer, Arena *arena, FILE *log) : lexer_{lexer}, arena_{arena}, log_{log} {}
 
 ParseProgramResult Parser::ParseProgram() 
 {
-	Program program;
-	bool invalid = false;
-	while (lexer_->PeekNextToken().type != Lex::TokenType::invalid) 
+	ParseProgramResult result;
+	while (lexer_->PeekNextToken().type != TokenType::invalid) 
 	{
 		auto statement = ParseStatement();
-		program.statements.push_back(statement);
-
-		if (current_statement_invalid_)
-		{
-			current_statement_invalid_ = false;
-			statement->type = NodeType::invalid;
-			invalid = true;
-		}
+		result.program.declarations.push_back(statement);
 	}
-	return {program, !invalid};
+	result.error_count = error_count_;
+	return result;
 }
 
 Statement* Parser::ParseStatement() 
 {
-	auto parse_statement = [this]() -> Statement* 
-	{ 
-		const auto token_type = lexer_->PeekNextToken().type;
-		switch (token_type) 
-		{
-			using enum Lex::TokenType;
+	const auto token_type = lexer_->PeekNextToken().type;
+	switch (token_type)
+	{
+		using enum TokenType;
 
 		case identifier: {
 			const auto next_token_type = lexer_->PeekToken(1).type;
-			if (next_token_type == static_cast<Lex::TokenType>(':')) {
+			if (next_token_type == static_cast<TokenType>(':')) {
 				return ParseVariableDeclarationStatement();
 			}
-			if (next_token_type == static_cast<Lex::TokenType>('=')) {
+			if (next_token_type == static_cast<TokenType>('=')) {
 				return ParseAssignmentStatement();
 			}
 			break;
 		};
 
-		case keyword_if: return ParseIfStatement();
-		case keyword_while: return ParseWhileStatement();
-		case Lex::TokenType{'{'}: return ParseBlockStatement();
-		}
-		return ParseExpressionStatement();
-	};
-
-	auto statement = parse_statement();
-	Assert(statement);
-	return statement;
-}
-
-void Parser::EatTokensUntilSemicolon() {
-	while (!(NextTokenIs(Lex::TokenType{';'}) || NextTokenIs(Lex::TokenType::invalid))) {
-		lexer_->EatToken();
+		case keyword_if:     return ParseIfStatement();
+		case keyword_while:  return ParseWhileStatement();
+		case TokenType{'{'}: return ParseBlockStatement();
 	}
-	lexer_->EatToken();
+	return ParseExpressionStatement();
 }
 
 ExpressionStatement* Parser::ParseExpressionStatement()
 {
-	auto statement = arena_->PushItem<ExpressionStatement>();
+	auto statement = New<ExpressionStatement>();
 	statement->expression = ParseExpression();
-	ExpectToken(Lex::TokenType{';'});
+	ExpectToken(TokenType{';'});
 	return statement;
 }
 
 IfStatement* Parser::ParseIfStatement()
 {
-	auto statement = arena_->PushItem<IfStatement>();
-	AssumeToken(Lex::TokenType::keyword_if);
-	if (!ExpectToken(Lex::TokenType{'('}))
-	{
-		return statement;
-	}
+	auto statement = New<IfStatement>();
+	ExpectToken(TokenType::keyword_if);
 	statement->condition = ParseExpression();
-	if (!ExpectToken(Lex::TokenType{ ')' }))
-	{
-		return statement;
-	}
-	if (!ExpectToken(Lex::TokenType{'{'})) 
-	{
-		return statement;
-	}
-	lexer_->UneatToken();
-	statement->true_branch = ParseBlockStatement();
-	if (!NextTokenIs(Lex::TokenType::keyword_else)) 
+	statement->true_branch = ParseStatement();
+	if (!NextTokenIs(TokenType::keyword_else))
 	{
 		return statement;
 	}
 
 	lexer_->EatToken();
-	if (NextTokenIs(Lex::TokenType::keyword_if)) 
-	{
-		statement->false_branch = ParseIfStatement();
-		return statement;
-	}
-
-	// TODO: Change error message to be something like: "Only block and if statements are allowed here"
-	if (!ExpectToken(Lex::TokenType{'{'}))
-	{
-		return statement;
-	}
-	lexer_->UneatToken();
 	statement->false_branch = ParseBlockStatement();
-
 	return statement;
 }
 
 WhileStatement* Parser::ParseWhileStatement()
 {
-	auto statement = arena_->PushItem<WhileStatement>();
-	AssumeToken(Lex::TokenType::keyword_while);
-	if (!ExpectToken(Lex::TokenType{'('}))
-	{
-		return statement;
-	}
+	auto statement = New<WhileStatement>();
+	ExpectToken(TokenType::keyword_while);
 	statement->condition = ParseExpression();
-	if (!ExpectToken(Lex::TokenType{')'}))
-	{
-		return statement;
-	}
-	if (!ExpectToken(Lex::TokenType{ '{' }))
-	{
-		return statement;
-	}
-	lexer_->UneatToken();
-	statement->body = ParseBlockStatement();
+	statement->body = ParseStatement();
 	return statement;
 }
 
 VariableDeclarationStatement* Parser::ParseVariableDeclarationStatement() 
 {
-	auto statement = arena_->PushItem<VariableDeclarationStatement>();
-	statement->identifier = AssumeToken(Lex::TokenType::identifier).Identifier();
-	AssumeToken(Lex::TokenType{':'});
+	auto statement = New<VariableDeclarationStatement>();
+	statement->identifier = ExpectToken(TokenType::identifier);
+	ExpectToken(TokenType{':'});
+	ExpectToken(TokenType::identifier);
+	statement->variable_type = ParseType();
 	
-	if (!ExpectToken(Lex::TokenType::identifier)) 
-	{
-		return statement;
-	}
-
-	statement->type_identifier = expected_token_.Identifier();
-	
-	if (NextTokenIs(Lex::TokenType{'='}))
+	if (NextTokenIs(TokenType{'='}))
 	{
 		lexer_->EatToken();
 		statement->value = ParseExpression();
 	}
 	
-	ExpectToken(Lex::TokenType{';'});
+	ExpectToken(TokenType{';'});
 	return statement;
 }
 
 AssignmentStatement* Parser::ParseAssignmentStatement()
 {
-	auto statement = arena_->PushItem<AssignmentStatement>();
-	statement->identifier = AssumeToken(Lex::TokenType::identifier).Identifier();
-	AssumeToken(Lex::TokenType{'='});
+	auto statement = New<AssignmentStatement>();
+	statement->identifier = ExpectToken(TokenType::identifier);
+	ExpectToken(TokenType{'='});
 	statement->value = ParseExpression();
-
-	ExpectToken(Lex::TokenType{';'});
+	ExpectToken(TokenType{';'});
 	return statement;
 }
 
 BlockStatement* Parser::ParseBlockStatement()
 {
-	auto block = arena_->PushItem<BlockStatement>();
-	AssumeToken(Lex::TokenType{'{'});
+	auto block = New<BlockStatement>();
+	ExpectToken(TokenType{'{'});
 
 	// TODO: How many statements can we expect on average? Reserve that amount.
 	std::vector<Statement*> temp;
-	while (!(NextTokenIs(Lex::TokenType{'}'}) || NextTokenIs(Lex::TokenType::invalid))) 
+	while (!(NextTokenIs(TokenType{'}'}) || NextTokenIs(TokenType::invalid))) 
 	{
 		const auto statement = ParseStatement();
 		temp.push_back(statement);
@@ -190,33 +124,32 @@ BlockStatement* Parser::ParseBlockStatement()
 
 	block->statements = arena_->PushArray<Statement*>(temp.size());
 	std::ranges::copy(temp, block->statements.begin());
-
 	return block;
 }
 
 // Returns precedence of a binary operator.
-static Precedence TokenTypeToPrecedense(Lex::TokenType type)
+static Precedence TokenTypeToPrecedense(TokenType type)
 {
 	switch (type) 
 	{
-	using enum Lex::TokenType;
+	using enum TokenType;
 	case equals:
 	case not_equals:
 		return Precedence::equals;
 
-	case Lex::TokenType{'<'}:
-	case Lex::TokenType{'>'}:
+	case TokenType{'<'}:
+	case TokenType{'>'}:
 	case less_equals:
 	case greater_equals:
 		return Precedence::comparison;
 
-	case Lex::TokenType{'+'}:
-	case Lex::TokenType{'-'}:
+	case TokenType{'+'}:
+	case TokenType{'-'}:
 		return Precedence::plus;
 
-	case Lex::TokenType{'*'}:
-	case Lex::TokenType{'/'}:
-	case Lex::TokenType{'%'}:
+	case TokenType{'*'}:
+	case TokenType{'/'}:
+	case TokenType{'%'}:
 		return Precedence::multiply;
 
 	default:
@@ -231,20 +164,20 @@ Expression* Parser::ParseUnaryExpression()
 	lexer_->EatToken();
 	switch (token.type)
 	{
-		using enum Lex::TokenType;
+		using enum TokenType;
 
 		case identifier:
 		{
-			auto ident = arena_->PushItem<Identifier>();
-			ident->name = token.Identifier();
+			auto ident = New<IdentifierExpression>();
+			ident->identifier = token;
 			expression = ident;
 			break;
 		}
 
 		case integer:
 		{
-			auto integer_literal = arena_->PushItem<IntegerLiteral>();
-			integer_literal->value = token.Integer();
+			auto integer_literal = New<IntegerLiteral>();
+			integer_literal->value = token;
 			expression = integer_literal;
 			break;
 		}
@@ -252,16 +185,16 @@ Expression* Parser::ParseUnaryExpression()
 		case keyword_true:
 		case keyword_false:
 		{
-			auto bool_literal = arena_->PushItem<BoolLiteral>();
+			auto bool_literal = New<BoolLiteral>();
 			bool_literal->value = (token.type == keyword_true);
 			expression = bool_literal;
 			break;
 		}
 
-		case Lex::TokenType{'-'}:
-		case Lex::TokenType{'!'}:
+		case TokenType{'-'}:
+		case TokenType{'!'}:
 		{
-			auto unary_operator = arena_->PushItem<UnaryOperator>();
+			auto unary_operator = New<UnaryOperator>();
 			unary_operator->op = token.type;
 			unary_operator->right = ParseExpression(Precedence::prefix);
 			expression = unary_operator;
@@ -269,7 +202,11 @@ Expression* Parser::ParseUnaryExpression()
 		}
 
 		default:
-			Panic("Token \"{}\" can not be parse as a unary expression.", token.type);
+		{
+			expression = New<InvalidExpression>();
+			LogError(token, "Token \"{}\" can not be parsed as a unary expression.", token.type);
+			break;
+		}
 	}
 	return expression;
 }
@@ -278,8 +215,7 @@ Expression* Parser::ParseBinaryExpression(Expression *left)
 {
 	const auto &token = lexer_->PeekNextToken();
 	lexer_->EatToken();
-
-	auto binary_operator = arena_->PushItem<BinaryOperator>();
+	auto binary_operator = New<BinaryOperator>();
 	binary_operator->op = token.type;
 	binary_operator->left = left;
 	binary_operator->right = ParseExpression(TokenTypeToPrecedense(token.type));
@@ -298,31 +234,19 @@ Expression* Parser::ParseExpression(Precedence precedence)
 	return left;
 }
 
-const Lex::Token& Parser::AssumeToken(Lex::TokenType type) 
-{
-	const auto &token = lexer_->PeekNextToken();
-	Assert(token.type == type);
-	lexer_->EatToken();
-	return token;
-} 
-
-bool Parser::ExpectToken(Lex::TokenType type) 
+const Token& Parser::ExpectToken(TokenType type) 
 {
 	const auto& token = lexer_->PeekNextToken();
+	lexer_->EatToken();
 	if (token.type != type) 
 	{
-		LogError(token, "Expected {}. Got {}.", type, token.type);
-		EatTokensUntilSemicolon();
-		current_statement_invalid_ = true;
-		return false;
+		LogError(token, "Expected {}, got {}.", type, token.type);
+		error_count_ += 1;
 	}
-
-	lexer_->EatToken();
-	expected_token_ = token;
-	return true;
+	return token;
 }
 
-bool Parser::NextTokenIs(Lex::TokenType type) 
+bool Parser::NextTokenIs(TokenType type) 
 {
 	return lexer_->PeekNextToken().type == type;
 }
@@ -343,7 +267,8 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 		case statement_variable_declaration:
 		{
 			auto decl = reinterpret_cast<const VariableDeclarationStatement*>(node);
-			result = std::format("{}: {}", decl->identifier, decl->type_identifier);
+			auto type_identifier = reinterpret_cast<const TypeIdentifier*>(decl->type);
+			result = std::format("{}: {}", decl->identifier.identifier, type_identifier->identifier.identifier);
 			if (decl->value)
 			{
 				result += std::format(" = {}", NodeToString(*(decl->value)));
@@ -380,7 +305,7 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 			auto assingment = reinterpret_cast<const AssignmentStatement*>(node);
 			result = std::format(
 				"{} = {};", 
-				assingment->identifier, 
+				assingment->identifier.identifier, 
 				NodeToString(assingment->value));
 			break;
 		}
@@ -407,7 +332,7 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 		case expression_integer_literal:
 		{
 			auto integer = reinterpret_cast<const IntegerLiteral*>(node);
-			result = std::format("{}", integer->value);
+			result = std::format("{}", integer->value.integer_value);
 			break;
 		}
 		case expression_bool_literal:
@@ -418,8 +343,8 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 		};
 		case expression_identifier:
 		{
-			auto ident = reinterpret_cast<const Identifier*>(node);
-			result = ident->name;
+			auto ident = reinterpret_cast<const IdentifierExpression*>(node);
+			result = ident->identifier.identifier;
 			break;
 		};
 		case expression_unary_operator:

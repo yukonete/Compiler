@@ -3,25 +3,11 @@
 
 #include "Lexer.h"
 
-using namespace Lex;
-
-std::string_view Token::Identifier() const 
+static TokenType CheckIdentifierForKeyword(std::string_view identifier) 
 {
-	const auto &identifier = std::get<Lex::Identifier>(data);
-	return identifier.name;
-}
-
-s64 Token::Integer() const 
-{
-	const auto &identifier = std::get<Lex::Integer>(data);
-	return identifier.value;
-}
-
-static TokenType CheckIdentifierForKeyword(Identifier identifier) 
-{
-	if (Lexer::keywords.contains(identifier.name)) 
+	if (Lexer::keywords.contains(identifier)) 
 	{
-		return Lexer::keywords.at(identifier.name);
+		return Lexer::keywords.at(identifier);
 	}
 	return TokenType::identifier;
 }
@@ -247,7 +233,7 @@ void Lexer::Tokenize()
 		case '8':
 		case '9': 
 		{
-			token.data = ParseInteger();
+			token.integer_value = ParseInteger();
 			token.type = TokenType::integer;
 			break;
 		}
@@ -304,8 +290,8 @@ void Lexer::Tokenize()
 		case 'Y':
 		case '_': 
 		{
-			auto identifier = ParseIdentifier();
-			token.data = identifier;
+			const auto identifier = ParseIdentifier();
+			token.identifier = identifier;
 			token.type = CheckIdentifierForKeyword(identifier);
 			break;
 		}
@@ -353,11 +339,15 @@ int Lexer::PeekChar(int peek) const
 }
 
 void Lexer::EatChar() {
-	auto ch = PeekNextChar();
-	if (ch == '\n') 
+	const auto ch = PeekNextChar();
+	if (ch == '\n' || (ch == '\r' && PeekChar(1) == '\n'))
 	{
 		current_location_.line += 1;
 		current_location_.column = 1;
+		if (ch == '\r') 
+		{
+			input_cursor_ += 1;
+		}
 	}
 	else 
 	{
@@ -366,21 +356,21 @@ void Lexer::EatChar() {
 	input_cursor_ += 1;
 }
 
-Integer Lexer::ParseInteger() 
+s64 Lexer::ParseInteger() 
 {
-	Integer result;
+	s64 result = 0;
 	auto ch = PeekNextChar();
 	while (std::isdigit(ch)) 
 	{
-		result.value *= 10;
-		result.value += ch - '0';
+		result *= 10;
+		result += ch - '0';
 		EatChar();
 		ch = PeekNextChar();
 	}
 	return result;
 }
 
-Identifier Lexer::ParseIdentifier() 
+std::string_view Lexer::ParseIdentifier() 
 {
 	u64 identifier_start = input_cursor_;
 	u64 count = 0;
@@ -392,16 +382,16 @@ Identifier Lexer::ParseIdentifier()
 		ch = PeekNextChar();
 	}
 
-	return Identifier{ input_.substr(identifier_start, count) };
+	return input_.substr(identifier_start, count);
 }
 
 void Lexer::SkipWhitespaces() 
 {
 	while (true) 
 	{
-		auto ch = PeekNextChar();
-
-		if (ch == ' ' || ch == '\t' || ch == '\n') 
+		const auto ch = PeekNextChar();
+		
+		if (ch == ' ' || ch == '\t' || ch == '\n' || (ch == '\r' && PeekChar(1) == '\n') ) 
 		{
 			EatChar();
 			continue;
@@ -411,7 +401,7 @@ void Lexer::SkipWhitespaces()
 	}
 }
 
-std::string_view Lex::TokenTypeToString(TokenType type) 
+std::string_view TokenTypeToString(TokenType type) 
 {
 	auto type_int = static_cast<int>(type);
 	if (type_int > 0 && type_int < 256) 

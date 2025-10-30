@@ -35,6 +35,8 @@ struct Program;
 
 struct Node;
 
+using Identifier = Token;
+
 struct Statement;
 struct VariableDeclarationStatement;
 struct ProcedureDeclarationStatement;
@@ -46,20 +48,25 @@ struct ExpressionStatement;
 
 struct Expression;
 struct IntegerLiteral;
-struct Identifier;
 struct UnaryOperator;
 struct BinaryOperator;
 struct BoolLiteral;
+struct IdentifierExpression;
+struct Declaration;
+struct StructDeclaration;
 
-struct Program 
+struct Type;
+
+// Program is an array of declarations because only declarations are allowed at top level scope.
+struct Program
 {
-	std::vector<Statement*> statements;
+	std::vector<Statement*> declarations;
 };
 
 struct Node 
 {
 	NodeType type;
-	Node(NodeType type_) : type{ type_ } {} 
+	Node(NodeType type_) : type{type_} {} 
 };
 
 struct Statement : public Node 
@@ -72,11 +79,28 @@ struct Expression : public Node
 	Expression(NodeType type_) : Node(type_) {}
 };
 
+enum class TypeKind 
+{
+	identifier,
+};
+
+struct Type
+{
+	Type(TypeKind kind_) : kind{kind_}{}
+	TypeKind kind;
+};
+
+struct TypeIdentifier : public Type
+{
+	TypeIdentifier() : Type(TypeKind::identifier) {}
+	Identifier identifier;
+};
+
 struct VariableDeclarationStatement : public Statement 
 {
 	VariableDeclarationStatement() : Statement(NodeType::statement_variable_declaration) {}
-	std::string_view identifier;
-	std::string_view type_identifier;
+	Identifier identifier;
+	Type *variable_type = nullptr;
 	std::optional<Expression*> value;
 };
 
@@ -84,17 +108,16 @@ struct IfStatement : public Statement
 {
 	IfStatement() : Statement(NodeType::statement_if) {}
 	Expression *condition = nullptr;
-	BlockStatement *true_branch = nullptr;
+	Statement *true_branch = nullptr;
 
-	// This can be Block or If
-	std::optional<Statement*> false_branch;
+	std::optional<Statement*> false_branch = nullptr;
 };
 
 struct WhileStatement : public Statement 
 {
 	WhileStatement() : Statement(NodeType::statement_while) {}
 	Expression *condition = nullptr;
-	BlockStatement *body = nullptr;
+	Statement *body = nullptr;
 };
 
 struct BlockStatement : public Statement
@@ -106,7 +129,7 @@ struct BlockStatement : public Statement
 struct AssignmentStatement : public Statement 
 {
 	AssignmentStatement() : Statement(NodeType::statement_assingment) {}
-	std::string_view identifier;
+	Identifier identifier;
 	Expression *value = nullptr;
 };
 
@@ -116,29 +139,34 @@ struct ExpressionStatement : public Statement
 	Expression *expression = nullptr;
 };
 
+struct InvalidExpression : public Expression
+{
+	InvalidExpression() : Expression(NodeType::invalid) {}
+};
+
 struct IntegerLiteral : public Expression 
 {
 	IntegerLiteral() : Expression(NodeType::expression_integer_literal) {}
-	s64 value = 0;
+	Token value;
 };
 
-struct Identifier : public Expression 
+struct IdentifierExpression : public Expression 
 {
-	Identifier() : Expression(NodeType::expression_identifier) {}
-	std::string_view name;
+	IdentifierExpression() : Expression(NodeType::expression_identifier) {}
+	Identifier identifier;
 };
 
 struct UnaryOperator : public Expression 
 {
 	UnaryOperator() : Expression(NodeType::expression_unary_operator) {}
-	Lex::TokenType op = Lex::TokenType::invalid;
+	TokenType op = TokenType::invalid;
 	Expression *right = nullptr;
 };
 
 struct BinaryOperator : public Expression 
 {
 	BinaryOperator() : Expression(NodeType::expression_binary_operator) {}
-	Lex::TokenType op = Lex::TokenType::invalid;
+	TokenType op = TokenType::invalid;
 	Expression *left = nullptr;
 	Expression *right = nullptr;
 };
@@ -152,7 +180,7 @@ struct BoolLiteral : public Expression
 struct ParseProgramResult 
 {
 	Program program;
-	bool valid = false;
+	int error_count = 0;
 };
 
 enum class Precedence
@@ -170,44 +198,54 @@ std::string NodeToString(const Node *node, int tabs = 0);
 class Parser 
 {
 public:
-	Parser(Lex::Lexer *lexer, Arena *arena, FILE *log = stderr);
+	Parser(Lexer *lexer, Arena *arena, FILE *log = stderr);
+
+	// If error_count is not 0 then is it not safe to use AST because 
+	// tokens in indentifiers might have incorrect value in union 
+	// (well there will just be garabage instead of string)
 	ParseProgramResult ParseProgram();
 private:
 	Statement* ParseStatement();
-
+	
 	ExpressionStatement* ParseExpressionStatement();
 	IfStatement* ParseIfStatement();
 	WhileStatement* ParseWhileStatement();
 	VariableDeclarationStatement* ParseVariableDeclarationStatement();
 	AssignmentStatement* ParseAssignmentStatement();
 	BlockStatement* ParseBlockStatement();
+	
+	Type* ParseType();
 
 	Expression* ParseExpression(Precedence precedence = Precedence::lowest);
 	Expression* ParseUnaryExpression();
 	Expression* ParseBinaryExpression(Expression *left);
-
-	const Lex::Token& AssumeToken(Lex::TokenType type);
 	
+	template <typename NodeType>
+	NodeType* New() 
+	{
+		return arena_->PushItem<NodeType>();
+	};
+
 	// If next token is not expected token this function will eat tokens until ";", log the error and
 	// set current_statement_invalid_ to true.
 	// Otherwise expected token will be stored in expected_token_ (and token will be eaten).
-	bool ExpectToken(Lex::TokenType type);
+	const Token& ExpectToken(TokenType type);
 
-	void EatTokensUntilSemicolon();
-
-	bool NextTokenIs(Lex::TokenType type);
+	bool NextTokenIs(TokenType type);
 
 	template <typename ...Args>
-	void LogError(const Lex::Token &token, std::format_string<Args...> fmt, Args&&... args) {
+	void LogError(const Token &token, std::format_string<Args...> fmt, Args&&... args) 
+	{
 		std::print(log_, "({}, {}): ", token.start.line, token.start.column);
 		std::println(log_, fmt, std::forward<Args>(args)...);
 	}
 
-	Lex::Lexer *lexer_;
-	Arena *arena_;
-	Lex::Token expected_token_;
-	FILE *log_;
-	bool current_statement_invalid_ = false;
+	Lexer *lexer_ = nullptr;
+	Arena *arena_ = nullptr;
+	FILE *log_ = nullptr;
+	
+	Token expected_token_;
+	int error_count_ = 0;
 };
 
 };

@@ -35,6 +35,9 @@
     <ClInclude Include="Code\Parser.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="Code\Types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="lang.txt" />

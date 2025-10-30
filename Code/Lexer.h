@@ -10,21 +10,6 @@
 
 #include "Base.h"
 
-namespace Lex 
-{
-
-struct Identifier 
-{
-	std::string_view name;
-};
-
-struct Invalid {};
-
-struct Integer 
-{
-	s64 value = 0;
-};
-
 enum class TokenType 
 {
 	// ASCII characters here
@@ -58,8 +43,6 @@ enum class TokenType
 	invalid,
 };
 
-using TokenData = std::variant<Invalid, Identifier, Integer>;
-
 struct FileLocation 
 {
 	u64 line = 0;
@@ -69,12 +52,13 @@ struct FileLocation
 struct Token 
 {
 	TokenType type = TokenType::invalid;
-	TokenData data = Invalid{};
 	FileLocation start;
 	FileLocation end;
 
-	std::string_view Identifier() const;
-	s64 Integer() const;
+	union {
+		std::string_view identifier = {};
+		s64 integer_value;
+	};
 };
 
 std::string_view TokenTypeToString(TokenType type);
@@ -111,8 +95,8 @@ private:
 	int PeekNextChar() const;
 	int PeekChar(int peek) const;
 	void EatChar();
-	Integer ParseInteger();
-	Identifier ParseIdentifier();
+	s64 ParseInteger();
+	std::string_view ParseIdentifier();
 	void SkipWhitespaces();
 
 	std::string_view input_;
@@ -124,10 +108,8 @@ private:
 	FileLocation current_location_ = {1, 1};
 };
 
-}
-
 template <>
-struct std::formatter<Lex::TokenType>
+struct std::formatter<TokenType>
 {
 	template<class ParseContext>
 	constexpr ParseContext::iterator parse(ParseContext &ctx)
@@ -136,10 +118,10 @@ struct std::formatter<Lex::TokenType>
 	}
 
 	template<class FmtContext>
-	FmtContext::iterator format(Lex::TokenType type, FmtContext &ctx) const
+	FmtContext::iterator format(TokenType type, FmtContext &ctx) const
 	{
 		auto out = ctx.out();
-		auto type_string = Lex::TokenTypeToString(type);
+		auto type_string = TokenTypeToString(type);
 		if (type_string.empty()) 
 		{
 			*out = static_cast<char>(type);
