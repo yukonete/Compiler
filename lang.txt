@@ -1,14 +1,50 @@
-﻿a: type = expression;
-a: type;
+﻿// Procedure declaration
 
-a = 1;
+proc name(parameter1: parameter1_type) -> return_type {
+}
 
-if (expression) {
+// Variable declaration
+
+variable_name: variable_type = variable_value_expression;
+variable_name: variable_type;
+variable_name := variable_value_expression;
+
+// Constant declaration
+
+const variable_name: variable_type = variable_value_expression;
+
+// If statement
+
+if expression {
 	stmt1;
 } else {
 	stmt2;
 }
 
-while (expression) {
+// While statement
+
+while expression {
 	stmt1;
 }
+
+// Struct declaration
+
+type type_name = struct {
+	a: f32;
+	b: f32;
+}
+
+// Type alias
+
+type type_name = another_type_name;
+
+// Pointers
+// * applied to type means pointer to that type
+// & applied to variable takes adress of it
+// * applied to pointer dereferences that pointer
+
+a: *int;
+a = &b;
+q := *b;
+
+

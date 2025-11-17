@@ -8,43 +8,136 @@
 
 using namespace Ast;
 
-Parser::Parser(Lexer *lexer, Arena *arena, FILE *log) : lexer_{lexer}, arena_{arena}, log_{log} {}
-
-ParseProgramResult Parser::ParseProgram() 
+static bool IsStatement(Node* node)
 {
-	ParseProgramResult result;
-	while (lexer_->PeekNextToken().type != TokenType::invalid) 
+	if (node->type >= NodeType::statement_if && node->type <= NodeType::statement_expression)
 	{
-		auto statement = ParseStatement();
-		result.program.declarations.push_back(statement);
+		return true;
+	}
+	return false;
+};
+
+static bool IsDeclaration(Node* node)
+{
+	if (node->type >= NodeType::declaration_variable && node->type <= NodeType::declaration_type)
+	{
+		return true;
+	}
+	return false;
+};
+
+Parser::Parser(std::string_view input, Arena *arena, FILE *log) : lexer_{input}, arena_{arena}, log_{log} {}
+
+Program Parser::ParseProgram()
+{
+	Program result;
+	while (lexer_.PeekNextToken().type != TokenType::invalid) 
+	{
+		auto statement = ParseDeclaration();
+		result.declarations.push_back(statement);
 	}
 	result.error_count = error_count_;
 	return result;
 }
 
-Statement* Parser::ParseStatement() 
+Statement* Parser::ParseStatement()
 {
-	const auto token_type = lexer_->PeekNextToken().type;
+	const auto token = lexer_.PeekNextToken();
+	auto node = ParseStatementOrDeclaration();
+	if (!IsStatement(node))
+	{
+		LogError(token, "Expected statement.");
+		node->type = NodeType::invalid;
+	}
+	return reinterpret_cast<Statement*>(node);
+};
+
+Declaration* Parser::ParseDeclaration()
+{
+	const auto token = lexer_.PeekNextToken();
+	auto node = ParseStatementOrDeclaration();
+	if (!IsDeclaration(node))
+	{
+		LogError(token, "Expected declaration.");
+		node->type = NodeType::invalid;
+	}
+	return reinterpret_cast<Declaration*>(node);
+};
+
+Node* Parser::ParseStatementOrDeclaration() 
+{
+	const auto token_type = lexer_.PeekNextToken().type;
 	switch (token_type)
 	{
 		using enum TokenType;
 
 		case identifier: {
-			const auto next_token_type = lexer_->PeekToken(1).type;
-			if (next_token_type == static_cast<TokenType>(':')) {
-				return ParseVariableDeclarationStatement();
+			const auto next_token_type = lexer_.PeekToken(1).type;
+			if (next_token_type == static_cast<TokenType>(':')) 
+			{
+				return ParseVariableDeclaration();
 			}
-			if (next_token_type == static_cast<TokenType>('=')) {
+			if (next_token_type == static_cast<TokenType>('=')) 
+			{
 				return ParseAssignmentStatement();
 			}
 			break;
 		};
 
+		case keyword_proc:   return ParseProcedureDeclaration();
+		case keyword_const:  return ParseConstantDeclaration();
+		case keyword_type:   return ParseTypeDeclaration();
 		case keyword_if:     return ParseIfStatement();
 		case keyword_while:  return ParseWhileStatement();
-		case TokenType{'{'}: return ParseBlockStatement();
+		case TokenType{'{'}: return ParseBlockStatement();     
 	}
 	return ParseExpressionStatement();
+}
+
+ConstDeclaration* Parser::ParseConstantDeclaration()
+{
+	auto declaration = New<ConstDeclaration>();
+	ExpectToken(TokenType::keyword_const);
+	declaration->identifier = ExpectToken(TokenType::identifier);
+	ExpectToken(TokenType{':'});
+	declaration->variable_type = ParseType();
+	ExpectToken(TokenType{'='});
+	declaration->value = ParseExpression();
+	ExpectToken(TokenType{';'});
+	return declaration;
+}
+
+VariableDeclaration* Parser::ParseVariableDeclaration() 
+{
+	auto statement = New<VariableDeclaration>();
+	statement->identifier = ExpectToken(TokenType::identifier);
+	ExpectToken(TokenType{':'});
+	statement->variable_type = ParseType();
+	
+	if (NextTokenIs(TokenType{'='}))
+	{
+		lexer_.EatToken();
+		statement->value = ParseExpression();
+	}
+	
+	ExpectToken(TokenType{';'});
+	return statement;
+}
+
+TypeDeclaration* Parser::ParseTypeDeclaration()
+{
+	auto declaration = New<TypeDeclaration>();
+	ExpectToken(TokenType::keyword_type);
+	declaration->identifier = ExpectToken(TokenType::identifier);
+	ExpectToken(TokenType{'='});
+	declaration->declared_type = ParseType();
+	ExpectToken(TokenType{';'});
+	return declaration;
+}
+
+ProcedureDeclaration* Parser::ParseProcedureDeclaration()
+{
+	Panic("TODO");
 }
 
 ExpressionStatement* Parser::ParseExpressionStatement()
@@ -66,8 +159,8 @@ IfStatement* Parser::ParseIfStatement()
 		return statement;
 	}
 
-	lexer_->EatToken();
-	statement->false_branch = ParseBlockStatement();
+	lexer_.EatToken();
+	statement->false_branch = ParseStatement();
 	return statement;
 }
 
@@ -80,22 +173,22 @@ WhileStatement* Parser::ParseWhileStatement()
 	return statement;
 }
 
-VariableDeclarationStatement* Parser::ParseVariableDeclarationStatement() 
+Type* Parser::ParseType()
 {
-	auto statement = New<VariableDeclarationStatement>();
-	statement->identifier = ExpectToken(TokenType::identifier);
-	ExpectToken(TokenType{':'});
-	ExpectToken(TokenType::identifier);
-	statement->variable_type = ParseType();
-	
-	if (NextTokenIs(TokenType{'='}))
+	const auto token_type = lexer_.PeekNextToken().type;
+	switch (token_type)
 	{
-		lexer_->EatToken();
-		statement->value = ParseExpression();
+		using enum TokenType;
+
+		case identifier:
+		{
+			auto ident = New<TypeIdentifier>();
+			ident->identifier = ExpectToken(TokenType::identifier);
+			return ident;
+		}
 	}
-	
-	ExpectToken(TokenType{';'});
-	return statement;
+
+	Panic("TODO");
 }
 
 AssignmentStatement* Parser::ParseAssignmentStatement()
@@ -114,16 +207,16 @@ BlockStatement* Parser::ParseBlockStatement()
 	ExpectToken(TokenType{'{'});
 
 	// TODO: How many statements can we expect on average? Reserve that amount.
-	std::vector<Statement*> temp;
+	std::vector<Node*> temp;
 	while (!(NextTokenIs(TokenType{'}'}) || NextTokenIs(TokenType::invalid))) 
 	{
-		const auto statement = ParseStatement();
-		temp.push_back(statement);
+		const auto node = ParseStatementOrDeclaration();
+		temp.push_back(node);
 	}
-	lexer_->EatToken();
+	lexer_.EatToken();
 
-	block->statements = arena_->PushArray<Statement*>(temp.size());
-	std::ranges::copy(temp, block->statements.begin());
+	block->body = arena_->PushArray<Node*>(temp.size());
+	std::ranges::copy(temp, block->body.begin());
 	return block;
 }
 
@@ -160,8 +253,8 @@ static Precedence TokenTypeToPrecedense(TokenType type)
 Expression* Parser::ParseUnaryExpression()
 {
 	Expression *expression = nullptr;
-	const auto& token = lexer_->PeekNextToken();
-	lexer_->EatToken();
+	const auto& token = lexer_.PeekNextToken();
+	lexer_.EatToken();
 	switch (token.type)
 	{
 		using enum TokenType;
@@ -203,7 +296,7 @@ Expression* Parser::ParseUnaryExpression()
 
 		default:
 		{
-			expression = New<InvalidExpression>();
+			expression = New<Expression>(NodeType::invalid);
 			LogError(token, "Token \"{}\" can not be parsed as a unary expression.", token.type);
 			break;
 		}
@@ -213,8 +306,8 @@ Expression* Parser::ParseUnaryExpression()
 
 Expression* Parser::ParseBinaryExpression(Expression *left)
 {
-	const auto &token = lexer_->PeekNextToken();
-	lexer_->EatToken();
+	const auto &token = lexer_.PeekNextToken();
+	lexer_.EatToken();
 	auto binary_operator = New<BinaryOperator>();
 	binary_operator->op = token.type;
 	binary_operator->left = left;
@@ -226,7 +319,7 @@ Expression* Parser::ParseExpression(Precedence precedence)
 {
 	Expression *left = ParseUnaryExpression();
 
-	while (precedence < TokenTypeToPrecedense(lexer_->PeekNextToken().type)) 
+	while (precedence < TokenTypeToPrecedense(lexer_.PeekNextToken().type)) 
 	{
 		left = ParseBinaryExpression(left);
 	}
@@ -236,8 +329,8 @@ Expression* Parser::ParseExpression(Precedence precedence)
 
 const Token& Parser::ExpectToken(TokenType type) 
 {
-	const auto& token = lexer_->PeekNextToken();
-	lexer_->EatToken();
+	const auto& token = lexer_.PeekNextToken();
+	lexer_.EatToken();
 	if (token.type != type) 
 	{
 		LogError(token, "Expected {}, got {}.", type, token.type);
@@ -248,7 +341,7 @@ const Token& Parser::ExpectToken(TokenType type)
 
 bool Parser::NextTokenIs(TokenType type) 
 {
-	return lexer_->PeekNextToken().type == type;
+	return lexer_.PeekNextToken().type == type;
 }
 
 std::string Ast::NodeToString(const Node *node, int tabs) 
@@ -264,10 +357,32 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 	{
 		using enum Ast::NodeType;
 
-		case statement_variable_declaration:
+		case declaration_type:
 		{
-			auto decl = reinterpret_cast<const VariableDeclarationStatement*>(node);
-			auto type_identifier = reinterpret_cast<const TypeIdentifier*>(decl->type);
+			auto decl = reinterpret_cast<const TypeDeclaration*>(node);
+			Assert(decl->declared_type->type == type_identifier);
+			auto type_ident = reinterpret_cast<const TypeIdentifier *>(decl->declared_type);
+			result = std::format("type {} = {};", decl->identifier.identifier, type_ident->identifier.identifier);
+			break;
+		}
+
+		case declaration_const:
+		{
+			auto decl = reinterpret_cast<const ConstDeclaration*>(node);
+			Assert(decl->variable_type->type == type_identifier);
+			auto type_ident = reinterpret_cast<const TypeIdentifier*>(decl->variable_type);
+			result = std::format(
+				"const {}: {} = {};", 
+				decl->identifier.identifier, 
+				type_ident->identifier.identifier,
+				NodeToString(decl->value));
+			break;
+		}
+
+		case declaration_variable:
+		{
+			auto decl = reinterpret_cast<const VariableDeclaration*>(node);
+			auto type_identifier = reinterpret_cast<const TypeIdentifier*>(decl->variable_type);
 			result = std::format("{}: {}", decl->identifier.identifier, type_identifier->identifier.identifier);
 			if (decl->value)
 			{
@@ -313,9 +428,9 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 		{
 			auto block = reinterpret_cast<const BlockStatement*>(node);
 			result = "{\n";
-			for (int i = 0; i < block->statements.size(); ++i) 
+			for (int i = 0; i < block->body.size(); ++i)
 			{
-				const auto statement = block->statements[i];
+				const auto statement = block->body[i];
 				result += std::format("{}{}\n", Indent(tabs + 1), NodeToString(statement, tabs + 1));
 			}
 			result += Indent(tabs);

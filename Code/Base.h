@@ -3,6 +3,9 @@
 #ifndef BASE_H
 #define BASE_H
 
+#include <fstream>
+#include <filesystem>
+#include <string>
 #include <memory>
 #include <span>
 #include <print>
@@ -42,7 +45,8 @@ template <typename... Args>
                         std::source_location loc, 
                         Args&&... args)
 {
-    std::println(stderr, fmt, std::forward<Args>(args)...);
+    const auto msg = std::format(fmt, std::forward<Args>(args)...);
+    std::println(stderr, "Panic: {}.\nAt {}:{}.", msg, loc.file_name(), loc.line());
     std::terminate();
 }
 
@@ -78,8 +82,8 @@ inline bool IsPowerOfTwo(s64 value)
 inline isize AlignForward(isize pointer, isize alignment) 
 {
     Assert(IsPowerOfTwo(alignment));
-    isize modulo = pointer % static_cast<isize>(alignment);
-    if (modulo == 0) 
+    isize modulo = pointer % alignment;
+    if (modulo == 0)
     {
         return pointer;
     }
@@ -150,5 +154,14 @@ private:
     isize size_ = 0;
     isize offset_ = 0;
 };
+
+inline std::string ReadEntireFile(const std::string &path)
+{
+    const auto file_size = std::filesystem::file_size(path);
+    auto file = std::ifstream{path, std::ios::binary};
+    auto buf = std::string(file_size, '\0');
+    file.read(&buf[0], file_size);
+    return buf;
+}
 
 #endif

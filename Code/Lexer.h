@@ -39,6 +39,10 @@ enum class TokenType
 	keyword_true,
 	keyword_false,
 	keyword_cast,
+	keyword_transmute,
+	keyword_type,
+	keyword_const,
+	keyword_struct,
 
 	invalid,
 };
@@ -68,14 +72,18 @@ class Lexer
 public:
 	static const inline std::unordered_map<std::string_view, TokenType> keywords = 
 	{
-		{ "if",     TokenType::keyword_if },
-		{ "else",   TokenType::keyword_else },
-		{ "while",  TokenType::keyword_while },
-		{ "return", TokenType::keyword_return },
-		{ "proc",   TokenType::keyword_proc },
-		{ "true",   TokenType::keyword_true },
-		{ "false",  TokenType::keyword_false },
-		{ "cast",   TokenType::keyword_cast },
+		{ "if",        TokenType::keyword_if        },
+		{ "else",      TokenType::keyword_else      },
+		{ "while",     TokenType::keyword_while     },
+		{ "return",    TokenType::keyword_return    },
+		{ "proc",      TokenType::keyword_proc      },
+		{ "true",      TokenType::keyword_true      },
+		{ "false",     TokenType::keyword_false     },
+		{ "cast",      TokenType::keyword_cast      },
+		{ "transmute", TokenType::keyword_transmute },
+		{ "type",      TokenType::keyword_type      },
+		{ "const",     TokenType::keyword_const     },
+		{ "struct",    TokenType::keyword_struct    },
 	};
 
 	Lexer(std::string_view input);

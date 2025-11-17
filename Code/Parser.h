@@ -15,20 +15,35 @@ enum class NodeType
 {
 	invalid,
 
-	statement_variable_declaration,
-	statement_procedure_declaration,
+	
+	// Always leave this as first declaration kind because it used in comparison to determine if node is a declaration
+	declaration_variable,
+	declaration_const,
+	declaration_procedure,
+	// Always leave this as last declaration kind because it used in comparison to determine if node is a declaration
+	declaration_type,
+
+
+	// Always leave this as first statement kind because it used in comparison to determine if node is a statement 
 	statement_if,
 	statement_while,
 	statement_assingment,
 	statement_block,
+	// Always leave this as last statement kind because it used in comparison to determine if node is a statement 
 	statement_expression,
+
 
 	expression_integer_literal,
 	expression_bool_literal,
 	expression_identifier,
 	expression_unary_operator,
 	expression_binary_operator,
+
 	expression_cast,
+
+
+	type_identifier,
+	type_pointer,
 };
 
 struct Program;
@@ -37,9 +52,14 @@ struct Node;
 
 using Identifier = Token;
 
+struct Declaration;
+struct VariableDeclaration;
+struct ProcedureDeclaration;
+struct ConstDeclaration;
+struct TypeDeclaration;
+struct StructDeclaration;
+
 struct Statement;
-struct VariableDeclarationStatement;
-struct ProcedureDeclarationStatement;
 struct IfStatement;
 struct WhileStatement;
 struct AssignmentStatement;
@@ -52,24 +72,21 @@ struct UnaryOperator;
 struct BinaryOperator;
 struct BoolLiteral;
 struct IdentifierExpression;
-struct Declaration;
-struct StructDeclaration;
 
 struct Type;
-
-// Program is an array of declarations because only declarations are allowed at top level scope.
-struct Program
-{
-	std::vector<Statement*> declarations;
-};
 
 struct Node 
 {
 	NodeType type;
-	Node(NodeType type_) : type{type_} {} 
+	Node(NodeType type_) : type{type_} {}
 };
 
-struct Statement : public Node 
+struct Declaration : public Node
+{
+	Declaration(NodeType type_) : Node(type_) {}
+};
+
+struct Statement : public Node
 {
 	Statement(NodeType type_) : Node(type_) {}
 };
@@ -79,29 +96,49 @@ struct Expression : public Node
 	Expression(NodeType type_) : Node(type_) {}
 };
 
-enum class TypeKind 
+struct Type : public Node
 {
-	identifier,
-};
-
-struct Type
-{
-	Type(TypeKind kind_) : kind{kind_}{}
-	TypeKind kind;
+	Type(NodeType type_) : Node(type_) {}
 };
 
 struct TypeIdentifier : public Type
 {
-	TypeIdentifier() : Type(TypeKind::identifier) {}
+	TypeIdentifier() : Type(NodeType::type_identifier) {}
 	Identifier identifier;
 };
 
-struct VariableDeclarationStatement : public Statement 
+struct TypePointer : public Type
 {
-	VariableDeclarationStatement() : Statement(NodeType::statement_variable_declaration) {}
+	TypePointer() : Type(NodeType::type_pointer) {}
+	Type *points_to = nullptr;
+};
+
+struct VariableDeclaration : public Declaration 
+{
+	VariableDeclaration() : Declaration(NodeType::declaration_variable) {}
 	Identifier identifier;
 	Type *variable_type = nullptr;
 	std::optional<Expression*> value;
+};
+
+struct ConstDeclaration : public Declaration
+{
+	ConstDeclaration() : Declaration(NodeType::declaration_const) {}
+	Identifier identifier;
+	Type *variable_type = nullptr;
+	Expression *value = nullptr;
+};
+
+struct ProcedureDeclaration : public Declaration
+{
+	ProcedureDeclaration() : Declaration(NodeType::declaration_procedure) {}
+};
+
+struct TypeDeclaration : public Declaration
+{
+	TypeDeclaration() : Declaration(NodeType::declaration_type) {}
+	Identifier identifier;
+	Type *declared_type = nullptr;
 };
 
 struct IfStatement : public Statement 
@@ -123,7 +160,7 @@ struct WhileStatement : public Statement
 struct BlockStatement : public Statement
 {
 	BlockStatement() : Statement(NodeType::statement_block) {}
-	std::span<Statement*> statements;
+	std::span<Node*> body;
 };
 
 struct AssignmentStatement : public Statement 
@@ -137,11 +174,6 @@ struct ExpressionStatement : public Statement
 {
 	ExpressionStatement() : Statement(NodeType::statement_expression) {}
 	Expression *expression = nullptr;
-};
-
-struct InvalidExpression : public Expression
-{
-	InvalidExpression() : Expression(NodeType::invalid) {}
 };
 
 struct IntegerLiteral : public Expression 
@@ -177,9 +209,9 @@ struct BoolLiteral : public Expression
 	bool value = false;
 };
 
-struct ParseProgramResult 
+struct Program
 {
-	Program program;
+	std::vector<Declaration*> declarations;
 	int error_count = 0;
 };
 
@@ -198,37 +230,46 @@ std::string NodeToString(const Node *node, int tabs = 0);
 class Parser 
 {
 public:
-	Parser(Lexer *lexer, Arena *arena, FILE *log = stderr);
+	Parser(std::string_view input, Arena *arena, FILE *log = stderr);
 
 	// If error_count is not 0 then is it not safe to use AST because 
 	// tokens in indentifiers might have incorrect value in union 
 	// (well there will just be garabage instead of string)
-	ParseProgramResult ParseProgram();
+	Program ParseProgram();
 private:
+	Declaration* ParseDeclaration();
+	ConstDeclaration* ParseConstantDeclaration();
+	VariableDeclaration* ParseVariableDeclaration();
+	TypeDeclaration* ParseTypeDeclaration();
+	ProcedureDeclaration* ParseProcedureDeclaration();
+
 	Statement* ParseStatement();
-	
 	ExpressionStatement* ParseExpressionStatement();
 	IfStatement* ParseIfStatement();
 	WhileStatement* ParseWhileStatement();
-	VariableDeclarationStatement* ParseVariableDeclarationStatement();
 	AssignmentStatement* ParseAssignmentStatement();
 	BlockStatement* ParseBlockStatement();
 	
-	Type* ParseType();
+	Node* ParseStatementOrDeclaration();
 
 	Expression* ParseExpression(Precedence precedence = Precedence::lowest);
 	Expression* ParseUnaryExpression();
 	Expression* ParseBinaryExpression(Expression *left);
 	
+	Type* ParseType();
+
 	template <typename NodeType>
 	NodeType* New() 
 	{
 		return arena_->PushItem<NodeType>();
 	};
 
-	// If next token is not expected token this function will eat tokens until ";", log the error and
-	// set current_statement_invalid_ to true.
-	// Otherwise expected token will be stored in expected_token_ (and token will be eaten).
+	template <typename NodeType>
+	NodeType* New(NodeType type) 
+	{
+		return arena_->PushItem<NodeType>(type);
+	};
+
 	const Token& ExpectToken(TokenType type);
 
 	bool NextTokenIs(TokenType type);
@@ -240,7 +281,7 @@ private:
 		std::println(log_, fmt, std::forward<Args>(args)...);
 	}
 
-	Lexer *lexer_ = nullptr;
+	Lexer lexer_;
 	Arena *arena_ = nullptr;
 	FILE *log_ = nullptr;
 	
