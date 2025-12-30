@@ -34,6 +34,7 @@ enum class NodeType
 	statement_while,
 	statement_assingment,
 	statement_block,
+	statement_return,
 	// Always leave this as last statement kind because it used in comparison to determine if node is a statement 
 	statement_expression,
 
@@ -63,12 +64,14 @@ struct VariableDeclaration;
 struct ProcedureDeclaration;
 struct ConstDeclaration;
 struct TypeDeclaration;
+struct ProcedureDeclaration;
 
 struct Statement;
 struct IfStatement;
 struct WhileStatement;
 struct AssignmentStatement;
 struct BlockStatement;
+struct ReturnStatement;
 struct ExpressionStatement;
 
 struct Expression;
@@ -150,9 +153,19 @@ struct ConstDeclaration : public Declaration
 	Expression *value = nullptr;
 };
 
+struct ProcedureParameter
+{
+	Identifier identifier;
+	Type *type = nullptr;
+};
+
 struct ProcedureDeclaration : public Declaration
 {
 	ProcedureDeclaration() : Declaration(NodeType::declaration_procedure) {}
+	Identifier identifier;
+	std::span<ProcedureParameter*> parameters;
+	Type *return_type = nullptr;
+	BlockStatement *body = nullptr;
 };
 
 struct TypeDeclaration : public Declaration
@@ -182,6 +195,12 @@ struct BlockStatement : public Statement
 {
 	BlockStatement() : Statement(NodeType::statement_block) {}
 	std::span<Statement*> body;
+};
+
+struct ReturnStatement : public Statement
+{
+	ReturnStatement() : Statement(NodeType::statement_return) {}
+	Expression *value = nullptr;
 };
 
 struct AssignmentStatement : public Statement 
@@ -265,11 +284,13 @@ private:
 	TypeDeclaration* ParseTypeDeclaration();
 	ProcedureDeclaration* ParseProcedureDeclaration();
 
+
 	ExpressionStatement* ParseExpressionStatement();
 	IfStatement* ParseIfStatement();
 	WhileStatement* ParseWhileStatement();
 	AssignmentStatement* ParseAssignmentStatement();
 	BlockStatement* ParseBlockStatement();
+	ReturnStatement* ParseReturnStatement();
 
 
 	Expression* ParseExpression(Precedence precedence = Precedence::lowest);

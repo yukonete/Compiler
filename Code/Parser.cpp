@@ -70,6 +70,7 @@ Statement* Parser::ParseStatement()
 		case keyword_type:   return ParseTypeDeclaration();
 		case keyword_if:     return ParseIfStatement();
 		case keyword_while:  return ParseWhileStatement();
+		case keyword_return: return ParseReturnStatement();
 		case TokenType{'{'}: return ParseBlockStatement();     
 	}
 	return ParseExpressionStatement();
@@ -118,7 +119,35 @@ TypeDeclaration* Parser::ParseTypeDeclaration()
 
 ProcedureDeclaration* Parser::ParseProcedureDeclaration()
 {
-	Panic("TODO");
+	auto proc = New<ProcedureDeclaration>();
+	ExpectToken(TokenType::keyword_proc);
+	proc->identifier = ExpectToken(TokenType::identifier);
+	ExpectToken(TokenType{'('});
+	std::vector<ProcedureParameter*> temp;
+	bool first_parameter = true;
+	while (!(NextTokenIs(TokenType{')'}) || NextTokenIs(TokenType::invalid)))
+	{
+		auto parameter = New<ProcedureParameter>();
+		if (!first_parameter)
+		{
+			ExpectToken(TokenType{','});
+		}
+		else
+		{
+			first_parameter = false;
+		}
+		parameter->identifier = ExpectToken(TokenType::identifier);
+		ExpectToken(TokenType{':'});
+		parameter->type = ParseType();
+		temp.push_back(parameter);
+	}
+	ExpectToken(TokenType{')'});
+	proc->parameters = arena_->PushArray<ProcedureParameter*>(temp.size());
+	std::ranges::copy(temp, proc->parameters.begin());
+	ExpectToken(TokenType::return_arrow);
+	proc->return_type = ParseType();
+	proc->body = ParseBlockStatement();
+	return proc;
 }
 
 ExpressionStatement* Parser::ParseExpressionStatement()
@@ -218,11 +247,22 @@ AssignmentStatement* Parser::ParseAssignmentStatement()
 	return statement;
 }
 
+ReturnStatement* Parser::ParseReturnStatement()
+{
+	auto ret = New<ReturnStatement>();
+	ExpectToken(TokenType::keyword_return);
+	if (!NextTokenIs(TokenType{';'}))
+	{
+		ret->value = ParseExpression();
+	}
+	ExpectToken(TokenType{';'});
+	return ret;
+}
+
 BlockStatement* Parser::ParseBlockStatement()
 {
 	auto block = New<BlockStatement>();
 	ExpectToken(TokenType{'{'});
-
 	std::vector<Statement*> temp;
 	temp.reserve(16);
 	while (!(NextTokenIs(TokenType{'}'}) || NextTokenIs(TokenType::invalid))) 
@@ -231,7 +271,6 @@ BlockStatement* Parser::ParseBlockStatement()
 		temp.push_back(statement);
 	}
     ExpectToken(TokenType{'}'});
-
 	block->body = arena_->PushArray<Statement*>(temp.size());
 	std::ranges::copy(temp, block->body.begin());
 	return block;
@@ -374,6 +413,28 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 	{
 		using enum Ast::NodeType;
 
+		case declaration_procedure:
+		{
+			auto proc = reinterpret_cast<const ProcedureDeclaration*>(node);
+			result = std::format("proc {}(", proc->identifier.identifier);
+			for (int i = 0; i < proc->parameters.size(); ++i) {
+				auto parameter = proc->parameters[i];
+				result += std::format(
+					"{}: {}",
+					parameter->identifier.identifier,
+					NodeToString(parameter->type, tabs));
+				if (i != proc->parameters.size() - 1)
+				{
+					result += ", ";
+				}
+			}
+			result += std::format(
+				") -> {} {}",
+				NodeToString(proc->return_type, tabs),
+				NodeToString(proc->body, tabs));
+			break;
+		}
+
 		case declaration_type:
 		{
 			auto decl = reinterpret_cast<const TypeDeclaration*>(node);
@@ -433,11 +494,17 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 			result += ";";
 			break;
 		}
+		case statement_return:
+		{
+			auto ret = reinterpret_cast<const ReturnStatement*>(node);
+			result = std::format("return {};", NodeToString(ret->value, tabs));
+			break;
+		}
 		case statement_if:
 		{
 			auto if_statement = reinterpret_cast<const IfStatement*>(node);
 			result = std::format(
-				"if ({}) {}", 
+				"if {} {}", 
 				NodeToString(if_statement->condition, tabs),
 				NodeToString(if_statement->true_branch, tabs));
 			if (if_statement->false_branch) 
@@ -452,7 +519,7 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 		{
 			auto while_statement = reinterpret_cast<const WhileStatement*>(node);
 			result = std::format(
-				"while ({}) {}",
+				"while {} {}",
 				NodeToString(while_statement->condition, tabs),
 				NodeToString(while_statement->body, tabs));
 			break;
