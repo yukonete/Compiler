@@ -1,21 +1,15 @@
-﻿#include <print>
+#include <algorithm>
+#include <cstdio>
+#include <format>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "Base.h"
-
-#include "Parser.h"
 #include "Lexer.h"
+#include "Parser.h"
 
 using namespace Ast;
-
-static bool IsStatement(Node* node)
-{
-	if (node->type >= NodeType::statement_if && node->type <= NodeType::statement_expression)
-	{
-		return true;
-	}
-	return false;
-};
 
 static bool IsDeclaration(Node* node)
 {
@@ -31,40 +25,27 @@ Parser::Parser(std::string_view input, Arena *arena, FILE *log) : lexer_{input},
 Program Parser::ParseProgram()
 {
 	Program result;
-	while (lexer_.PeekNextToken().type != TokenType::invalid) 
+	while (true) 
 	{
-		auto statement = ParseDeclaration();
-		result.declarations.push_back(statement);
+		const auto token = lexer_.PeekNextToken();
+		if (lexer_.PeekNextToken().type == TokenType::invalid)
+		{
+			break;
+		}
+
+		auto statement = ParseStatement();
+		if (!IsDeclaration(statement))
+		{
+			LogError(token, "Expected declaration.");
+			statement->type = NodeType::invalid;
+		}
+		result.declarations.push_back(reinterpret_cast<Declaration*>(statement));
 	}
 	result.error_count = error_count_;
 	return result;
 }
 
-Statement* Parser::ParseStatement()
-{
-	const auto token = lexer_.PeekNextToken();
-	auto node = ParseStatementOrDeclaration();
-	if (!IsStatement(node))
-	{
-		LogError(token, "Expected statement.");
-		node->type = NodeType::invalid;
-	}
-	return reinterpret_cast<Statement*>(node);
-};
-
-Declaration* Parser::ParseDeclaration()
-{
-	const auto token = lexer_.PeekNextToken();
-	auto node = ParseStatementOrDeclaration();
-	if (!IsDeclaration(node))
-	{
-		LogError(token, "Expected declaration.");
-		node->type = NodeType::invalid;
-	}
-	return reinterpret_cast<Declaration*>(node);
-};
-
-Node* Parser::ParseStatementOrDeclaration() 
+Statement* Parser::ParseStatement() 
 {
 	const auto token_type = lexer_.PeekNextToken().type;
 	switch (token_type)
@@ -175,20 +156,56 @@ WhileStatement* Parser::ParseWhileStatement()
 
 Type* Parser::ParseType()
 {
-	const auto token_type = lexer_.PeekNextToken().type;
-	switch (token_type)
+	Type *type = nullptr;
+	const auto &token = lexer_.PeekNextToken();
+	lexer_.EatToken();
+	switch (token.type)
 	{
 		using enum TokenType;
 
 		case identifier:
 		{
 			auto ident = New<TypeIdentifier>();
-			ident->identifier = ExpectToken(TokenType::identifier);
-			return ident;
+			ident->identifier = token;
+			type = ident;
+			break;
 		}
+        case TokenType{'*'}:
+		{
+			auto pointer = New<TypePointer>();
+			pointer->points_to = ParseType();
+			type = pointer;
+			break;
+		}
+        case keyword_struct:
+		{
+			auto st = New<TypeStruct>();
+            ExpectToken(TokenType{'{'});
+			std::vector<StructMember*> temp;
+			temp.reserve(16);
+			while (!(NextTokenIs(TokenType{'}'}) || NextTokenIs(TokenType::invalid)))
+			{
+				auto member = New<StructMember>();
+				member->identifier = ExpectToken(TokenType::identifier);
+				ExpectToken(TokenType{':'});
+				member->type = ParseType();
+				ExpectToken(TokenType{';'});
+				temp.push_back(member);
+			}
+            ExpectToken(TokenType{'}'});
+			st->members = arena_->PushArray<StructMember*>(temp.size());
+			std::ranges::copy(temp, st->members.begin());
+			type = st;
+			break;
+		}
+        default:
+		{
+            type = New<Type>(NodeType::invalid);
+            LogError(token, "Token \"{}\" can not be parsed as a type.", token.type);
+            break;
+        }
 	}
-
-	Panic("TODO");
+	return type;
 }
 
 AssignmentStatement* Parser::ParseAssignmentStatement()
@@ -206,16 +223,16 @@ BlockStatement* Parser::ParseBlockStatement()
 	auto block = New<BlockStatement>();
 	ExpectToken(TokenType{'{'});
 
-	// TODO: How many statements can we expect on average? Reserve that amount.
-	std::vector<Node*> temp;
+	std::vector<Statement*> temp;
+	temp.reserve(16);
 	while (!(NextTokenIs(TokenType{'}'}) || NextTokenIs(TokenType::invalid))) 
 	{
-		const auto node = ParseStatementOrDeclaration();
-		temp.push_back(node);
+		const auto statement = ParseStatement();
+		temp.push_back(statement);
 	}
-	lexer_.EatToken();
+    ExpectToken(TokenType{'}'});
 
-	block->body = arena_->PushArray<Node*>(temp.size());
+	block->body = arena_->PushArray<Statement*>(temp.size());
 	std::ranges::copy(temp, block->body.begin());
 	return block;
 }
@@ -360,33 +377,58 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 		case declaration_type:
 		{
 			auto decl = reinterpret_cast<const TypeDeclaration*>(node);
-			Assert(decl->declared_type->type == type_identifier);
-			auto type_ident = reinterpret_cast<const TypeIdentifier *>(decl->declared_type);
-			result = std::format("type {} = {};", decl->identifier.identifier, type_ident->identifier.identifier);
+            result = std::format(
+				"type {} = {};",
+				decl->identifier.identifier,
+				NodeToString(decl->declared_type, tabs));
+			break;
+		}
+
+		case type_identifier:
+		{
+			auto type_ident = reinterpret_cast<const TypeIdentifier *>(node);
+			result = type_ident->identifier.identifier;
+			break;
+		}
+
+		case type_struct:
+		{
+			auto st = reinterpret_cast<const TypeStruct*>(node);
+			result = "struct {\n";
+			for (auto member : st->members)
+			{
+				result += std::format("{}{}: {};\n", Indent(tabs + 1), member->identifier.identifier, NodeToString(member->type, tabs + 1));
+			}
+			result += Indent(tabs);
+			result += "}";
+			break;
+		}
+
+		case type_pointer:
+		{
+			auto type_pointer = reinterpret_cast<const TypePointer *>(node);
+			result = std::format("*{}", NodeToString(type_pointer->points_to, tabs));
 			break;
 		}
 
 		case declaration_const:
 		{
 			auto decl = reinterpret_cast<const ConstDeclaration*>(node);
-			Assert(decl->variable_type->type == type_identifier);
-			auto type_ident = reinterpret_cast<const TypeIdentifier*>(decl->variable_type);
 			result = std::format(
 				"const {}: {} = {};", 
 				decl->identifier.identifier, 
-				type_ident->identifier.identifier,
-				NodeToString(decl->value));
+				NodeToString(decl->variable_type, tabs),
+				NodeToString(decl->value, tabs));
 			break;
 		}
 
 		case declaration_variable:
 		{
 			auto decl = reinterpret_cast<const VariableDeclaration*>(node);
-			auto type_identifier = reinterpret_cast<const TypeIdentifier*>(decl->variable_type);
-			result = std::format("{}: {}", decl->identifier.identifier, type_identifier->identifier.identifier);
+			result = std::format("{}: {}", decl->identifier.identifier, NodeToString(decl->variable_type, tabs));
 			if (decl->value)
 			{
-				result += std::format(" = {}", NodeToString(*(decl->value)));
+				result += std::format(" = {}", NodeToString(decl->value.value(), tabs));
 			}
 			result += ";";
 			break;
@@ -396,12 +438,12 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 			auto if_statement = reinterpret_cast<const IfStatement*>(node);
 			result = std::format(
 				"if ({}) {}", 
-				NodeToString(if_statement->condition),
+				NodeToString(if_statement->condition, tabs),
 				NodeToString(if_statement->true_branch, tabs));
 			if (if_statement->false_branch) 
 			{
 				result += std::format(
-					"else {}", 
+					" else {}", 
 					NodeToString(*(if_statement->false_branch), tabs));
 			}
 			break;
@@ -411,7 +453,7 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 			auto while_statement = reinterpret_cast<const WhileStatement*>(node);
 			result = std::format(
 				"while ({}) {}",
-				NodeToString(while_statement->condition),
+				NodeToString(while_statement->condition, tabs),
 				NodeToString(while_statement->body, tabs));
 			break;
 		}
@@ -421,26 +463,25 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 			result = std::format(
 				"{} = {};", 
 				assingment->identifier.identifier, 
-				NodeToString(assingment->value));
+				NodeToString(assingment->value, tabs));
 			break;
 		}
 		case statement_block:
 		{
 			auto block = reinterpret_cast<const BlockStatement*>(node);
 			result = "{\n";
-			for (int i = 0; i < block->body.size(); ++i)
+			for (auto statement : block->body)
 			{
-				const auto statement = block->body[i];
 				result += std::format("{}{}\n", Indent(tabs + 1), NodeToString(statement, tabs + 1));
 			}
 			result += Indent(tabs);
-			result += "} ";
+			result += "}";
 			break;
 		}
 		case statement_expression:
 		{
 			auto statement = reinterpret_cast<const ExpressionStatement*>(node);
-			result = std::format("{};", NodeToString(statement->expression));
+			result = std::format("{};", NodeToString(statement->expression, tabs));
 			break;
 		}
 
@@ -465,7 +506,7 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 		case expression_unary_operator:
 		{
 			auto unary_operator = reinterpret_cast<const UnaryOperator*>(node);
-			result = std::format("({}{})", unary_operator->op, NodeToString(unary_operator->right));
+			result = std::format("({}{})", unary_operator->op, NodeToString(unary_operator->right, tabs));
 			break;
 		};
 		case expression_binary_operator:
@@ -473,9 +514,9 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 			auto binary_operator = reinterpret_cast<const BinaryOperator*>(node);
 			result = std::format(
 				"({} {} {})", 
-				NodeToString(binary_operator->left),
+				NodeToString(binary_operator->left, tabs),
 				binary_operator->op,
-				NodeToString(binary_operator->right));
+				NodeToString(binary_operator->right, tabs));
 			break;
 		};
 

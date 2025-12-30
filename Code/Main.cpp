@@ -1,10 +1,9 @@
-﻿#include <print>
+#include <print>
 
 #include "Base.h"
-#include "Lexer.h"
 #include "Parser.h"
 
-int main() 
+int main()
 {
 	Arena arena;
 
@@ -13,7 +12,7 @@ int main()
 	auto program = parser.ParseProgram();
 	for (auto statement : program.declarations)
 	{
-		auto node_string = Ast::NodeToString(statement);
+		auto node_string = Ast::NodeToString(statement, 0);
 		std::println("{}", node_string);
 	}
 	return 0;

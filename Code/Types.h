@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Base.h"
 
@@ -17,7 +17,7 @@ enum class TypeKind
 	pointer
 };
 
-struct Type 
+struct Type
 {
 	TypeKind kind = TypeKind::invalid;
 	s64 size = 0;
@@ -25,7 +25,7 @@ struct Type
 	Type(TypeKind kind_) : kind{kind_} {}
 };
 
-struct Pointer : public Type 
+struct Pointer : public Type
 {
 	Pointer() : Type(TypeKind::pointer) {}
 	Type *type = nullptr;

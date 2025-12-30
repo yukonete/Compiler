@@ -1,1 +1,18 @@
-type Index = int; index: Index = 43533;
+type Vector3 = struct {
+    x: f32;
+    y: f32;
+    z: f32;
+};
+type List = struct {
+    first: *struct {
+        value: int;
+        next: *IntNode;
+    };
+    last: *struct {
+        value: int;
+        next: *IntNode;
+    };
+};
+vec: Vector3;
+const a: Vector3 = 1;
+const b: struct { test: *int; } = 2;

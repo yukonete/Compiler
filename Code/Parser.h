@@ -1,12 +1,17 @@
-﻿#pragma once
+#pragma once
 
-#include <vector>
-#include <string_view>
+#include <cstdio>
+#include <format>
 #include <optional>
 #include <print>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "Base.h"
 #include "Lexer.h"
+
 
 namespace Ast 
 {
@@ -44,6 +49,7 @@ enum class NodeType
 
 	type_identifier,
 	type_pointer,
+    type_struct,
 };
 
 struct Program;
@@ -57,7 +63,6 @@ struct VariableDeclaration;
 struct ProcedureDeclaration;
 struct ConstDeclaration;
 struct TypeDeclaration;
-struct StructDeclaration;
 
 struct Statement;
 struct IfStatement;
@@ -74,16 +79,14 @@ struct BoolLiteral;
 struct IdentifierExpression;
 
 struct Type;
+struct TypeIdentifier;
+struct TypePointer;
+struct TypeStruct;
 
 struct Node 
 {
 	NodeType type;
 	Node(NodeType type_) : type{type_} {}
-};
-
-struct Declaration : public Node
-{
-	Declaration(NodeType type_) : Node(type_) {}
 };
 
 struct Statement : public Node
@@ -94,6 +97,12 @@ struct Statement : public Node
 struct Expression : public Node
 {
 	Expression(NodeType type_) : Node(type_) {}
+};
+
+
+struct Declaration : public Statement
+{
+	Declaration(NodeType type_) : Statement(type_) {}
 };
 
 struct Type : public Node
@@ -111,6 +120,18 @@ struct TypePointer : public Type
 {
 	TypePointer() : Type(NodeType::type_pointer) {}
 	Type *points_to = nullptr;
+};
+
+struct StructMember
+{
+	Identifier identifier;
+	Type *type = nullptr;
+};
+
+struct TypeStruct : public Type
+{
+	TypeStruct() : Type(NodeType::type_struct) {}
+    std::span<StructMember*> members;
 };
 
 struct VariableDeclaration : public Declaration 
@@ -160,7 +181,7 @@ struct WhileStatement : public Statement
 struct BlockStatement : public Statement
 {
 	BlockStatement() : Statement(NodeType::statement_block) {}
-	std::span<Node*> body;
+	std::span<Statement*> body;
 };
 
 struct AssignmentStatement : public Statement 
@@ -225,7 +246,7 @@ enum class Precedence
 	prefix // -, !
 };
 
-std::string NodeToString(const Node *node, int tabs = 0);
+std::string NodeToString(const Node *node, int tabs);
 
 class Parser 
 {
@@ -237,20 +258,19 @@ public:
 	// (well there will just be garabage instead of string)
 	Program ParseProgram();
 private:
-	Declaration* ParseDeclaration();
+	Statement *ParseStatement();
+
 	ConstDeclaration* ParseConstantDeclaration();
 	VariableDeclaration* ParseVariableDeclaration();
 	TypeDeclaration* ParseTypeDeclaration();
 	ProcedureDeclaration* ParseProcedureDeclaration();
 
-	Statement* ParseStatement();
 	ExpressionStatement* ParseExpressionStatement();
 	IfStatement* ParseIfStatement();
 	WhileStatement* ParseWhileStatement();
 	AssignmentStatement* ParseAssignmentStatement();
 	BlockStatement* ParseBlockStatement();
-	
-	Node* ParseStatementOrDeclaration();
+
 
 	Expression* ParseExpression(Precedence precedence = Precedence::lowest);
 	Expression* ParseUnaryExpression();

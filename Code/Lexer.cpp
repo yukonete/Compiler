@@ -1,6 +1,7 @@
-﻿#include <string_view>
-#include <ctype.h>
+#include <cctype>
+#include <string_view>
 
+#include "Base.h"
 #include "Lexer.h"
 
 static TokenType CheckIdentifierForKeyword(std::string_view identifier) 
@@ -263,6 +264,7 @@ void Lexer::Tokenize()
 		case 'w':
 		case 'x':
 		case 'y':
+		case 'z':
 		case 'A':
 		case 'B':
 		case 'C':
@@ -288,6 +290,7 @@ void Lexer::Tokenize()
 		case 'W':
 		case 'X':
 		case 'Y':
+		case 'Z':
 		case '_': 
 		{
 			const auto identifier = ParseIdentifier();
@@ -426,6 +429,8 @@ std::string_view TokenTypeToString(TokenType type)
         case keyword_while: return "while";
         case keyword_return: return "return";
         case keyword_proc: return "proc";
+		case keyword_const: return "const";
+		case keyword_struct: return "struct";
         default: return "unknown";
     }
 }
