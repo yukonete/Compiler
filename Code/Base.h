@@ -3,6 +3,7 @@
 #ifndef BASE_H
 #define BASE_H
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -144,6 +145,14 @@ public:
 			PushArrayPointer<Item>(count),
 			static_cast<std::span<Item>::size_type>(count)
 		};
+	}
+
+	template <typename Item> requires std::is_trivially_copyable_v<Item>
+	std::span<Item> PushArray(std::span<Item> items)
+	{
+		auto result = PushArray<Item>(static_cast<isize>(items.size()));
+		std::ranges::copy(items, result.begin());
+		return result;
 	}
 
 	template <typename Item> requires std::is_trivially_copyable_v<Item>

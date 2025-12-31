@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <span>
 
 #include "Base.h"
 #include "Lexer.h"
@@ -301,6 +302,9 @@ static Precedence TokenTypeToPrecedense(TokenType type)
 	case TokenType{'%'}:
 		return Precedence::multiply;
 
+	case TokenType{'('}:
+		return Precedence::call;
+
 	default:
 		return Precedence::lowest;
 	}
@@ -315,6 +319,14 @@ Expression* Parser::ParseUnaryExpression()
 	{
 		using enum TokenType;
 
+		case TokenType{'('}:
+		{
+			auto expr = ParseExpression();
+			ExpectToken(TokenType{')'});
+			expression = expr;
+			break;
+		}
+		
 		case identifier:
 		{
 			auto ident = New<IdentifierExpression>();
@@ -364,6 +376,32 @@ Expression* Parser::ParseBinaryExpression(Expression *left)
 {
 	const auto &token = lexer_.PeekNextToken();
 	lexer_.EatToken();
+
+	if (token.type == TokenType{'('})
+	{
+		auto call = New<CallOperator>();
+		call->callable = left;
+		std::vector<Expression*> temp;
+		temp.reserve(8);
+		bool first_argument = true;
+		while (!(NextTokenIs(TokenType{')'}) || NextTokenIs(TokenType::invalid)))
+		{
+			if (!first_argument)
+			{
+				ExpectToken(TokenType{','});
+			}
+			else
+			{
+				first_argument = false;
+			}
+			auto argument = ParseExpression();
+			temp.push_back(argument);
+		}
+		ExpectToken(TokenType{')'});
+		call->arguments = arena_->PushArray(std::span(temp));
+		return call;
+	}
+
 	auto binary_operator = New<BinaryOperator>();
 	binary_operator->op = token.type;
 	binary_operator->left = left;
@@ -373,7 +411,7 @@ Expression* Parser::ParseBinaryExpression(Expression *left)
 
 Expression* Parser::ParseExpression(Precedence precedence)
 {
-	Expression *left = ParseUnaryExpression();
+	auto *left = ParseUnaryExpression();
 
 	while (precedence < TokenTypeToPrecedense(lexer_.PeekNextToken().type)) 
 	{
@@ -586,7 +624,24 @@ std::string Ast::NodeToString(const Node *node, int tabs)
 				NodeToString(binary_operator->right, tabs));
 			break;
 		};
-
+		case expression_call_operator:
+		{
+			auto call = reinterpret_cast<const CallOperator*>(node);
+			Assert(call->callable->type == expression_identifier);
+			auto callable = reinterpret_cast<const IdentifierExpression*>(call->callable);
+			result = std::format("{}(", callable->identifier.identifier);
+			for (int i = 0; i < call->arguments.size(); ++i)
+			{
+				auto arg = call->arguments[i];
+				result += NodeToString(arg, tabs);
+				if (i != call->arguments.size() - 1)
+				{
+					result += ", ";
+				}
+			}
+			result += ')';
+			break;
+		}
 		case invalid:
 		{
 			result = "invalid;";

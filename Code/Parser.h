@@ -44,6 +44,7 @@ enum class NodeType
 	expression_identifier,
 	expression_unary_operator,
 	expression_binary_operator,
+	expression_call_operator,
 
 	expression_cast,
 
@@ -249,6 +250,13 @@ struct BoolLiteral : public Expression
 	bool value = false;
 };
 
+struct CallOperator : public Expression
+{
+	CallOperator() : Expression(NodeType::expression_call_operator) {}
+	Expression *callable = nullptr;
+	std::span<Expression*> arguments;
+};
+
 struct Program
 {
 	std::vector<Declaration*> declarations;
@@ -262,7 +270,8 @@ enum class Precedence
 	comparison, // <, <=, >, >=
 	plus, // +, -
 	multiply, // *, /, %
-	prefix // -, !
+	prefix, // -, !
+	call,
 };
 
 std::string NodeToString(const Node *node, int tabs);
