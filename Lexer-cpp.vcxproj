@@ -146,11 +146,13 @@
     <ClCompile Include="Code\Main.cpp" />
     <ClCompile Include="Code\Lexer.cpp" />
     <ClCompile Include="Code\Parser.cpp" />
+    <ClCompile Include="Code\TypeCheck.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Code\Base.h" />
     <ClInclude Include="Code\Lexer.h" />
     <ClInclude Include="Code\Parser.h" />
+    <ClInclude Include="Code\TypeCheck.h" />
     <ClInclude Include="Code\Types.h" />
   </ItemGroup>
   <ItemGroup>

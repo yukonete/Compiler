@@ -1,3 +1,5 @@
 proc main(argv: *int, argc: int) -> int {
-	main(0, (2*(3+4)));
+	x: int;
+	x_ptr: *int = &x;
+	return *x_ptr;
 }

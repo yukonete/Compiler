@@ -5,10 +5,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Base.h"
+#include "base.h"
 
-enum class TokenType 
-{
+enum class TokenType {
 	// ASCII characters here
 
 	identifier = 256,
@@ -44,14 +43,12 @@ enum class TokenType
 	invalid,
 };
 
-struct FileLocation 
-{
+struct FileLocation {
 	u64 line = 0;
 	u64 column = 0;
 };
 
-struct Token 
-{
+struct Token {
 	TokenType type = TokenType::invalid;
 	FileLocation start;
 	FileLocation end;
@@ -62,13 +59,11 @@ struct Token
 	};
 };
 
-std::string_view TokenTypeToString(TokenType type);
+std::string_view token_type_to_string(TokenType type);
 
-class Lexer 
-{
+class Lexer {
 public:
-	static const inline std::unordered_map<std::string_view, TokenType> keywords = 
-	{
+	static const inline std::unordered_map<std::string_view, TokenType> keywords = {
 		{ "if",        TokenType::keyword_if        },
 		{ "else",      TokenType::keyword_else      },
 		{ "while",     TokenType::keyword_while     },
@@ -87,22 +82,23 @@ public:
 	Lexer(const Lexer&) = delete;
 	Lexer(const Lexer &&) = delete;
 
-	// Call to any of this 2 functions might invalidate references to tokens
-	const Token& PeekNextToken();
-	const Token& PeekToken(int peek);
+	// Might invalidate references to tokens
+	const Token& next_token();
+	// Might invalidate references to tokens
+	const Token& peek_token(int peek);
 
-	const Token& PreviousToken() const;
-	void EatToken();
-	void UneatToken();
+	const Token& previous_token() const;
+	void eat_token();
+	void uneat_token();
 
 private:
-	void Tokenize();
-	int PeekNextChar() const;
-	int PeekChar(int peek) const;
-	void EatChar();
-	s64 ParseInteger();
-	std::string_view ParseIdentifier();
-	void SkipWhitespaces();
+	void tokenize();
+	int peek_next_char() const;
+	int peek_char(int peek) const;
+	void eat_char();
+	s64 parse_integer();
+	std::string_view parse_identifier();
+	void skip_whitespaces();
 
 	std::string_view input_;
 	u64 input_cursor_ = 0;
@@ -114,19 +110,16 @@ private:
 };
 
 template <>
-struct std::formatter<TokenType>
-{
+struct std::formatter<TokenType> {
 	template<class ParseContext>
-	constexpr ParseContext::iterator parse(ParseContext &ctx)
-	{
+	constexpr ParseContext::iterator parse(ParseContext &ctx) {
 		return ctx.begin();
 	}
 
 	template<class FmtContext>
-	FmtContext::iterator format(TokenType type, FmtContext &ctx) const
-	{
+	FmtContext::iterator format(TokenType type, FmtContext &ctx) const {
 		auto out = ctx.out();
-		auto type_string = TokenTypeToString(type);
+		auto type_string = token_type_to_string(type);
 		if (type_string.empty()) 
 		{
 			*out = static_cast<char>(type);

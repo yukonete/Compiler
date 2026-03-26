@@ -9,48 +9,45 @@
 #include <string_view>
 #include <vector>
 
-#include "Base.h"
-#include "Lexer.h"
+#include "base.h"
+#include "lexer.h"
 
+namespace Ast {
 
-namespace Ast 
-{
+enum class NodeType {
+    invalid,
 
-enum class NodeType 
-{
-	invalid,
+    // Always leave this as first declaration kind because it used in comparison
+    // to determine if node is a declaration
+    declaration_variable,
+    declaration_const,
+    declaration_procedure,
+    // Always leave this as last declaration kind because it used in comparison
+    // to determine if node is a declaration
+    declaration_type,
 
-	
-	// Always leave this as first declaration kind because it used in comparison to determine if node is a declaration
-	declaration_variable,
-	declaration_const,
-	declaration_procedure,
-	// Always leave this as last declaration kind because it used in comparison to determine if node is a declaration
-	declaration_type,
+    // Always leave this as first statement kind because it used in comparison
+    // to determine if node is a statement
+    statement_if,
+    statement_while,
+    statement_assingment,
+    statement_block,
+    statement_return,
+    // Always leave this as last statement kind because it used in comparison to
+    // determine if node is a statement
+    statement_expression,
 
+    expression_integer_literal,
+    expression_bool_literal,
+    expression_identifier,
+    expression_unary_operator,
+    expression_binary_operator,
+    expression_call_operator,
 
-	// Always leave this as first statement kind because it used in comparison to determine if node is a statement 
-	statement_if,
-	statement_while,
-	statement_assingment,
-	statement_block,
-	statement_return,
-	// Always leave this as last statement kind because it used in comparison to determine if node is a statement 
-	statement_expression,
+    expression_cast,
 
-
-	expression_integer_literal,
-	expression_bool_literal,
-	expression_identifier,
-	expression_unary_operator,
-	expression_binary_operator,
-	expression_call_operator,
-
-	expression_cast,
-
-
-	type_identifier,
-	type_pointer,
+    type_identifier,
+    type_pointer,
     type_struct,
 };
 
@@ -87,256 +84,243 @@ struct TypeIdentifier;
 struct TypePointer;
 struct TypeStruct;
 
-struct Node 
-{
-	NodeType type;
-	Node(NodeType type_) : type{type_} {}
+struct Node {
+    NodeType type;
+    Node(NodeType type_) : type{type_} {
+    }
 };
 
-struct Statement : public Node
-{
-	Statement(NodeType type_) : Node(type_) {}
+struct Statement : public Node {
+    Statement(NodeType type_) : Node(type_) {
+    }
 };
 
-struct Expression : public Node
-{
-	Expression(NodeType type_) : Node(type_) {}
+struct Expression : public Node {
+    Expression(NodeType type_) : Node(type_) {
+    }
 };
 
-
-struct Declaration : public Statement
-{
-	Declaration(NodeType type_) : Statement(type_) {}
+struct Declaration : public Statement {
+    Declaration(NodeType type_) : Statement(type_) {
+    }
 };
 
-struct Type : public Node
-{
-	Type(NodeType type_) : Node(type_) {}
+struct Type : public Node {
+    Type(NodeType type_) : Node(type_) {
+    }
 };
 
-struct TypeIdentifier : public Type
-{
-	TypeIdentifier() : Type(NodeType::type_identifier) {}
-	Identifier identifier;
+struct TypeIdentifier : public Type {
+    TypeIdentifier() : Type(NodeType::type_identifier) {
+    }
+    Identifier identifier;
 };
 
-struct TypePointer : public Type
-{
-	TypePointer() : Type(NodeType::type_pointer) {}
-	Type *points_to = nullptr;
+struct TypePointer : public Type {
+    TypePointer() : Type(NodeType::type_pointer) {
+    }
+    Type *points_to = nullptr;
 };
 
-struct StructMember
-{
-	Identifier identifier;
-	Type *type = nullptr;
+struct StructMember {
+    Identifier identifier;
+    Type *type = nullptr;
 };
 
-struct TypeStruct : public Type
-{
-	TypeStruct() : Type(NodeType::type_struct) {}
-    std::span<StructMember*> members;
+struct TypeStruct : public Type {
+    TypeStruct() : Type(NodeType::type_struct) {
+    }
+    std::span<StructMember *> members;
 };
 
-struct VariableDeclaration : public Declaration 
-{
-	VariableDeclaration() : Declaration(NodeType::declaration_variable) {}
-	Identifier identifier;
-	Type *variable_type = nullptr;
-	std::optional<Expression*> value;
+struct VariableDeclaration : public Declaration {
+    VariableDeclaration() : Declaration(NodeType::declaration_variable) {
+    }
+    Identifier identifier;
+    Type *variable_type = nullptr;
+    std::optional<Expression *> value;
 };
 
-struct ConstDeclaration : public Declaration
-{
-	ConstDeclaration() : Declaration(NodeType::declaration_const) {}
-	Identifier identifier;
-	Type *variable_type = nullptr;
-	Expression *value = nullptr;
+struct ConstDeclaration : public Declaration {
+    ConstDeclaration() : Declaration(NodeType::declaration_const) {
+    }
+    Identifier identifier;
+    Type *variable_type = nullptr;
+    Expression *value = nullptr;
 };
 
-struct ProcedureParameter
-{
-	Identifier identifier;
-	Type *type = nullptr;
+struct ProcedureParameter {
+    Identifier identifier;
+    Type *type = nullptr;
 };
 
-struct ProcedureDeclaration : public Declaration
-{
-	ProcedureDeclaration() : Declaration(NodeType::declaration_procedure) {}
-	Identifier identifier;
-	std::span<ProcedureParameter*> parameters;
-	Type *return_type = nullptr;
-	BlockStatement *body = nullptr;
+struct ProcedureDeclaration : public Declaration {
+    ProcedureDeclaration() : Declaration(NodeType::declaration_procedure) {
+    }
+    Identifier identifier;
+    std::span<ProcedureParameter *> parameters;
+    Type *return_type = nullptr;
+    BlockStatement *body = nullptr;
 };
 
-struct TypeDeclaration : public Declaration
-{
-	TypeDeclaration() : Declaration(NodeType::declaration_type) {}
-	Identifier identifier;
-	Type *declared_type = nullptr;
+struct TypeDeclaration : public Declaration {
+    TypeDeclaration() : Declaration(NodeType::declaration_type) {
+    }
+    Identifier identifier;
+    Type *declared_type = nullptr;
 };
 
-struct IfStatement : public Statement 
-{
-	IfStatement() : Statement(NodeType::statement_if) {}
-	Expression *condition = nullptr;
-	Statement *true_branch = nullptr;
+struct IfStatement : public Statement {
+    IfStatement() : Statement(NodeType::statement_if) {
+    }
+    Expression *condition = nullptr;
+    Statement *true_branch = nullptr;
 
-	std::optional<Statement*> false_branch = nullptr;
+    std::optional<Statement *> false_branch = nullptr;
 };
 
-struct WhileStatement : public Statement 
-{
-	WhileStatement() : Statement(NodeType::statement_while) {}
-	Expression *condition = nullptr;
-	Statement *body = nullptr;
+struct WhileStatement : public Statement {
+    WhileStatement() : Statement(NodeType::statement_while) {
+    }
+    Expression *condition = nullptr;
+    Statement *body = nullptr;
 };
 
-struct BlockStatement : public Statement
-{
-	BlockStatement() : Statement(NodeType::statement_block) {}
-	std::span<Statement*> body;
+struct BlockStatement : public Statement {
+    BlockStatement() : Statement(NodeType::statement_block) {
+    }
+    std::span<Statement *> body;
 };
 
-struct ReturnStatement : public Statement
-{
-	ReturnStatement() : Statement(NodeType::statement_return) {}
-	Expression *value = nullptr;
+struct ReturnStatement : public Statement {
+    ReturnStatement() : Statement(NodeType::statement_return) {
+    }
+    Expression *value = nullptr;
 };
 
-struct AssignmentStatement : public Statement 
-{
-	AssignmentStatement() : Statement(NodeType::statement_assingment) {}
-	Identifier identifier;
-	Expression *value = nullptr;
+struct AssignmentStatement : public Statement {
+    AssignmentStatement() : Statement(NodeType::statement_assingment) {
+    }
+    Identifier identifier;
+    Expression *value = nullptr;
 };
 
-struct ExpressionStatement : public Statement 
-{
-	ExpressionStatement() : Statement(NodeType::statement_expression) {}
-	Expression *expression = nullptr;
+struct ExpressionStatement : public Statement {
+    ExpressionStatement() : Statement(NodeType::statement_expression) {
+    }
+    Expression *expression = nullptr;
 };
 
-struct IntegerLiteral : public Expression 
-{
-	IntegerLiteral() : Expression(NodeType::expression_integer_literal) {}
-	Token value;
+struct IntegerLiteral : public Expression {
+    IntegerLiteral() : Expression(NodeType::expression_integer_literal) {
+    }
+    Token value;
 };
 
-struct IdentifierExpression : public Expression 
-{
-	IdentifierExpression() : Expression(NodeType::expression_identifier) {}
-	Identifier identifier;
+struct IdentifierExpression : public Expression {
+    IdentifierExpression() : Expression(NodeType::expression_identifier) {
+    }
+    Identifier identifier;
 };
 
-struct UnaryOperator : public Expression 
-{
-	UnaryOperator() : Expression(NodeType::expression_unary_operator) {}
-	TokenType op = TokenType::invalid;
-	Expression *right = nullptr;
+struct UnaryOperator : public Expression {
+    UnaryOperator() : Expression(NodeType::expression_unary_operator) {
+    }
+    TokenType op = TokenType::invalid;
+    Expression *right = nullptr;
 };
 
-struct BinaryOperator : public Expression 
-{
-	BinaryOperator() : Expression(NodeType::expression_binary_operator) {}
-	TokenType op = TokenType::invalid;
-	Expression *left = nullptr;
-	Expression *right = nullptr;
+struct BinaryOperator : public Expression {
+    BinaryOperator() : Expression(NodeType::expression_binary_operator) {
+    }
+    TokenType op = TokenType::invalid;
+    Expression *left = nullptr;
+    Expression *right = nullptr;
 };
 
-struct BoolLiteral : public Expression 
-{
-	BoolLiteral() : Expression(NodeType::expression_bool_literal) {}
-	bool value = false;
+struct BoolLiteral : public Expression {
+    BoolLiteral() : Expression(NodeType::expression_bool_literal) {
+    }
+    bool value = false;
 };
 
-struct CallOperator : public Expression
-{
-	CallOperator() : Expression(NodeType::expression_call_operator) {}
-	Expression *callable = nullptr;
-	std::span<Expression*> arguments;
+struct CallOperator : public Expression {
+    CallOperator() : Expression(NodeType::expression_call_operator) {
+    }
+    Expression *callable = nullptr;
+    std::span<Expression *> arguments;
 };
 
-struct Program
-{
-	std::vector<Declaration*> declarations;
-	int error_count = 0;
+struct Program {
+    std::vector<Declaration *> declarations;
+    int error_count = 0;
 };
 
-enum class Precedence
-{
-	lowest,
-	equals, // ==, !=
-	comparison, // <, <=, >, >=
-	plus, // +, -
-	multiply, // *, /, %
-	prefix, // -, !
-	call,
+enum class Precedence {
+    lowest,
+    equals,     // ==, !=
+    comparison, // <, <=, >, >=
+    plus,       // +, -
+    multiply,   // *, /, %
+    prefix,     // -, !
+    call,
 };
 
-std::string NodeToString(const Node *node, int tabs);
+std::string node_to_string(const Node *node, int tabs);
 
-class Parser 
-{
+class Parser {
 public:
-	Parser(std::string_view input, Arena *arena, FILE *log = stderr);
+    Parser(std::string_view input, Arena *arena, FILE *log = stderr);
 
-	// If error_count is not 0 then is it not safe to use AST because 
-	// tokens in indentifiers might have incorrect value in union 
-	// (well there will just be garabage instead of string)
-	Program ParseProgram();
+    // If error_count is not 0 then indentifiers might have incorrect values in union
+    Program parse_program();
+
 private:
-	Statement *ParseStatement();
+    Statement *parse_statement();
 
-	ConstDeclaration* ParseConstantDeclaration();
-	VariableDeclaration* ParseVariableDeclaration();
-	TypeDeclaration* ParseTypeDeclaration();
-	ProcedureDeclaration* ParseProcedureDeclaration();
+    ConstDeclaration *parse_constant_declaration();
+    VariableDeclaration *parse_variable_declaration();
+    TypeDeclaration *parse_type_declaration();
+    ProcedureDeclaration *parse_procedure_declaration();
 
+    ExpressionStatement *parse_expression_statement();
+    IfStatement *parse_if_statement();
+    WhileStatement *parse_while_statement();
+    AssignmentStatement *parse_assignment_statement();
+    BlockStatement *parse_block_statement();
+    ReturnStatement *parse_return_statement();
 
-	ExpressionStatement* ParseExpressionStatement();
-	IfStatement* ParseIfStatement();
-	WhileStatement* ParseWhileStatement();
-	AssignmentStatement* ParseAssignmentStatement();
-	BlockStatement* ParseBlockStatement();
-	ReturnStatement* ParseReturnStatement();
+    Expression *parse_expression(Precedence precedence = Precedence::lowest);
+    Expression *parse_unary_expression();
+    Expression *parse_binary_expression(Expression *left);
 
+    Type *parse_type();
 
-	Expression* ParseExpression(Precedence precedence = Precedence::lowest);
-	Expression* ParseUnaryExpression();
-	Expression* ParseBinaryExpression(Expression *left);
-	
-	Type* ParseType();
+    template <typename NodeType> NodeType *New() {
+        return arena_->push_item<NodeType>();
+    };
 
-	template <typename NodeType>
-	NodeType* New() 
-	{
-		return arena_->PushItem<NodeType>();
-	};
+    template <typename NodeType> NodeType *New(NodeType type) {
+        return arena_->push_item<NodeType>(type);
+    };
 
-	template <typename NodeType>
-	NodeType* New(NodeType type) 
-	{
-		return arena_->PushItem<NodeType>(type);
-	};
+    const Token &expect_token(TokenType type);
 
-	const Token& ExpectToken(TokenType type);
+    bool next_token_is(TokenType type);
 
-	bool NextTokenIs(TokenType type);
+    template <typename... Args>
+    void log_diagnostic(const Token &token, std::format_string<Args...> fmt,
+                  Args &&...args) {
+        std::print(log_, "({}, {}): ", token.start.line, token.start.column);
+        std::println(log_, fmt, std::forward<Args>(args)...);
+    }
 
-	template <typename ...Args>
-	void LogError(const Token &token, std::format_string<Args...> fmt, Args&&... args) 
-	{
-		std::print(log_, "({}, {}): ", token.start.line, token.start.column);
-		std::println(log_, fmt, std::forward<Args>(args)...);
-	}
+    Lexer lexer_;
+    Arena *arena_ = nullptr;
+    FILE *log_ = nullptr;
 
-	Lexer lexer_;
-	Arena *arena_ = nullptr;
-	FILE *log_ = nullptr;
-	
-	Token expected_token_;
-	int error_count_ = 0;
+    Token expected_token_;
+    int error_count_ = 0;
 };
 
-};
+}; // namespace Ast

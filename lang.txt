@@ -7,7 +7,6 @@ proc name(parameter1: parameter1_type) -> return_type {
 
 variable_name: variable_type = variable_value_expression;
 variable_name: variable_type;
-variable_name := variable_value_expression;
 
 // Constant declaration
 
@@ -45,6 +44,6 @@ type type_name = another_type_name;
 
 a: *int;
 a = &b;
-q := *b;
+q: int = *b;
 
 
