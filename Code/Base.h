@@ -39,6 +39,9 @@ using usize = size_t;
 using uintptr = uintptr_t;
 using intptr = intptr_t;
 
+template <typename T>
+concept TriviallyCopyable = std::is_trivially_copyable_v<T>;
+
 #define kilobytes(value) ((value) * 1024LL)
 #define megabytes(value) ((kilobytes(value)) * 1024LL)
 #define gigabytes(value) ((megabytes(value)) * 1024LL)
@@ -75,12 +78,12 @@ template <typename T> struct ExitScope {
     }
     ExitScope(const ExitScope &) = delete;
 
-  private:
+private:
     ExitScope &operator=(const ExitScope &) = delete;
 };
 
 class ExitScopeHelp {
-  public:
+public:
     template <typename T> ExitScope<T> operator+(T t) {
         return t;
     }
@@ -129,31 +132,25 @@ public:
         return data_.get() + mem_offset;
     };
 
-    template <typename Item, typename... Args>
-        requires std::is_trivially_copyable_v<Item>
+    template <TriviallyCopyable Item, typename... Args>
     Item *push_item(Args &&...args) {
         auto pointer = static_cast<Item *>(alloc(sizeof(Item), alignof(Item)));
         return new (pointer) Item{static_cast<Args &&>(args)...};
     }
 
-    template <typename Item>
-        requires std::is_trivially_copyable_v<Item>
-    std::span<Item> push_array(isize count) {
+    template <TriviallyCopyable Item> std::span<Item> push_array(isize count) {
         return std::span<Item>{push_array_pointer<Item>(count),
                                static_cast<std::span<Item>::size_type>(count)};
     }
 
-    template <typename Item>
-        requires std::is_trivially_copyable_v<Item>
+    template <TriviallyCopyable Item>
     std::span<Item> push_array(std::span<Item> items) {
         auto result = push_array<Item>(static_cast<isize>(items.size()));
         std::ranges::copy(items, result.begin());
         return result;
     }
 
-    template <typename Item>
-        requires std::is_trivially_copyable_v<Item>
-    Item *push_array_pointer(isize count) {
+    template <TriviallyCopyable Item> Item *push_array_pointer(isize count) {
         Assert(count >= 0);
         auto pointer =
             static_cast<Item *>(alloc(sizeof(Item) * count, alignof(Item)));
@@ -167,7 +164,7 @@ public:
         offset_ = 0;
     }
 
-  private:
+private:
     std::unique_ptr<u8[]> data_;
     isize size_ = 0;
     isize offset_ = 0;
@@ -187,7 +184,7 @@ inline ReadFileResult read_entire_file(const std::string &path) {
 
     auto result = ReadFileResult{.content = std::string(file_size, '\0')};
     file.read(&result.content[0], file_size);
-    if (file.good()) {
+    if (!file.bad()) {
         result.ok = true;
     }
     return result;

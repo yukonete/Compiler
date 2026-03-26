@@ -7,13 +7,13 @@
 #include "parser.h"
 
 namespace TypeCheck {
-struct TypeChecker {
-    std::vector<Scope> scopes;
-};
-
 struct Scope {
     Scope *parent = nullptr;
     std::unordered_map<std::string_view, void *> declarations;
+};
+
+struct TypeChecker {
+    std::vector<Scope> scopes;
 };
 
 void do_type_check(Ast::Program *program);

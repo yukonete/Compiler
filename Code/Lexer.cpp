@@ -62,7 +62,7 @@ void Lexer::tokenize() {
                 token.type = TokenType::equals;
                 eat_char();
             } else {
-                token.type = static_cast<TokenType>(ch);
+                token.type = TokenType::assign;
             }
             eat_char();
             break;
@@ -72,7 +72,7 @@ void Lexer::tokenize() {
                 token.type = TokenType::not_equals;
                 eat_char();
             } else {
-                token.type = static_cast<TokenType>(ch);
+                token.type = TokenType::bang;
             }
             eat_char();
             break;
@@ -83,7 +83,7 @@ void Lexer::tokenize() {
                 token.type = TokenType::plus_assign;
                 eat_char();
             } else {
-                token.type = static_cast<TokenType>(ch);
+                token.type = TokenType::plus;
             }
             eat_char();
             break;
@@ -96,7 +96,7 @@ void Lexer::tokenize() {
                 token.type = TokenType::return_arrow;
                 eat_char();
             } else {
-                token.type = static_cast<TokenType>(ch);
+                token.type = TokenType::minus;
             }
             eat_char();
             break;
@@ -106,7 +106,7 @@ void Lexer::tokenize() {
                 token.type = TokenType::multiply_assign;
                 eat_char();
             } else {
-                token.type = static_cast<TokenType>(ch);
+                token.type = TokenType::star;
             }
             eat_char();
             break;
@@ -116,7 +116,7 @@ void Lexer::tokenize() {
                 token.type = TokenType::divide_assign;
                 eat_char();
             } else {
-                token.type = static_cast<TokenType>(ch);
+                token.type = TokenType::divide;
             }
             eat_char();
             break;
@@ -126,7 +126,7 @@ void Lexer::tokenize() {
                 token.type = TokenType::modulo_assign;
                 eat_char();
             } else {
-                token.type = static_cast<TokenType>(ch);
+                token.type = TokenType::modulo;
             }
             eat_char();
             break;
@@ -137,7 +137,7 @@ void Lexer::tokenize() {
                 token.type = TokenType::less_equals;
                 eat_char();
             } else {
-                token.type = static_cast<TokenType>(ch);
+                token.type = TokenType::less;
             }
             eat_char();
             break;
@@ -147,23 +147,60 @@ void Lexer::tokenize() {
                 token.type = TokenType::greater_equals;
                 eat_char();
             } else {
-                token.type = static_cast<TokenType>(ch);
+                token.type = TokenType::greater;
             }
             eat_char();
             break;
         }
 
-        case '{':
-        case '}':
-        case '(':
-        case ')':
-        case '[':
-        case ']':
-        case ';':
-        case ':':
-        case ',':
+        case '{': {
+            token.type = TokenType::open_brace;
+            eat_char();
+            break;
+        }
+        case '}': {
+            token.type = TokenType::close_brace;
+            eat_char();
+            break;
+        }
+
+        case '(': {
+            token.type = TokenType::open_paren;
+            eat_char();
+            break;
+        }
+        case ')': {
+            token.type = TokenType::close_paren;
+            eat_char();
+            break;
+        }
+        case '[': {
+            token.type = TokenType::close_bracket;
+            eat_char();
+            break;
+        }
+        case ']': {
+            token.type = TokenType::close_bracket;
+            eat_char();
+            break;
+        }
+        case ';': {
+            token.type = TokenType::semicolon;
+            eat_char();
+            break;
+        }
+        case ':': {
+            token.type = TokenType::colon;
+            eat_char();
+            break;
+        }
+        case ',': {
+            token.type = TokenType::comma;
+            eat_char();
+            break;
+        }
         case '&': {
-            token.type = static_cast<TokenType>(ch);
+            token.type = TokenType::ampersand;
             eat_char();
             break;
         }
@@ -242,7 +279,14 @@ void Lexer::tokenize() {
             break;
         }
 
+        case -1: {
+            token.type = TokenType::eof;
+            eat_char();
+            break;
+        }
+
         default: {
+            token.type = TokenType::invalid;
             eat_char();
             break;
         }
@@ -331,13 +375,22 @@ void Lexer::skip_whitespaces() {
 }
 
 std::string_view token_type_to_string(TokenType type) {
-    auto type_int = static_cast<int>(type);
-    if (type_int > 0 && type_int < 256) {
-        return {};
-    }
-
+#pragma warning(4 : 4062)
     switch (type) {
         using enum TokenType;
+        case invalid: return "invalid";
+
+        case plus: return "+";
+        case minus: return "-";
+        case star: return "*";
+        case divide: return "/";
+        case modulo: return "%";
+        case assign: return "=";
+        case bang: return "!";
+        case equals: return "==";
+        case not_equals: return "!=";
+        case less: return "<";
+        case greater: return ">";
         case plus_assign: return "+=";
         case minus_assign: return "-=";
         case multiply_assign: return "*=";
@@ -345,9 +398,22 @@ std::string_view token_type_to_string(TokenType type) {
         case modulo_assign: return "%=";
         case return_arrow: return "->";
         case less_equals: return "<=";
+        case greater_equals: return ">=";
+
+        case open_brace: return "{";
+        case close_brace: return "}";
+        case open_paren: return "(";
+        case close_paren: return ")";
+        case open_bracket: return "[";
+        case close_bracket: return "]";
+
+        case semicolon: return ";";
+        case colon: return ":";
+        case comma: return ",";
+        case ampersand: return "&";
+
         case identifier: return "identifier";
         case integer: return "integer";
-        case invalid: return "invalid";
         case keyword_if: return "if";
         case keyword_else: return "else";
         case keyword_while: return "while";
@@ -355,6 +421,14 @@ std::string_view token_type_to_string(TokenType type) {
         case keyword_proc: return "proc";
         case keyword_const: return "const";
         case keyword_struct: return "struct";
-        default: return "unknown";
+        case keyword_true: return "true";
+        case keyword_false: return "false";
+        case keyword_cast: return "cast";
+        case keyword_transmute: return "transmute";
+        case keyword_type: return "type";
+        case eof: return "eof";
     }
+#pragma warning(default : 4062)
+
+    return "unknown";
 }

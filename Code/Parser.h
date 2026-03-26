@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <format>
+#include <functional>
 #include <optional>
 #include <print>
 #include <span>
@@ -272,7 +273,8 @@ class Parser {
 public:
     Parser(std::string_view input, Arena *arena, FILE *log = stderr);
 
-    // If error_count is not 0 then indentifiers might have incorrect values in union
+    // If error_count is not 0 then indentifiers might have incorrect values in
+    // union
     Program parse_program();
 
 private:
@@ -294,6 +296,9 @@ private:
     Expression *parse_unary_expression();
     Expression *parse_binary_expression(Expression *left);
 
+    template <typename NodeType, std::invocable<std::vector<NodeType *> *> Func>
+    std::span<NodeType *> parse_until_token(TokenType token, Func parse_func);
+
     Type *parse_type();
 
     template <typename NodeType> NodeType *New() {
@@ -310,7 +315,7 @@ private:
 
     template <typename... Args>
     void log_diagnostic(const Token &token, std::format_string<Args...> fmt,
-                  Args &&...args) {
+                        Args &&...args) {
         std::print(log_, "({}, {}): ", token.start.line, token.start.column);
         std::println(log_, fmt, std::forward<Args>(args)...);
     }

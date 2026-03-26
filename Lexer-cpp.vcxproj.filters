@@ -15,33 +15,39 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Code\Main.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Code\Lexer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Code\Parser.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Code\TypeCheck.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Code\lexer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Code\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Code\parser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Code\type_check.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Code\Lexer.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Code\Base.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Code\Parser.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Code\Types.h">
+    <ClInclude Include="Code\TypeCheck.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Code\TypeCheck.h">
+    <ClInclude Include="Code\base.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Code\lexer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Code\parser.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Code\type_check.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Code\types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -143,17 +143,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Code\Main.cpp" />
-    <ClCompile Include="Code\Lexer.cpp" />
-    <ClCompile Include="Code\Parser.cpp" />
-    <ClCompile Include="Code\TypeCheck.cpp" />
+    <ClCompile Include="Code\lexer.cpp" />
+    <ClCompile Include="Code\main.cpp" />
+    <ClCompile Include="Code\parser.cpp" />
+    <ClCompile Include="Code\type_check.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Code\Base.h" />
-    <ClInclude Include="Code\Lexer.h" />
-    <ClInclude Include="Code\Parser.h" />
-    <ClInclude Include="Code\TypeCheck.h" />
-    <ClInclude Include="Code\Types.h" />
+    <ClInclude Include="Code\base.h" />
+    <ClInclude Include="Code\lexer.h" />
+    <ClInclude Include="Code\parser.h" />
+    <ClInclude Include="Code\types.h" />
+    <ClInclude Include="Code\type_check.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="lang.txt" />

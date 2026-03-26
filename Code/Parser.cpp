@@ -28,7 +28,7 @@ Program Parser::parse_program() {
     Program result;
     while (true) {
         const auto token = lexer_.next_token();
-        if (lexer_.next_token().type == TokenType::invalid) {
+        if (lexer_.next_token().type == TokenType::eof) {
             break;
         }
 
@@ -51,10 +51,10 @@ Statement *Parser::parse_statement() {
 
         case identifier: {
             const auto next_token_type = lexer_.peek_token(1).type;
-            if (next_token_type == static_cast<TokenType>(':')) {
+            if (next_token_type == TokenType::colon) {
                 return parse_variable_declaration();
             }
-            if (next_token_type == static_cast<TokenType>('=')) {
+            if (next_token_type == TokenType::assign) {
                 return parse_assignment_statement();
             }
             break;
@@ -66,7 +66,7 @@ Statement *Parser::parse_statement() {
         case keyword_if: return parse_if_statement();
         case keyword_while: return parse_while_statement();
         case keyword_return: return parse_return_statement();
-        case TokenType{'{'}: return parse_block_statement();
+        case open_brace: return parse_block_statement();
     }
     return parse_expression_statement();
 }
@@ -75,26 +75,26 @@ ConstDeclaration *Parser::parse_constant_declaration() {
     auto declaration = New<ConstDeclaration>();
     expect_token(TokenType::keyword_const);
     declaration->identifier = expect_token(TokenType::identifier);
-    expect_token(TokenType{':'});
+    expect_token(TokenType::colon);
     declaration->variable_type = parse_type();
-    expect_token(TokenType{'='});
+    expect_token(TokenType::assign);
     declaration->value = parse_expression();
-    expect_token(TokenType{';'});
+    expect_token(TokenType::semicolon);
     return declaration;
 }
 
 VariableDeclaration *Parser::parse_variable_declaration() {
     auto statement = New<VariableDeclaration>();
     statement->identifier = expect_token(TokenType::identifier);
-    expect_token(TokenType{':'});
+    expect_token(TokenType::colon);
     statement->variable_type = parse_type();
 
-    if (next_token_is(TokenType{'='})) {
+    if (next_token_is(TokenType::assign)) {
         lexer_.eat_token();
         statement->value = parse_expression();
     }
 
-    expect_token(TokenType{';'});
+    expect_token(TokenType::semicolon);
     return statement;
 }
 
@@ -102,9 +102,9 @@ TypeDeclaration *Parser::parse_type_declaration() {
     auto declaration = New<TypeDeclaration>();
     expect_token(TokenType::keyword_type);
     declaration->identifier = expect_token(TokenType::identifier);
-    expect_token(TokenType{'='});
+    expect_token(TokenType::assign);
     declaration->declared_type = parse_type();
-    expect_token(TokenType{';'});
+    expect_token(TokenType::semicolon);
     return declaration;
 }
 
@@ -112,25 +112,21 @@ ProcedureDeclaration *Parser::parse_procedure_declaration() {
     auto proc = New<ProcedureDeclaration>();
     expect_token(TokenType::keyword_proc);
     proc->identifier = expect_token(TokenType::identifier);
-    expect_token(TokenType{'('});
-    std::vector<ProcedureParameter *> temp;
+    expect_token(TokenType::open_paren);
     bool first_parameter = true;
-    while (
-        !(next_token_is(TokenType{')'}) || next_token_is(TokenType::invalid))) {
-        auto parameter = New<ProcedureParameter>();
-        if (!first_parameter) {
-            expect_token(TokenType{','});
-        } else {
-            first_parameter = false;
-        }
-        parameter->identifier = expect_token(TokenType::identifier);
-        expect_token(TokenType{':'});
-        parameter->type = parse_type();
-        temp.push_back(parameter);
-    }
-    expect_token(TokenType{')'});
-    proc->parameters = arena_->push_array<ProcedureParameter *>(temp.size());
-    std::ranges::copy(temp, proc->parameters.begin());
+    proc->parameters = parse_until_token<ProcedureParameter>(
+        TokenType::close_paren, [this, &first_parameter](auto temp) {
+            auto parameter = New<ProcedureParameter>();
+            if (!first_parameter) {
+                expect_token(TokenType::comma);
+            } else {
+                first_parameter = false;
+            }
+            parameter->identifier = expect_token(TokenType::identifier);
+            expect_token(TokenType::colon);
+            parameter->type = parse_type();
+            temp->push_back(parameter);
+        });
     expect_token(TokenType::return_arrow);
     proc->return_type = parse_type();
     proc->body = parse_block_statement();
@@ -140,7 +136,7 @@ ProcedureDeclaration *Parser::parse_procedure_declaration() {
 ExpressionStatement *Parser::parse_expression_statement() {
     auto statement = New<ExpressionStatement>();
     statement->expression = parse_expression();
-    expect_token(TokenType{';'});
+    expect_token(TokenType::semicolon);
     return statement;
 }
 
@@ -179,7 +175,7 @@ Type *Parser::parse_type() {
             type = ident;
             break;
         }
-        case TokenType{'*'}: {
+        case TokenType::star: {
             auto pointer = New<TypePointer>();
             pointer->points_to = parse_type();
             type = pointer;
@@ -187,21 +183,16 @@ Type *Parser::parse_type() {
         }
         case keyword_struct: {
             auto st = New<TypeStruct>();
-            expect_token(TokenType{'{'});
-            std::vector<StructMember *> temp;
-            temp.reserve(16);
-            while (!(next_token_is(TokenType{'}'}) ||
-                     next_token_is(TokenType::invalid))) {
-                auto member = New<StructMember>();
-                member->identifier = expect_token(TokenType::identifier);
-                expect_token(TokenType{':'});
-                member->type = parse_type();
-                expect_token(TokenType{';'});
-                temp.push_back(member);
-            }
-            expect_token(TokenType{'}'});
-            st->members = arena_->push_array<StructMember *>(temp.size());
-            std::ranges::copy(temp, st->members.begin());
+            expect_token(TokenType::open_brace);
+            st->members = parse_until_token<StructMember>(
+                TokenType::close_brace, [this](auto temp) {
+                    auto member = New<StructMember>();
+                    member->identifier = expect_token(TokenType::identifier);
+                    expect_token(TokenType::colon);
+                    member->type = parse_type();
+                    expect_token(TokenType::semicolon);
+                    temp->push_back(member);
+                });
             type = st;
             break;
         }
@@ -215,61 +206,69 @@ Type *Parser::parse_type() {
     return type;
 }
 
+template <typename NodeType, std::invocable<std::vector<NodeType *> *> Func>
+std::span<NodeType *> Parser::parse_until_token(TokenType token,
+                                                Func parse_func) {
+    std::vector<NodeType *> temp;
+    temp.reserve(16);
+    while (!(next_token_is(token) || next_token_is(TokenType::invalid) ||
+             next_token_is(TokenType::eof))) {
+        parse_func(&temp);
+    }
+    expect_token(token);
+    return arena_->push_array(std::span(temp));
+}
+
 AssignmentStatement *Parser::parse_assignment_statement() {
     auto statement = New<AssignmentStatement>();
     statement->identifier = expect_token(TokenType::identifier);
-    expect_token(TokenType{'='});
+    expect_token(TokenType::assign);
     statement->value = parse_expression();
-    expect_token(TokenType{';'});
+    expect_token(TokenType::semicolon);
     return statement;
 }
 
 ReturnStatement *Parser::parse_return_statement() {
     auto ret = New<ReturnStatement>();
     expect_token(TokenType::keyword_return);
-    if (!next_token_is(TokenType{';'})) {
+    if (!next_token_is(TokenType::semicolon)) {
         ret->value = parse_expression();
     }
-    expect_token(TokenType{';'});
+    expect_token(TokenType::semicolon);
     return ret;
 }
 
 BlockStatement *Parser::parse_block_statement() {
     auto block = New<BlockStatement>();
-    expect_token(TokenType{'{'});
-    std::vector<Statement *> temp;
-    temp.reserve(16);
-    while (
-        !(next_token_is(TokenType{'}'}) || next_token_is(TokenType::invalid))) {
-        const auto statement = parse_statement();
-        temp.push_back(statement);
-    }
-    expect_token(TokenType{'}'});
-    block->body = arena_->push_array<Statement *>(temp.size());
-    std::ranges::copy(temp, block->body.begin());
+    expect_token(TokenType::open_brace);
+    block->body =
+        parse_until_token<Statement>(TokenType::close_brace, [this](auto temp) {
+            const auto statement = parse_statement();
+            temp->push_back(statement);
+        });
     return block;
 }
 
 // Returns precedence of a binary operator.
-static Precedence TokenTypeToPrecedense(TokenType type) {
+static Precedence token_type_to_precedense(TokenType type) {
     switch (type) {
         using enum TokenType;
         case equals:
         case not_equals: return Precedence::equals;
 
-        case TokenType{'<'}:
-        case TokenType{'>'}:
+        case less:
+        case greater:
         case less_equals:
         case greater_equals: return Precedence::comparison;
 
-        case TokenType{'+'}:
-        case TokenType{'-'}: return Precedence::plus;
+        case plus:
+        case minus: return Precedence::plus;
 
-        case TokenType{'*'}:
-        case TokenType{'/'}:
-        case TokenType{'%'}: return Precedence::multiply;
+        case star:
+        case divide:
+        case modulo: return Precedence::multiply;
 
-        case TokenType{'('}: return Precedence::call;
+        case open_paren: return Precedence::call;
 
         default: return Precedence::lowest;
     }
@@ -282,9 +281,9 @@ Expression *Parser::parse_unary_expression() {
     switch (token.type) {
         using enum TokenType;
 
-        case TokenType{'('}: {
+        case open_paren: {
             auto expr = parse_expression();
-            expect_token(TokenType{')'});
+            expect_token(close_paren);
             expression = expr;
             break;
         }
@@ -311,10 +310,10 @@ Expression *Parser::parse_unary_expression() {
             break;
         }
 
-        case TokenType{'-'}:
-        case TokenType{'!'}:
-        case TokenType{'&'}:
-        case TokenType{'*'}: {
+        case minus:
+        case bang:
+        case ampersand:
+        case star: {
             auto unary_operator = New<UnaryOperator>();
             unary_operator->op = token.type;
             unary_operator->right = parse_expression(Precedence::prefix);
@@ -337,24 +336,20 @@ Expression *Parser::parse_binary_expression(Expression *left) {
     const auto &token = lexer_.next_token();
     lexer_.eat_token();
 
-    if (token.type == TokenType{'('}) {
+    if (token.type == TokenType::open_paren) {
         auto call = New<CallOperator>();
         call->callable = left;
-        std::vector<Expression *> temp;
-        temp.reserve(8);
         bool first_argument = true;
-        while (!(next_token_is(TokenType{')'}) ||
-                 next_token_is(TokenType::invalid))) {
-            if (!first_argument) {
-                expect_token(TokenType{','});
-            } else {
-                first_argument = false;
-            }
-            auto argument = parse_expression();
-            temp.push_back(argument);
-        }
-        expect_token(TokenType{')'});
-        call->arguments = arena_->push_array(std::span(temp));
+        call->arguments = parse_until_token<Expression>(
+            TokenType::close_paren, [this, &first_argument](auto temp) {
+                if (!first_argument) {
+                    expect_token(TokenType::comma);
+                } else {
+                    first_argument = false;
+                }
+                auto argument = parse_expression();
+                temp->push_back(argument);
+            });
         return call;
     }
 
@@ -362,14 +357,14 @@ Expression *Parser::parse_binary_expression(Expression *left) {
     binary_operator->op = token.type;
     binary_operator->left = left;
     binary_operator->right =
-        parse_expression(TokenTypeToPrecedense(token.type));
+        parse_expression(token_type_to_precedense(token.type));
     return binary_operator;
 }
 
 Expression *Parser::parse_expression(Precedence precedence) {
     auto *left = parse_unary_expression();
 
-    while (precedence < TokenTypeToPrecedense(lexer_.next_token().type)) {
+    while (precedence < token_type_to_precedense(lexer_.next_token().type)) {
         left = parse_binary_expression(left);
     }
 
