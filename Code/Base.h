@@ -48,8 +48,6 @@ concept TriviallyCopyable = std::is_trivially_copyable_v<T>;
 #define gigabytes(value) ((megabytes(value)) * 1024LL)
 #define terabytes(value) ((gigabytes(value)) * 1024LL)
 
-#define Assert(condition) assert(condition)
-
 template <typename... Args>
 [[noreturn]] void panic_(std::format_string<Args...> fmt,
                          std::source_location loc, Args &&...args) {
@@ -97,7 +95,7 @@ inline bool is_power_of_two(s64 value) {
 }
 
 inline isize align_forward(isize pointer, isize alignment) {
-    Assert(is_power_of_two(alignment));
+    assert(is_power_of_two(alignment));
     isize modulo = pointer % alignment;
     if (modulo == 0) {
         return pointer;
@@ -114,7 +112,7 @@ public:
         : data_(std::make_unique<u8[]>(size)), size_{size} {};
 
     void *alloc(isize size, isize alignment = allocation_default_alignment) {
-        Assert(size >= 0 && alignment >= 0);
+        assert(size >= 0 && alignment >= 0);
 
         if (size == 0) {
             return nullptr;
@@ -159,7 +157,7 @@ public:
     }
 
     template <TriviallyCopyable Item> Item *push_array_pointer(isize count) {
-        Assert(count >= 0);
+        assert(count >= 0);
         auto pointer =
             static_cast<Item *>(alloc(sizeof(Item) * count, alignof(Item)));
         for (int i = 0; i < count; ++i) {

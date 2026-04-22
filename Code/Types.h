@@ -8,16 +8,18 @@
 #include "base.h"
 #include "parser.h"
 
-namespace Types {
+namespace TypeCheck {
 
 enum class TypeKind {
     invalid,
     placeholder,
 
+    alias,
+
     boolean,
     integer,
 
-    record,
+    kind_struct,
     pointer
 };
 
@@ -25,8 +27,15 @@ struct Type {
     TypeKind kind = TypeKind::invalid;
     Ast::Type *ast_type = nullptr;
     std::string_view type_name;
-    s64 size = 0;
-    s64 align = 0;
+    s64 size = -1;
+    s64 align = -1;
+};
+
+struct Alias : public Type {
+    Alias() {
+        kind = TypeKind::alias;
+    }
+    Type *alias_to = nullptr;
 };
 
 struct Pointer : public Type {
@@ -38,16 +47,16 @@ struct Pointer : public Type {
     Type *points_to = nullptr;
 };
 
-struct RecordMember {
+struct StructMember {
     std::string_view name;
     Type *type;
 };
 
-struct Record : public Type {
-    Record() {
-        kind = TypeKind::record;
+struct Struct : public Type {
+    Struct() {
+        kind = TypeKind::kind_struct;
     }
-    std::span<RecordMember> members;
+    std::span<StructMember> members;
 };
 
 inline std::optional<Type *> check_builtin_type(std::string_view type_name) {
@@ -62,4 +71,4 @@ inline std::optional<Type *> check_builtin_type(std::string_view type_name) {
     return {};
 }
 
-} // namespace Types
+} // namespace TypeCheck

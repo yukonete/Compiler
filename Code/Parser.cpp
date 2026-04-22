@@ -550,7 +550,7 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
         };
         case expression_call_operator: {
             auto call = reinterpret_cast<const CallOperator *>(node);
-            Assert(call->callable->type == expression_identifier);
+            assert(call->callable->type == expression_identifier);
             auto callable =
                 reinterpret_cast<const IdentifierExpression *>(call->callable);
             result = std::format("{}(", callable->identifier.identifier);

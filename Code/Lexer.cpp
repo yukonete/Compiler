@@ -294,7 +294,7 @@ void Lexer::tokenize() {
 
     token.end = current_location_;
     token.end.column -= 1;
-    Assert(token.end.column != 0);
+    assert(token.end.column != 0);
     tokens_.push_back(token);
 }
 

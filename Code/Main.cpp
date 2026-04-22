@@ -15,15 +15,24 @@ int main() {
 	
 	auto parser = Ast::Parser(input, &arena);
 	auto program = parser.parse_program();
-	for (auto statement : program.declarations) {
-		auto node_string = Ast::node_to_string(statement, 0);
-		std::println("{}", node_string);
-	}
+	// for (auto statement : program.declarations) {
+	// 	auto node_string = Ast::node_to_string(statement, 0);
+	// 	std::println("{}", node_string);
+	// }
 
-	auto type_checker = TypeCheck::TypeChecker{.arena = &arena};
+	if (program.error_count != 0) {
+		std::println("Parsing error");
+		return 1;
+	}
+	
+	auto type_checker = TypeCheck::TypeChecker(&arena);
 	if (program.error_count == 0) {
 		type_checker.do_type_check(&program);
 	}	
+
+	for (const auto &[name, type] : type_checker.global_scope.declarations) {
+		std::println("{}", TypeCheck::type_to_string(type, true));
+	}
 
 	return 0;
 }
