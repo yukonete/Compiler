@@ -50,6 +50,7 @@ enum class NodeType {
     type_identifier,
     type_pointer,
     type_struct,
+    type_array
 };
 
 struct Program;
@@ -121,6 +122,13 @@ struct TypePointer : public Type {
     TypePointer() : Type(NodeType::type_pointer) {
     }
     Type *points_to = nullptr;
+};
+
+struct TypeArray : public Type {
+    TypeArray() : Type(NodeType::type_array) {
+    }
+    Type *elem_type = nullptr;
+    s64 count = 0;
 };
 
 struct StructMember {
@@ -314,8 +322,9 @@ private:
     bool next_token_is(TokenType type);
 
     template <typename... Args>
-    void log_diagnostic(const Token &token, std::format_string<Args...> fmt,
+    void report_error(const Token &token, std::format_string<Args...> fmt,
                         Args &&...args) {
+        error_count_ += 1;
         std::print(log_, "({}, {}): ", token.start.line, token.start.column);
         std::println(log_, fmt, std::forward<Args>(args)...);
     }

@@ -175,7 +175,7 @@ void Lexer::tokenize() {
             break;
         }
         case '[': {
-            token.type = TokenType::close_bracket;
+            token.type = TokenType::open_bracket;
             eat_char();
             break;
         }

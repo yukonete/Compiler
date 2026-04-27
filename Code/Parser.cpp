@@ -34,7 +34,7 @@ Program Parser::parse_program() {
 
         auto statement = parse_statement();
         if (!is_declaration(statement)) {
-            log_diagnostic(token, "Expected declaration.");
+            report_error(token, "Expected declaration.");
             statement->type = NodeType::invalid;
         }
         result.declarations.push_back(
@@ -197,10 +197,29 @@ Type *Parser::parse_type() {
             type = st;
             break;
         }
+        case open_bracket: {
+            auto arr = New<TypeArray>();
+            auto array_size_token = expect_token(TokenType::integer);
+            // TODO: Maybe it is not the best place to check if the size of an
+            // array is valid. But now i dont really know where it should be and
+            // putting it here is the easiest
+            if (array_size_token.type == TokenType::integer &&
+                array_size_token.integer_value <= 0) {
+                report_error(array_size_token,
+                             "Size of an array must be greater than 0.");
+            } else {
+                arr->count = array_size_token.integer_value;
+            }
+            expect_token(TokenType::close_bracket);
+            arr->elem_type = parse_type();
+            type = arr;
+            break;
+        }
+
         default: {
             type = New<Type>(NodeType::invalid);
-            log_diagnostic(token, "Token \"{}\" can not be parsed as a type.",
-                           token.type);
+            report_error(token, "Token \"{}\" can not be parsed as a type.",
+                         token.type);
             break;
         }
     }
@@ -324,7 +343,7 @@ Expression *Parser::parse_unary_expression() {
 
         default: {
             expression = New<Expression>(NodeType::invalid);
-            log_diagnostic(
+            report_error(
                 token, "Token \"{}\" can not be parsed as a unary expression.",
                 token.type);
             break;
@@ -376,8 +395,7 @@ const Token &Parser::expect_token(TokenType type) {
     const auto &token = lexer_.next_token();
     lexer_.eat_token();
     if (token.type != type) {
-        log_diagnostic(token, "Expected {}, got {}.", type, token.type);
-        error_count_ += 1;
+        report_error(token, "Expected {}, got {}.", type, token.type);
     }
     return token;
 }

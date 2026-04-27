@@ -13,13 +13,15 @@ namespace TypeCheck {
 enum class TypeKind {
     invalid,
     placeholder,
+    kind_void,
 
     integer,
     boolean,
 
     alias,
     kind_struct,
-    pointer
+    pointer,
+    array
 };
 
 // TODO: Remove ast_type because it is not needed, i think (at least in a base
@@ -50,7 +52,7 @@ struct Pointer : public Type {
 
 struct StructMember {
     std::string_view name;
-    Type *type;
+    Type *type = nullptr;
 };
 
 struct Struct : public Type {
@@ -60,28 +62,40 @@ struct Struct : public Type {
     std::span<StructMember> members;
 };
 
+struct Array : public Type {
+    Array() {
+        kind = TypeKind::array;
+    }
+    Type *elem_type = nullptr;
+    s64 count = 0;
+};
+
 inline std::optional<Type *> check_builtin_type(std::string_view type_name) {
     static std::unordered_map<std::string_view, Type> builtin_types = {
+        {"void", Type{.kind = TypeKind::kind_void,
+                      .type_name = "void",
+                      .size = 0,
+                      .align = 0}},
         {"int", Type{.kind = TypeKind::integer,
                      .type_name = "int",
                      .size = 8,
                      .align = 8}},
-        {"s64", Type{.kind = TypeKind::integer,
-                     .type_name = "s64",
-                     .size = 8,
-                     .align = 8}},
-        {"s32", Type{.kind = TypeKind::integer,
-                     .type_name = "s32",
-                     .size = 4,
-                     .align = 4}},
-        {"s16", Type{.kind = TypeKind::integer,
-                     .type_name = "s16",
-                     .size = 2,
-                     .align = 2}},
-        {"byte", Type{.kind = TypeKind::integer,
-                      .type_name = "s16",
-                      .size = 1,
-                      .align = 1}},
+        // {"s64", Type{.kind = TypeKind::integer,
+        //              .type_name = "s64",
+        //              .size = 8,
+        //              .align = 8}},
+        // {"s32", Type{.kind = TypeKind::integer,
+        //              .type_name = "s32",
+        //              .size = 4,
+        //              .align = 4}},
+        // {"s16", Type{.kind = TypeKind::integer,
+        //              .type_name = "s16",
+        //              .size = 2,
+        //              .align = 2}},
+        // {"byte", Type{.kind = TypeKind::integer,
+        //               .type_name = "s16",
+        //               .size = 1,
+        //               .align = 1}},
         {"bool", Type{.kind = TypeKind::boolean,
                       .type_name = "bool",
                       .size = 1,

@@ -11,16 +11,13 @@ namespace TypeCheck {
 // Returns whether the type contains recursive types
 // TODO: Name this better
 static bool walk_type(std::vector<Type *> *met_types, Type *type) {
-    if (type->kind != TypeKind::alias && type->kind != TypeKind::kind_struct) {
-        return false;
+    if (std::find(met_types->begin(), met_types->end(), type) !=
+        met_types->end()) {
+        return true;
     }
 
     auto result = false;
     met_types->push_back(type);
-    if (std::find(met_types->begin(), met_types->end() - 1, type) !=
-        met_types->end() - 1) {
-        return true;
-    }
     if (type->kind == TypeKind::alias) {
         auto alias = reinterpret_cast<Alias *>(type);
         result = walk_type(met_types, alias->alias_to);
@@ -32,6 +29,9 @@ static bool walk_type(std::vector<Type *> *met_types, Type *type) {
                 break;
             }
         }
+    } else if (type->kind == TypeKind::array) {
+        auto array = reinterpret_cast<Array *>(type);
+        result = walk_type(met_types, array->elem_type);
     }
     if (!result) {
         met_types->pop_back();
@@ -42,33 +42,29 @@ static bool walk_type(std::vector<Type *> *met_types, Type *type) {
 // Returns whether the type contains alias
 // TODO: Name this better
 static bool walk_type_alias(Alias *alias, Type *type) {
-    if (type->kind != TypeKind::alias && type->kind != TypeKind::kind_struct &&
-        type->kind != TypeKind::pointer) {
-        return false;
-    }
-
-    auto result = false;
     if (alias == type) {
         return true;
     }
 
     if (type->kind == TypeKind::alias) {
         auto alias_type = reinterpret_cast<Alias *>(type);
-        result = walk_type_alias(alias, alias_type->alias_to);
+        return walk_type_alias(alias, alias_type->alias_to);
     } else if (type->kind == TypeKind::kind_struct) {
         auto st = reinterpret_cast<Struct *>(type);
         for (const auto &member : st->members) {
-            result = walk_type_alias(alias, member.type);
-            if (result) {
-                break;
+            if (walk_type_alias(alias, member.type)) {
+                return true;
             }
         }
     } else if (type->kind == TypeKind::pointer) {
         auto pointer = reinterpret_cast<Pointer *>(type);
-        result = walk_type_alias(alias, pointer->points_to);
+        return walk_type_alias(alias, pointer->points_to);
+    } else if (type->kind == TypeKind::array) {
+        auto array = reinterpret_cast<Array *>(type);
+        return walk_type_alias(alias, array->elem_type);
     }
 
-    return result;
+    return false;
 }
 
 // This will report recursive types
@@ -175,6 +171,14 @@ Type *TypeChecker::create_type_from_ast_type(Ast::Type *ast_type) {
             return pointer;
         }
 
+        case type_array: {
+            auto ast_array = reinterpret_cast<Ast::TypeArray *>(ast_type);
+            auto array = arena->push_item<Array>();
+            array->count = ast_array->count;
+            array->elem_type = create_type_from_ast_type(ast_array->elem_type);
+            return array;
+        }
+
         default: panic("Not implemented");
     }
 }
@@ -184,7 +188,7 @@ Type *TypeChecker::lookup_type(std::string_view type_name) {
         search != global_scope.declarations.end()) {
         return search->second;
     } else {
-        panic("Type {} is not definied.", type_name);
+        panic("Type {} is not definied", type_name);
     }
 }
 
@@ -220,13 +224,27 @@ Type *TypeChecker::resolve_type(Type *type, bool resolve_non_anonymous_types) {
                 break;
             }
 
+            case array: {
+                auto array = reinterpret_cast<Array *>(type);
+                array->elem_type = resolve_type(array->elem_type);
+            }
+
             case invalid: break;
 
-            default: panic("Not implemented.");
+            default: panic("Not implemented");
         }
     }
 
     return type;
+}
+
+static bool is_void(const Type *type) {
+    if (type->kind == TypeKind::alias) {
+        auto alias = reinterpret_cast<const Alias*>(type);
+        return is_void(type);
+    }
+
+    return type->kind == TypeKind::kind_void;
 }
 
 static void calculate_size_and_align(Type *type) {
@@ -250,9 +268,10 @@ static void calculate_size_and_align(Type *type) {
             return;
         }
 
-        case boolean: panic("Boolean has unknown size or alignment.");
-        case pointer: panic("Pointer has unknown size or alignment.");
-        case integer: panic("Integer has unknown size or alignment.");
+        case boolean:   panic("Boolean has unknown size or alignment.");
+        case pointer:   panic("Pointer has unknown size or alignment.");
+        case integer:   panic("Integer has unknown size or alignment.");
+        case kind_void: panic("Void has unknown size or alignment.");
 
         case kind_struct: {
             auto st = reinterpret_cast<Struct *>(type);
@@ -260,6 +279,9 @@ static void calculate_size_and_align(Type *type) {
             isize biggest_align = 0;
             for (const auto &member : st->members) {
                 calculate_size_and_align(member.type);
+                if (is_void(member.type)) {
+                    panic("Sruct's member of type void is not allowed");
+                }
                 if (member.type->align > biggest_align) {
                     biggest_align = member.type->align;
                 }
@@ -268,6 +290,18 @@ static void calculate_size_and_align(Type *type) {
             }
             st->align = biggest_align;
             st->size = align_forward(st_size, st->align);
+            return;
+        }
+
+        case array: {
+            auto array = reinterpret_cast<Array *>(type);
+            auto elem = array->elem_type;
+            if (is_void(elem)) {
+                panic("Array of type void is not allowed");
+            }
+            calculate_size_and_align(elem);
+            array->align = elem->align;
+            array->size = array->count * elem->size;
             return;
         }
     }
@@ -294,7 +328,7 @@ void TypeChecker::do_type_check(Ast::Program *program) {
                     global_scope.declarations[identifier] = type;
                 }
             } else {
-                panic("Declaration with identifier {} already exists.",
+                panic("Declaration with identifier {} already exists",
                       identifier);
             }
         }
@@ -309,7 +343,7 @@ void TypeChecker::do_type_check(Ast::Program *program) {
     auto recursive_structs = check_for_recursing_structs(&global_scope);
     auto recrusive_alaises = check_for_recursing_aliases(&global_scope);
     if (recursive_structs || recrusive_alaises) {
-        return;
+        panic("Recursive type");
     }
     // Calculate sizes
     for (const auto &[name, type] : global_scope.declarations) {
@@ -331,6 +365,9 @@ std::string type_to_string(const Type *type, bool declaration) {
             return std::format("kind: placeholder\n"
                                "name: {}",
                                type->type_name);
+        }
+        case kind_void: {
+            return std::format("kind: void\n");
         }
         case alias: {
             auto alias = reinterpret_cast<const Alias *>(type);
@@ -379,6 +416,16 @@ std::string type_to_string(const Type *type, bool declaration) {
                                "align: {}",
                                pointer->points_to->type_name, pointer->size,
                                pointer->align);
+        }
+        case array: {
+            auto array = reinterpret_cast<const Array *>(type);
+            return std::format("kind: array\n"
+                               "elem_type: {}\n"
+                               "count: {}\n"
+                               "size: {}\n"
+                               "align: {}",
+                               array->elem_type->type_name, array->count,
+                               array->size, array->align);
         }
     }
 
