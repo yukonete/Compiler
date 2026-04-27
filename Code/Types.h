@@ -14,15 +14,16 @@ enum class TypeKind {
     invalid,
     placeholder,
 
-    alias,
-
-    boolean,
     integer,
+    boolean,
 
+    alias,
     kind_struct,
     pointer
 };
 
+// TODO: Remove ast_type because it is not needed, i think (at least in a base
+// type)
 struct Type {
     TypeKind kind = TypeKind::invalid;
     Ast::Type *ast_type = nullptr;
@@ -64,7 +65,28 @@ inline std::optional<Type *> check_builtin_type(std::string_view type_name) {
         {"int", Type{.kind = TypeKind::integer,
                      .type_name = "int",
                      .size = 8,
-                     .align = 8}}};
+                     .align = 8}},
+        {"s64", Type{.kind = TypeKind::integer,
+                     .type_name = "s64",
+                     .size = 8,
+                     .align = 8}},
+        {"s32", Type{.kind = TypeKind::integer,
+                     .type_name = "s32",
+                     .size = 4,
+                     .align = 4}},
+        {"s16", Type{.kind = TypeKind::integer,
+                     .type_name = "s16",
+                     .size = 2,
+                     .align = 2}},
+        {"byte", Type{.kind = TypeKind::integer,
+                      .type_name = "s16",
+                      .size = 1,
+                      .align = 1}},
+        {"bool", Type{.kind = TypeKind::boolean,
+                      .type_name = "bool",
+                      .size = 1,
+                      .align = 1}},
+    };
     if (builtin_types.contains(type_name)) {
         return {&builtin_types.at(type_name)};
     }

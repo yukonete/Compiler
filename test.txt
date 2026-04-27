@@ -1,3 +1,13 @@
-type A = struct {
-    a: struct { a: A; };
+type Test = struct {
+    x: s32;
+    b1: bool;
+    b2: bool;
+    b3: bool;
+    b4: bool;
+
+};
+
+type Test2 = struct {
+    t1: Test;
+    t2: Test;
 };

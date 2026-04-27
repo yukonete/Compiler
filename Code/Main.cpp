@@ -31,7 +31,7 @@ int main() {
 	}	
 
 	for (const auto &[name, type] : type_checker.global_scope.declarations) {
-		std::println("{}", TypeCheck::type_to_string(type, true));
+		std::println("{}\n", TypeCheck::type_to_string(type, true));
 	}
 
 	return 0;

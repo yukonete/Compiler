@@ -375,7 +375,7 @@ void Lexer::skip_whitespaces() {
 }
 
 std::string_view token_type_to_string(TokenType type) {
-#pragma warning(4 : 4062)
+
     switch (type) {
         using enum TokenType;
         case invalid: return "invalid";
@@ -428,7 +428,7 @@ std::string_view token_type_to_string(TokenType type) {
         case keyword_type: return "type";
         case eof: return "eof";
     }
-#pragma warning(default : 4062)
+
 
     return "unknown";
 }

@@ -4,12 +4,13 @@
 #include "types.h"
 
 #include <stack>
+#include <utility>
 
 namespace TypeCheck {
 
 // Returns whether the type contains recursive types
 // TODO: Name this better
-bool TypeChecker::walk_type(std::vector<Type *> *met_types, Type *type) {
+static bool walk_type(std::vector<Type *> *met_types, Type *type) {
     if (type->kind != TypeKind::alias && type->kind != TypeKind::kind_struct) {
         return false;
     }
@@ -38,6 +39,38 @@ bool TypeChecker::walk_type(std::vector<Type *> *met_types, Type *type) {
     return result;
 }
 
+// Returns whether the type contains alias
+// TODO: Name this better
+static bool walk_type_alias(Alias *alias, Type *type) {
+    if (type->kind != TypeKind::alias && type->kind != TypeKind::kind_struct &&
+        type->kind != TypeKind::pointer) {
+        return false;
+    }
+
+    auto result = false;
+    if (alias == type) {
+        return true;
+    }
+
+    if (type->kind == TypeKind::alias) {
+        auto alias_type = reinterpret_cast<Alias *>(type);
+        result = walk_type_alias(alias, alias_type->alias_to);
+    } else if (type->kind == TypeKind::kind_struct) {
+        auto st = reinterpret_cast<Struct *>(type);
+        for (const auto &member : st->members) {
+            result = walk_type_alias(alias, member.type);
+            if (result) {
+                break;
+            }
+        }
+    } else if (type->kind == TypeKind::pointer) {
+        auto pointer = reinterpret_cast<Pointer *>(type);
+        result = walk_type_alias(alias, pointer->points_to);
+    }
+
+    return result;
+}
+
 // This will report recursive types
 // Example:
 // type A = struct {
@@ -55,7 +88,9 @@ bool TypeChecker::walk_type(std::vector<Type *> *met_types, Type *type) {
 // Even though here we have 3 types which contain recursive type,
 // we only report error for types B and C, because their paths in a tree have
 // the same starting and ending types
-void TypeChecker::check_for_recursing_structs(Scope *scope) {
+// Returns whether at least one type was reported
+bool TypeChecker::check_for_recursing_structs(Scope *scope) {
+    auto result = false;
     std::vector<Type *> met_types;
     for (const auto &[name, type] : scope->declarations) {
         if (type->kind != TypeKind::kind_struct) {
@@ -66,9 +101,27 @@ void TypeChecker::check_for_recursing_structs(Scope *scope) {
                 std::println("Found self reference in type {}.",
                              type->type_name);
             }
+            result = true;
             met_types.clear();
         }
     }
+    return result;
+}
+
+// Returns whether at least alias is recursing
+bool TypeChecker::check_for_recursing_aliases(Scope *scope) {
+    auto result = false;
+    for (const auto &[name, type] : scope->declarations) {
+        if (type->kind != TypeKind::alias) {
+            continue;
+        }
+        auto alias = reinterpret_cast<Alias *>(type);
+        if (walk_type_alias(alias, alias->alias_to)) {
+            std::println("Found self referencing alias {}.", type->type_name);
+            result = true;
+        }
+    }
+    return result;
 }
 
 Type *TypeChecker::create_type_from_ast_type(Ast::Type *ast_type) {
@@ -166,10 +219,58 @@ Type *TypeChecker::resolve_type(Type *type, bool resolve_non_anonymous_types) {
                 pointer->points_to = resolve_type(pointer->points_to);
                 break;
             }
+
+            case invalid: break;
+
+            default: panic("Not implemented.");
         }
     }
 
     return type;
+}
+
+static void calculate_size_and_align(Type *type) {
+    if (type->size != -1 && type->align != -1) {
+        return;
+    }
+    assert(type->size == -1);
+    assert(type->align == -1);
+
+    switch (type->kind) {
+        using enum TypeKind;
+        case invalid:
+        case placeholder:
+            panic("Tried to calculate size of invalid or placeholder type.");
+
+        case alias: {
+            auto alias = reinterpret_cast<Alias *>(type);
+            calculate_size_and_align(alias->alias_to);
+            alias->size = alias->alias_to->size;
+            alias->align = alias->alias_to->align;
+            return;
+        }
+
+        case boolean: panic("Boolean has unknown size or alignment.");
+        case pointer: panic("Pointer has unknown size or alignment.");
+        case integer: panic("Integer has unknown size or alignment.");
+
+        case kind_struct: {
+            auto st = reinterpret_cast<Struct *>(type);
+            isize st_size = 0;
+            isize biggest_align = 0;
+            for (const auto &member : st->members) {
+                calculate_size_and_align(member.type);
+                if (member.type->align > biggest_align) {
+                    biggest_align = member.type->align;
+                }
+                st_size = align_forward(st_size, member.type->align);
+                st_size += member.type->size;
+            }
+            st->align = biggest_align;
+            st->size = align_forward(st_size, st->align);
+            return;
+        }
+    }
 }
 
 void TypeChecker::do_type_check(Ast::Program *program) {
@@ -205,7 +306,16 @@ void TypeChecker::do_type_check(Ast::Program *program) {
         // And in that case the returned type should not change
         assert(type == resolved_type);
     }
-    check_for_recursing_structs(&global_scope);
+    auto recursive_structs = check_for_recursing_structs(&global_scope);
+    auto recrusive_alaises = check_for_recursing_aliases(&global_scope);
+    if (recursive_structs || recrusive_alaises) {
+        return;
+    }
+    // Calculate sizes
+    for (const auto &[name, type] : global_scope.declarations) {
+        calculate_size_and_align(type);
+    }
+
     return;
 }
 
@@ -213,52 +323,62 @@ std::string type_to_string(const Type *type, bool declaration) {
     switch (type->kind) {
         using enum TypeKind;
         case invalid: {
-            return "invalid";
+            return std::format("kind: invalid\n"
+                               "name: {}",
+                               type->type_name);
         }
         case placeholder: {
-            return std::format("placeholder({})", type->type_name);
+            return std::format("kind: placeholder\n"
+                               "name: {}",
+                               type->type_name);
         }
         case alias: {
             auto alias = reinterpret_cast<const Alias *>(type);
-            if (declaration) {
-                return std::format("type {} = {}", alias->type_name,
-                                   type_to_string(alias->alias_to));
-            } else {
-                return std::format("{}({})", alias->type_name, "");
-            }
-        }
-        case boolean: {
-            return "bool";
+            return std::format("kind: alias\n"
+                               "name: {}\n"
+                               "alias_to: {}\n"
+                               "size: {}\n"
+                               "align: {}",
+                               alias->type_name, alias->alias_to->type_name,
+                               alias->size, alias->align);
         }
         case integer: {
-            return "int";
+            return std::format("kind: integer\n"
+                               "name: {}\n"
+                               "size: {}\n"
+                               "align: {}",
+                               type->type_name, type->size, type->align);
+        }
+        case boolean: {
+            return std::format("kind: boolean\n"
+                               "name: {}\n"
+                               "size: {}\n"
+                               "align: {}",
+                               type->type_name, type->size, type->align);
         }
         case kind_struct: {
             auto st = reinterpret_cast<const Struct *>(type);
-            if (declaration) {
-                auto result =
-                    std::format("type {} = struct {{\n", st->type_name);
-                for (const auto &member : st->members) {
-                    result += std::format("{}: {};\n", member.name,
-                                          type_to_string(member.type));
-                }
-                result += "};";
-                return result;
-            } else if (st->type_name == "") {
-                auto result = std::format("struct {{\n", st->type_name);
-                for (const auto &member : st->members) {
-                    result += std::format("{}: {};\n", member.name,
-                                          type_to_string(member.type));
-                }
-                result += "}";
-                return result;
-            } else {
-                return std::string(st->type_name);
+            auto result = std::format("kind: kind_struct\n"
+                                      "name: {}\n"
+                                      "members:",
+                                      st->type_name);
+            for (const auto &member : st->members) {
+                result += std::format("\n    {}: {}", member.name,
+                                      member.type->type_name);
             }
+            result += std::format("\nsize: {}\n"
+                                  "align: {}",
+                                  st->size, st->align);
+            return result;
         }
         case pointer: {
             auto pointer = reinterpret_cast<const Pointer *>(type);
-            return std::format("*{}", type_to_string(pointer->points_to));
+            return std::format("kind: pointer\n"
+                               "points_to: {}\n"
+                               "size: {}\n"
+                               "align: {}",
+                               pointer->points_to->type_name, pointer->size,
+                               pointer->align);
         }
     }
 

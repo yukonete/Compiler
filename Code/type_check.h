@@ -25,9 +25,9 @@ private:
     Type *create_type_from_ast_type(Ast::Type *type);
     Type *lookup_type(std::string_view type_name);
     Type *resolve_type(Type *type, bool resolve_non_anonymous_types = false);
-    void check_for_recursing_structs(Scope *scope);
-    bool walk_type(std::vector<Type*> *met_types, Type *type);
-
+    bool check_for_recursing_structs(Scope *scope);
+    bool check_for_recursing_aliases(Scope *scope);
+    
     Arena *arena = nullptr;
 };
 

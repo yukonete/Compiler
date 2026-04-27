@@ -67,6 +67,7 @@ Statement *Parser::parse_statement() {
         case keyword_while: return parse_while_statement();
         case keyword_return: return parse_return_statement();
         case open_brace: return parse_block_statement();
+        default: break;
     }
     return parse_expression_statement();
 }
