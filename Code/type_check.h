@@ -1,8 +1,9 @@
 #pragma once
 
+#include <stack>
 #include <string_view>
 #include <unordered_map>
-#include <stack>
+#include <optional>
 
 #include "base.h"
 #include "parser.h"
@@ -12,23 +13,32 @@ namespace TypeCheck {
 struct Scope {
     Scope *parent = nullptr;
     std::unordered_map<std::string_view, Type *> declarations;
+
+    std::optional<Type *> lookup_type(std::string_view type_name);
 };
 
 class TypeChecker {
 public:
-    TypeChecker(Arena *arena) : arena{arena} {
+    TypeChecker(Arena *arena, FILE *log = stderr) : log_{log}, arena_{arena} {
     }
-    void do_type_check(Ast::Program *program);
+    bool do_type_check(Ast::Program *program);
     Scope global_scope;
 
 private:
-    Type *create_type_from_ast_type(Ast::Type *type);
-    Type *lookup_type(std::string_view type_name);
-    Type *resolve_type(Type *type, bool resolve_non_anonymous_types = false);
-    bool check_for_recursing_structs(Scope *scope);
-    bool check_for_recursing_aliases(Scope *scope);
-    
-    Arena *arena = nullptr;
+    Type *create_type_from_ast_type(Scope *scope, Ast::Type *type);
+    Type *resolve_type(Scope *scope, Type *type, bool resolve_non_anonymous_types = false);
+    bool add_type_declarations_to_scope(std::span<Ast::Statement *> statements, Scope *scope);
+
+    template <typename... Args>
+    void report_error(const Token &token, std::format_string<Args...> fmt,
+                        Args &&...args) {
+        error_count_ += 1;
+        log_diagnostics(log_, DiagnosticsLevel::Error, token, fmt, std::forward<Args>(args)...);
+    }
+
+    int error_count_ = 0;
+    FILE *log_ = nullptr;
+    Arena *arena_ = nullptr;
 };
 
 std::string type_to_string(const Type *type, bool declaration = false);

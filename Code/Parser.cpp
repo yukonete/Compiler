@@ -37,8 +37,7 @@ Program Parser::parse_program() {
             report_error(token, "Expected declaration.");
             statement->type = NodeType::invalid;
         }
-        result.declarations.push_back(
-            reinterpret_cast<Declaration *>(statement));
+        result.declarations.push_back((statement));
     }
     result.error_count = error_count_;
     return result;
@@ -199,17 +198,7 @@ Type *Parser::parse_type() {
         }
         case open_bracket: {
             auto arr = New<TypeArray>();
-            auto array_size_token = expect_token(TokenType::integer);
-            // TODO: Maybe it is not the best place to check if the size of an
-            // array is valid. But now i dont really know where it should be and
-            // putting it here is the easiest
-            if (array_size_token.type == TokenType::integer &&
-                array_size_token.integer_value <= 0) {
-                report_error(array_size_token,
-                             "Size of an array must be greater than 0.");
-            } else {
-                arr->count = array_size_token.integer_value;
-            }
+            arr->count = expect_token(TokenType::integer).integer_value;
             expect_token(TokenType::close_bracket);
             arr->elem_type = parse_type();
             type = arr;
@@ -405,7 +394,7 @@ bool Parser::next_token_is(TokenType type) {
 }
 
 std::string Ast::node_to_string(const Node *node, int tabs) {
-    auto Indent = [](int tabs) {
+    auto indent = [](int tabs) {
         constexpr auto tab_width = 4;
         return std::string(tab_width * tabs, ' ');
     };
@@ -449,11 +438,11 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
             auto st = reinterpret_cast<const TypeStruct *>(node);
             result = "struct {\n";
             for (auto member : st->members) {
-                result += std::format("{}{}: {};\n", Indent(tabs + 1),
+                result += std::format("{}{}: {};\n", indent(tabs + 1),
                                       member->identifier.identifier,
                                       node_to_string(member->type, tabs + 1));
             }
-            result += Indent(tabs);
+            result += indent(tabs);
             result += "}";
             break;
         }
@@ -522,10 +511,10 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
             auto block = reinterpret_cast<const BlockStatement *>(node);
             result = "{\n";
             for (auto statement : block->body) {
-                result += std::format("{}{}\n", Indent(tabs + 1),
+                result += std::format("{}{}\n", indent(tabs + 1),
                                       node_to_string(statement, tabs + 1));
             }
-            result += Indent(tabs);
+            result += indent(tabs);
             result += "}";
             break;
         }

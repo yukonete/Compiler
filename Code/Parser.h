@@ -12,6 +12,7 @@
 
 #include "base.h"
 #include "lexer.h"
+#include "log.h"
 
 namespace Ast {
 
@@ -261,7 +262,7 @@ struct CallOperator : public Expression {
 };
 
 struct Program {
-    std::vector<Declaration *> declarations;
+    std::vector<Statement *> declarations;
     int error_count = 0;
 };
 
@@ -325,8 +326,7 @@ private:
     void report_error(const Token &token, std::format_string<Args...> fmt,
                         Args &&...args) {
         error_count_ += 1;
-        std::print(log_, "({}, {}): ", token.start.line, token.start.column);
-        std::println(log_, fmt, std::forward<Args>(args)...);
+        log_diagnostics(log_, DiagnosticsLevel::Error, token, fmt, std::forward<Args>(args)...);
     }
 
     Lexer lexer_;

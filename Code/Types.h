@@ -28,6 +28,7 @@ enum class TypeKind {
 // type)
 struct Type {
     TypeKind kind = TypeKind::invalid;
+    Ast::TypeDeclaration *ast_declaration = nullptr;
     Ast::Type *ast_type = nullptr;
     std::string_view type_name;
     s64 size = -1;

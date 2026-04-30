@@ -1,3 +1,11 @@
-type Test = struct {
-    q: [3]void;
+type Vec2 = struct {
+	x: int;
+	y: int;
 };
+
+type World = struct {
+	object_positions: [100]Position;
+	w: World1;
+};
+
+type Position = Vec2;

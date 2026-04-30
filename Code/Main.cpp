@@ -26,9 +26,10 @@ int main() {
 	}
 	
 	auto type_checker = TypeCheck::TypeChecker(&arena);
-	if (program.error_count == 0) {
-		type_checker.do_type_check(&program);
-	}	
+	if (!type_checker.do_type_check(&program)) {
+		std::println("Type checking error");
+		return 1;
+	}
 
 	for (const auto &[name, type] : type_checker.global_scope.declarations) {
 		std::println("{}\n", TypeCheck::type_to_string(type, true));
