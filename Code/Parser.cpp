@@ -404,7 +404,7 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
         using enum Ast::NodeType;
 
         case declaration_procedure: {
-            auto proc = reinterpret_cast<const ProcedureDeclaration *>(node);
+            auto proc = static_cast<const ProcedureDeclaration *>(node);
             result = std::format("proc {}(", proc->identifier.identifier);
             for (int i = 0; i < proc->parameters.size(); ++i) {
                 auto parameter = proc->parameters[i];
@@ -422,20 +422,20 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
         }
 
         case declaration_type: {
-            auto decl = reinterpret_cast<const TypeDeclaration *>(node);
+            auto decl = static_cast<const TypeDeclaration *>(node);
             result = std::format("type {} = {};", decl->identifier.identifier,
                                  node_to_string(decl->declared_type, tabs));
             break;
         }
 
         case type_identifier: {
-            auto type_ident = reinterpret_cast<const TypeIdentifier *>(node);
+            auto type_ident = static_cast<const TypeIdentifier *>(node);
             result = type_ident->identifier.identifier;
             break;
         }
 
         case type_struct: {
-            auto st = reinterpret_cast<const TypeStruct *>(node);
+            auto st = static_cast<const TypeStruct *>(node);
             result = "struct {\n";
             for (auto member : st->members) {
                 result += std::format("{}{}: {};\n", indent(tabs + 1),
@@ -448,14 +448,14 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
         }
 
         case type_pointer: {
-            auto type_pointer = reinterpret_cast<const TypePointer *>(node);
+            auto type_pointer = static_cast<const TypePointer *>(node);
             result = std::format("*{}",
                                  node_to_string(type_pointer->points_to, tabs));
             break;
         }
 
         case declaration_const: {
-            auto decl = reinterpret_cast<const ConstDeclaration *>(node);
+            auto decl = static_cast<const ConstDeclaration *>(node);
             result =
                 std::format("const {}: {} = {};", decl->identifier.identifier,
                             node_to_string(decl->variable_type, tabs),
@@ -464,7 +464,7 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
         }
 
         case declaration_variable: {
-            auto decl = reinterpret_cast<const VariableDeclaration *>(node);
+            auto decl = static_cast<const VariableDeclaration *>(node);
             result = std::format("{}: {}", decl->identifier.identifier,
                                  node_to_string(decl->variable_type, tabs));
             if (decl->value) {
@@ -475,13 +475,13 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
             break;
         }
         case statement_return: {
-            auto ret = reinterpret_cast<const ReturnStatement *>(node);
+            auto ret = static_cast<const ReturnStatement *>(node);
             result =
                 std::format("return {};", node_to_string(ret->value, tabs));
             break;
         }
         case statement_if: {
-            auto if_statement = reinterpret_cast<const IfStatement *>(node);
+            auto if_statement = static_cast<const IfStatement *>(node);
             result = std::format(
                 "if {} {}", node_to_string(if_statement->condition, tabs),
                 node_to_string(if_statement->true_branch, tabs));
@@ -494,7 +494,7 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
         }
         case statement_while: {
             auto while_statement =
-                reinterpret_cast<const WhileStatement *>(node);
+                static_cast<const WhileStatement *>(node);
             result = std::format(
                 "while {} {}", node_to_string(while_statement->condition, tabs),
                 node_to_string(while_statement->body, tabs));
@@ -502,13 +502,13 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
         }
         case statement_assingment: {
             auto assingment =
-                reinterpret_cast<const AssignmentStatement *>(node);
+                static_cast<const AssignmentStatement *>(node);
             result = std::format("{} = {};", assingment->identifier.identifier,
                                  node_to_string(assingment->value, tabs));
             break;
         }
         case statement_block: {
-            auto block = reinterpret_cast<const BlockStatement *>(node);
+            auto block = static_cast<const BlockStatement *>(node);
             result = "{\n";
             for (auto statement : block->body) {
                 result += std::format("{}{}\n", indent(tabs + 1),
@@ -520,36 +520,36 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
         }
         case statement_expression: {
             auto statement =
-                reinterpret_cast<const ExpressionStatement *>(node);
+                static_cast<const ExpressionStatement *>(node);
             result =
                 std::format("{};", node_to_string(statement->expression, tabs));
             break;
         }
 
         case expression_integer_literal: {
-            auto integer = reinterpret_cast<const IntegerLiteral *>(node);
+            auto integer = static_cast<const IntegerLiteral *>(node);
             result = std::format("{}", integer->value.integer_value);
             break;
         }
         case expression_bool_literal: {
-            auto boolean = reinterpret_cast<const BoolLiteral *>(node);
+            auto boolean = static_cast<const BoolLiteral *>(node);
             result = std::format("{}", boolean->value);
             break;
         };
         case expression_identifier: {
-            auto ident = reinterpret_cast<const IdentifierExpression *>(node);
+            auto ident = static_cast<const IdentifierExpression *>(node);
             result = ident->identifier.identifier;
             break;
         };
         case expression_unary_operator: {
-            auto unary_operator = reinterpret_cast<const UnaryOperator *>(node);
+            auto unary_operator = static_cast<const UnaryOperator *>(node);
             result = std::format("({}{})", unary_operator->op,
                                  node_to_string(unary_operator->right, tabs));
             break;
         };
         case expression_binary_operator: {
             auto binary_operator =
-                reinterpret_cast<const BinaryOperator *>(node);
+                static_cast<const BinaryOperator *>(node);
             result = std::format("({} {} {})",
                                  node_to_string(binary_operator->left, tabs),
                                  binary_operator->op,
@@ -557,10 +557,10 @@ std::string Ast::node_to_string(const Node *node, int tabs) {
             break;
         };
         case expression_call_operator: {
-            auto call = reinterpret_cast<const CallOperator *>(node);
+            auto call = static_cast<const CallOperator *>(node);
             assert(call->callable->type == expression_identifier);
             auto callable =
-                reinterpret_cast<const IdentifierExpression *>(call->callable);
+                static_cast<const IdentifierExpression *>(call->callable);
             result = std::format("{}(", callable->identifier.identifier);
             for (int i = 0; i < call->arguments.size(); ++i) {
                 auto arg = call->arguments[i];

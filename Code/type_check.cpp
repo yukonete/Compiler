@@ -30,7 +30,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
         using enum Ast::NodeType;
 
         case type_struct: {
-            auto ast_struct = reinterpret_cast<Ast::TypeStruct *>(ast_type);
+            auto ast_struct = static_cast<Ast::TypeStruct *>(ast_type);
             auto st = arena_->push_item<Struct>();
             st->ast_type = ast_type;
             auto members_count = ast_struct->members.size();
@@ -47,7 +47,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
 
         case type_identifier: {
             auto ast_type_identifier =
-                reinterpret_cast<Ast::TypeIdentifier *>(ast_type);
+                static_cast<Ast::TypeIdentifier *>(ast_type);
             auto identifier = ast_type_identifier->identifier.identifier;
 
             auto bultin_type = check_builtin_type(identifier);
@@ -60,15 +60,17 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
                 return lookup_result.value();
             }
 
+            auto type = Type{};
+            type.kind = TypeKind::placeholder;
+            type.ast_type = ast_type;
+            type.type_name = identifier;
             auto placeholder =
-                arena_->push_item<Type>(Type{.kind = TypeKind::placeholder,
-                                             .ast_type = ast_type,
-                                             .type_name = identifier});
+                arena_->push_item<Type>(type);
             return placeholder;
         }
 
         case type_pointer: {
-            auto ast_pointer = reinterpret_cast<Ast::TypePointer *>(ast_type);
+            auto ast_pointer = static_cast<Ast::TypePointer *>(ast_type);
             auto pointer = arena_->push_item<Pointer>();
             pointer->ast_type = ast_type;
             pointer->points_to =
@@ -77,7 +79,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
         }
 
         case type_array: {
-            auto ast_array = reinterpret_cast<Ast::TypeArray *>(ast_type);
+            auto ast_array = static_cast<Ast::TypeArray *>(ast_type);
             auto array = arena_->push_item<Array>();
             array->count = ast_array->count;
             array->elem_type = create_type_from_ast_type(scope, ast_array->elem_type);
@@ -100,20 +102,20 @@ Type *TypeChecker::resolve_type(Scope *scope, Type *type, bool resolve_non_anony
                 if (lookup_result) {
                     type = lookup_result.value(); 
                 } else {
-                    auto ast_identifier = reinterpret_cast<Ast::TypeIdentifier*>(type->ast_type);
+                    auto ast_identifier = static_cast<Ast::TypeIdentifier*>(type->ast_type);
                     report_error(ast_identifier->identifier, "Type {} is not defined.", type->type_name);
                 }
                 break;
             }
 
             case alias: {
-                auto alias = reinterpret_cast<Alias *>(type);
+                auto alias = static_cast<Alias *>(type);
                 alias->alias_to = resolve_type(scope, alias->alias_to);
                 break;
             }
 
             case kind_struct: {
-                auto st = reinterpret_cast<Struct *>(type);
+                auto st = static_cast<Struct *>(type);
                 for (auto &member : st->members) {
                     member.type = resolve_type(scope, member.type);
                 }
@@ -121,13 +123,13 @@ Type *TypeChecker::resolve_type(Scope *scope, Type *type, bool resolve_non_anony
             }
 
             case pointer: {
-                auto pointer = reinterpret_cast<Pointer *>(type);
+                auto pointer = static_cast<Pointer *>(type);
                 pointer->points_to = resolve_type(scope, pointer->points_to);
                 break;
             }
 
             case array: {
-                auto array = reinterpret_cast<Array *>(type);
+                auto array = static_cast<Array *>(type);
                 array->elem_type = resolve_type(scope, array->elem_type);
             }
 
@@ -142,7 +144,7 @@ Type *TypeChecker::resolve_type(Scope *scope, Type *type, bool resolve_non_anony
 
 static bool is_void(const Type *type) {
     if (type->kind == TypeKind::alias) {
-        auto alias = reinterpret_cast<const Alias *>(type);
+        auto alias = static_cast<const Alias *>(type);
         return is_void(alias->alias_to);
     }
 
@@ -158,10 +160,10 @@ static bool check_for_recursive_structs_recurse(std::vector<Type *> *met_types, 
     auto result = false;
     met_types->push_back(type);
     if (type->kind == TypeKind::alias) {
-        auto alias = reinterpret_cast<Alias *>(type);
+        auto alias = static_cast<Alias *>(type);
         result = check_for_recursive_structs_recurse(met_types, alias->alias_to);
     } else if (type->kind == TypeKind::kind_struct) {
-        auto st = reinterpret_cast<Struct *>(type);
+        auto st = static_cast<Struct *>(type);
         for (const auto &member : st->members) {
             result = check_for_recursive_structs_recurse(met_types, member.type);
             if (result) {
@@ -169,7 +171,7 @@ static bool check_for_recursive_structs_recurse(std::vector<Type *> *met_types, 
             }
         }
     } else if (type->kind == TypeKind::array) {
-        auto array = reinterpret_cast<Array *>(type);
+        auto array = static_cast<Array *>(type);
         result = check_for_recursive_structs_recurse(met_types, array->elem_type);
     }
     if (!result) {
@@ -185,20 +187,20 @@ static bool type_is_or_contains_alias(Alias *alias, Type *type) {
     }
 
     if (type->kind == TypeKind::alias) {
-        auto alias_type = reinterpret_cast<Alias *>(type);
+        auto alias_type = static_cast<Alias *>(type);
         return type_is_or_contains_alias(alias, alias_type->alias_to);
     } else if (type->kind == TypeKind::kind_struct) {
-        auto st = reinterpret_cast<Struct *>(type);
+        auto st = static_cast<Struct *>(type);
         for (const auto &member : st->members) {
             if (type_is_or_contains_alias(alias, member.type)) {
                 return true;
             }
         }
     } else if (type->kind == TypeKind::pointer) {
-        auto pointer = reinterpret_cast<Pointer *>(type);
+        auto pointer = static_cast<Pointer *>(type);
         return type_is_or_contains_alias(alias, pointer->points_to);
     } else if (type->kind == TypeKind::array) {
-        auto array = reinterpret_cast<Array *>(type);
+        auto array = static_cast<Array *>(type);
         return type_is_or_contains_alias(alias, array->elem_type);
     }
 
@@ -223,7 +225,7 @@ static void calculate_size_and_alignment(Type *type) {
         case kind_void: panic("Void has unknown size or alignment");
 
         case alias: {
-            auto alias = reinterpret_cast<Alias *>(type);
+            auto alias = static_cast<Alias *>(type);
             calculate_size_and_alignment(alias->alias_to);
             alias->size = alias->alias_to->size;
             alias->align = alias->alias_to->align;
@@ -231,7 +233,7 @@ static void calculate_size_and_alignment(Type *type) {
         }
 
         case kind_struct: {
-            auto st = reinterpret_cast<Struct *>(type);
+            auto st = static_cast<Struct *>(type);
             isize st_size = 0;
             isize biggest_align = 0;
             for (const auto &member : st->members) {
@@ -251,7 +253,7 @@ static void calculate_size_and_alignment(Type *type) {
         }
 
         case array: {
-            auto array = reinterpret_cast<Array *>(type);
+            auto array = static_cast<Array *>(type);
             auto elem = array->elem_type;
             if (is_void(elem)) {
                 panic("Array of type void is not allowed");
@@ -295,7 +297,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
             if (type->kind != TypeKind::alias) {
                 continue;
             }
-            auto alias = reinterpret_cast<Alias *>(type);
+            auto alias = static_cast<Alias *>(type);
             if (type_is_or_contains_alias(alias, alias->alias_to)) {
                 report_error(type->ast_declaration->identifier,
                              "Found self referencing alias {}.",
@@ -309,7 +311,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
     for (auto statement : statements) {
         if (statement->type == Ast::NodeType::declaration_type) {
             auto type_decl =
-                reinterpret_cast<Ast::TypeDeclaration *>(statement);
+                static_cast<Ast::TypeDeclaration *>(statement);
             auto type_name = type_decl->identifier.identifier;
             if (scope->lookup_type(type_name)) {
                 report_error(type_decl->identifier,
@@ -352,7 +354,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
         calculate_size_and_alignment(type);
     }
 
-    return error_count_ != 0;
+    return error_count_ == 0;
 }
 
 bool TypeChecker::do_type_check(Ast::Program *program) {
@@ -376,7 +378,7 @@ std::string type_to_string(const Type *type, bool declaration) {
             return std::format("kind: void\n");
         }
         case alias: {
-            auto alias = reinterpret_cast<const Alias *>(type);
+            auto alias = static_cast<const Alias *>(type);
             return std::format("kind: alias\n"
                                "name: {}\n"
                                "alias_to: {}\n"
@@ -400,7 +402,7 @@ std::string type_to_string(const Type *type, bool declaration) {
                                type->type_name, type->size, type->align);
         }
         case kind_struct: {
-            auto st = reinterpret_cast<const Struct *>(type);
+            auto st = static_cast<const Struct *>(type);
             auto result = std::format("kind: kind_struct\n"
                                       "name: {}\n"
                                       "members:",
@@ -415,7 +417,7 @@ std::string type_to_string(const Type *type, bool declaration) {
             return result;
         }
         case pointer: {
-            auto pointer = reinterpret_cast<const Pointer *>(type);
+            auto pointer = static_cast<const Pointer *>(type);
             return std::format("kind: pointer\n"
                                "points_to: {}\n"
                                "size: {}\n"
@@ -424,7 +426,7 @@ std::string type_to_string(const Type *type, bool declaration) {
                                pointer->align);
         }
         case array: {
-            auto array = reinterpret_cast<const Array *>(type);
+            auto array = static_cast<const Array *>(type);
             return std::format("kind: array\n"
                                "elem_type: {}\n"
                                "count: {}\n"

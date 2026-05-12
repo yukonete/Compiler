@@ -43,6 +43,10 @@ using intptr = intptr_t;
 template <typename T>
 concept TriviallyCopyable = std::is_trivially_copyable_v<T>;
 
+template <typename T>
+concept TriviallyDestructible = std::is_trivially_destructible_v<T>;
+
+
 #define kilobytes(value) ((value) * 1024LL)
 #define megabytes(value) ((kilobytes(value)) * 1024LL)
 #define gigabytes(value) ((megabytes(value)) * 1024LL)
@@ -131,7 +135,7 @@ public:
         return data_.get() + mem_offset;
     };
 
-    template <TriviallyCopyable Item, typename... Args>
+    template <TriviallyDestructible Item, typename... Args>
     Item *push_item(Args &&...args) {
         auto pointer = static_cast<Item *>(alloc(sizeof(Item), alignof(Item)));
         return new (pointer) Item{static_cast<Args &&>(args)...};
@@ -144,19 +148,19 @@ public:
     //     return pointer;
     // }
 
-    template <TriviallyCopyable Item> std::span<Item> push_array(isize count) {
+    template <TriviallyDestructible Item> std::span<Item> push_array(isize count) {
         return std::span<Item>{push_array_pointer<Item>(count),
                                static_cast<std::span<Item>::size_type>(count)};
     }
 
-    template <TriviallyCopyable Item>
+    template <TriviallyDestructible Item>
     std::span<Item> push_array(std::span<Item> items) {
         auto result = push_array<Item>(static_cast<isize>(items.size()));
         std::ranges::copy(items, result.begin());
         return result;
     }
 
-    template <TriviallyCopyable Item> Item *push_array_pointer(isize count) {
+    template <TriviallyDestructible Item> Item *push_array_pointer(isize count) {
         assert(count >= 0);
         auto pointer =
             static_cast<Item *>(alloc(sizeof(Item) * count, alignof(Item)));

@@ -91,6 +91,10 @@ struct Node {
     NodeType type;
     Node(NodeType type_) : type{type_} {
     }
+
+#ifdef _DEBUG
+    virtual void exists_only_to_display_actuall_types_in_the_debuger() {}
+#endif
 };
 
 struct Statement : public Node {

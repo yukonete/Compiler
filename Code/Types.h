@@ -33,17 +33,25 @@ struct Type {
     std::string_view type_name;
     s64 size = -1;
     s64 align = -1;
+
+    Type(){}
+    Type(TypeKind kind, std::string_view type_name, s64 size, s64 align) :
+        kind{kind}, type_name{type_name}, size{size}, align{align} {}
+
+#ifdef _DEBUG
+    virtual void exists_only_to_display_actuall_types_in_the_debuger() {}
+#endif
 };
 
 struct Alias : public Type {
-    Alias() {
+    Alias() : Type() {
         kind = TypeKind::alias;
     }
     Type *alias_to = nullptr;
 };
 
 struct Pointer : public Type {
-    Pointer() {
+    Pointer() : Type(){
         kind = TypeKind::pointer;
         size = 8;
         align = 8;
@@ -57,14 +65,14 @@ struct StructMember {
 };
 
 struct Struct : public Type {
-    Struct() {
+    Struct() : Type(){
         kind = TypeKind::kind_struct;
     }
     std::span<StructMember> members;
 };
 
 struct Array : public Type {
-    Array() {
+    Array() : Type(){
         kind = TypeKind::array;
     }
     Type *elem_type = nullptr;
@@ -73,14 +81,14 @@ struct Array : public Type {
 
 inline std::optional<Type *> check_builtin_type(std::string_view type_name) {
     static std::unordered_map<std::string_view, Type> builtin_types = {
-        {"void", Type{.kind = TypeKind::kind_void,
-                      .type_name = "void",
-                      .size = 0,
-                      .align = 0}},
-        {"int", Type{.kind = TypeKind::integer,
-                     .type_name = "int",
-                     .size = 8,
-                     .align = 8}},
+        {"void", Type{TypeKind::kind_void,
+                      "void",
+                      0,
+                      0}},
+        {"int", Type{TypeKind::integer,
+                     "int",
+                     8,
+                     8}},
         // {"s64", Type{.kind = TypeKind::integer,
         //              .type_name = "s64",
         //              .size = 8,
@@ -97,10 +105,10 @@ inline std::optional<Type *> check_builtin_type(std::string_view type_name) {
         //               .type_name = "s16",
         //               .size = 1,
         //               .align = 1}},
-        {"bool", Type{.kind = TypeKind::boolean,
-                      .type_name = "bool",
-                      .size = 1,
-                      .align = 1}},
+        {"bool", Type{TypeKind::boolean,
+                      "bool",
+                      1,
+                      1}},
     };
     if (builtin_types.contains(type_name)) {
         return {&builtin_types.at(type_name)};
