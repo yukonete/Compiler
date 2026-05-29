@@ -4,6 +4,8 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+#include <string>
+#include <deque>
 
 #include "base.h"
 
@@ -12,6 +14,8 @@ enum class TokenType {
 
     identifier,
     integer,
+    string,
+    float_literal,
 
     dot,
 
@@ -54,6 +58,8 @@ enum class TokenType {
     keyword_type,
     keyword_const,
     keyword_struct,
+    keyword_break,
+    keyword_continue,
 
     open_brace,
     close_brace,
@@ -104,6 +110,8 @@ public:
             {"const", TokenType::keyword_const},
             {"struct", TokenType::keyword_struct},
             {"var", TokenType::keyword_var},
+            {"break", TokenType::keyword_break},
+            {"continue", TokenType::keyword_continue},
     };
 
     Lexer(std::string_view input);
@@ -120,12 +128,24 @@ public:
     void uneat_token();
 
 private:
+    struct ParseStringResult {
+        std::string_view str;
+        bool ok = false;
+    };
+
+    struct ParseNumberResult {
+        std::string_view value;
+        TokenType type; // integer or float
+        bool ok = false;
+    };
+
     void tokenize();
     int peek_next_char() const;
     int peek_char(int peek) const;
     void eat_char();
-    std::string_view parse_integer();
+    ParseNumberResult parse_number();
     std::string_view parse_identifier();
+    ParseStringResult parse_string();
     void skip_whitespaces_and_comments();
     bool is_new_line(int ch);
 
@@ -136,6 +156,8 @@ private:
     s64 tokens_cursor_ = 0;
 
     FileLocation current_location_ = {1, 1};
+
+    std::deque<std::string> strings;
 };
 
 template <> struct std::formatter<TokenType> {

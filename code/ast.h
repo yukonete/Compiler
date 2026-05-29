@@ -21,6 +21,8 @@ struct BlockStatement;
 struct ReturnStatement;
 struct ExpressionStatement;
 struct DeclarationStatement;
+struct ContinueStatement;
+struct BreakStatement;
 
 struct Declaration;
 struct VariableDeclaration;
@@ -43,6 +45,8 @@ struct BoolLiteralExpression;
 struct IdentifierExpression;
 struct CallOperatorExpression;
 struct ArraySubscriptExpression;
+struct FloatLiteralExpression;
+struct StringLiteralExpression;
 
 struct Identifier {
     Token token;
@@ -104,24 +108,29 @@ struct AstVariantBase {
 };
 
 using StatementVariant =
-    std::variant<ExpressionStatement *, IfStatement *, WhileStatement *, AssignmentStatement *,
-                    BlockStatement *, ReturnStatement *,
-                    DeclarationStatement *>;
+    std::variant<ExpressionStatement *, IfStatement *, WhileStatement *,
+                 AssignmentStatement *, BlockStatement *, ReturnStatement *,
+                 DeclarationStatement *, ContinueStatement *, BreakStatement *>;
 
 struct Statement : AstVariantBase<Statement, StatementVariant> {
     StatementVariant variant;
 };
 
-using DeclarationVariant = std::variant<VariableDeclaration *, ProcedureDeclaration *,
-                                 ConstDeclaration *, TypeDeclaration *>;
+using DeclarationVariant =
+    std::variant<VariableDeclaration *, ProcedureDeclaration *,
+                 ConstDeclaration *, TypeDeclaration *>;
+
 struct Declaration : AstVariantBase<Declaration, DeclarationVariant> {             
     DeclarationVariant variant;
     Identifier *identifier = nullptr;
 };
 
-using ExpressionVariant = std::variant<IntegerLiteralExpression *, UnaryOperatorExpression *,
+using ExpressionVariant =
+    std::variant<IntegerLiteralExpression *, UnaryOperatorExpression *,
                  BinaryOperatorExpression *, BoolLiteralExpression *,
-                 IdentifierExpression *, CallOperatorExpression *, ArraySubscriptExpression *>;
+                 IdentifierExpression *, CallOperatorExpression *,
+                 ArraySubscriptExpression *, StringLiteralExpression *,
+                 FloatLiteralExpression *>;
 
 struct Expression : AstVariantBase<Expression, ExpressionVariant> {
     ExpressionVariant variant;
@@ -204,6 +213,22 @@ struct DeclarationStatement : public Statement {
     }
 
     Declaration *declaration = nullptr;
+};
+
+struct BreakStatement : public Statement {
+    BreakStatement(Token const &token) : token{token} {
+        variant = this;
+    }
+
+    Token token;
+};
+
+struct ContinueStatement : public Statement {
+    ContinueStatement(Token const &token) : token{token} {
+        variant = this;
+    }
+
+    Token token;
 };
 
 struct VariableDeclaration : public Declaration {
@@ -298,6 +323,8 @@ struct TypeStruct : public Type {
     }
 
     Token struct_token;
+    Token open_brace;
+    Token close_brace;
     std::span<StructMember *> members;
     std::span<Declaration *> declarations;
 };
@@ -367,6 +394,23 @@ struct ArraySubscriptExpression : public Expression {
     Token close_bracket;
     Expression *array = nullptr;
     Expression *index = nullptr;
+};
+
+struct StringLiteralExpression : public Expression {
+    StringLiteralExpression(Token const &string) : string{string} {
+        variant = this;
+    }
+
+    Token string;
+};
+
+struct FloatLiteralExpression : public Expression {
+    FloatLiteralExpression(Token const &literal) : literal{literal} {
+        variant = this;
+    }
+
+    Token literal;
+    f64 value = 0.0;
 };
 
 using Node = std::variant<Statement*, Type*, Expression*, Declaration*>;

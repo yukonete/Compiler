@@ -59,10 +59,27 @@ Statement *Parser::parse_statement() {
         using enum TokenType;
 
         case keyword_var:
-        case keyword_fn: 
+        case keyword_fn:
         case keyword_const:
-        case keyword_type:
-            return parse_declaration_statement();
+        case keyword_type: {
+            auto declaration_statement = New<DeclarationStatement>();
+            declaration_statement->declaration = parse_declaration();
+            return declaration_statement;
+        }
+
+        case keyword_break: {
+            auto break_statement =
+                New<BreakStatement>(expect_token(TokenType::keyword_break));
+            expect_token(TokenType::semicolon);
+            return break_statement;
+        }
+
+        case keyword_continue: {
+            auto continue_statement =
+                New<ContinueStatement>(expect_token(TokenType::keyword_continue));
+            expect_token(TokenType::semicolon);
+            return continue_statement;    
+        }
 
         case keyword_if: return parse_if_statement();
         case keyword_while: return parse_while_statement();
@@ -78,8 +95,7 @@ Statement *Parser::parse_statement() {
         next_token_is(TokenType::divide_assign) ||
         next_token_is(TokenType::multiply_assign) ||
         next_token_is(TokenType::modulo_assign)) {
-        auto assignment =
-            New<AssignmentStatement>(lexer_.next_token());
+        auto assignment = New<AssignmentStatement>(lexer_.next_token());
         lexer_.eat_token();
         assignment->assignee = expression;
         assignment->value = parse_expression();
@@ -123,12 +139,6 @@ Declaration *Parser::parse_declaration() {
     }
 
     return declaration;
-}
-
-DeclarationStatement *Parser::parse_declaration_statement() {
-    auto declaration_statement = New<DeclarationStatement>();
-    declaration_statement->declaration = parse_declaration();
-    return declaration_statement;
 }
 
 ConstDeclaration *Parser::parse_constant_declaration() {
@@ -250,12 +260,12 @@ Type *Parser::parse_type() {
 
         case keyword_struct: {
             auto type_struct = New<TypeStruct>(token);
-            expect_token(TokenType::open_brace);
-            
-            auto members = std::vector<StructMember*>();
-            auto declarations = std::vector<Declaration*>();
-            while (!(next_token_is(TokenType::close_brace) 
-                || next_token_is(TokenType::eof))) {
+            type_struct->open_brace = expect_token(TokenType::open_brace);
+
+            auto members = std::vector<StructMember *>();
+            auto declarations = std::vector<Declaration *>();
+            while (!(next_token_is(TokenType::close_brace) ||
+                     next_token_is(TokenType::eof))) {
                 if (next_token_is(TokenType::identifier)) {
                     auto member = New<StructMember>();
                     member->identifier = parse_identifier();
@@ -274,7 +284,7 @@ Type *Parser::parse_type() {
                         "Variable declarations are not allowed in a struct.");
                 }
             }
-            expect_token(TokenType::close_brace);
+            type_struct->close_brace = expect_token(TokenType::close_brace);
             
             type_struct->members = arena_->push_array(std::span(members));
             type_struct->declarations = arena_->push_array(std::span(declarations));
@@ -381,6 +391,15 @@ Expression *Parser::parse_unary_expression() {
             break;
         }
 
+        case float_literal: {
+            auto float_literal = New<FloatLiteralExpression>(token);
+            // TODO: Use my own parse float implementaion
+            // For now, this will temporary allocate new string
+            float_literal->value = std::stod(std::string{token.value});
+            expression = float_literal;
+            break;
+        }
+
         case keyword_true:
         case keyword_false: {
             auto bool_literal = New<BoolLiteralExpression>(token);
@@ -396,6 +415,12 @@ Expression *Parser::parse_unary_expression() {
             auto unary_operator = New<UnaryOperatorExpression>(token);
             unary_operator->right = parse_expression(Precedence::prefix);
             expression = unary_operator;
+            break;
+        }
+
+        case string: {
+            auto string_literal = New<StringLiteralExpression>(token);
+            expression = string_literal;
             break;
         }
 
@@ -540,11 +565,11 @@ std::string type_to_string(const Type *type, int tabs) {
 std::string statement_to_string(Statement const *type, int tabs) {
     auto result = std::string{};
     std::visit(Overloaded{
-    [&](ReturnStatement const * return_statement) {
+    [&](ReturnStatement const *return_statement) {
         result = std::format("{} {};", return_statement->return_token.type,
             expression_to_string(return_statement->value, tabs));
     },
-    [&](IfStatement const * if_statement) {
+    [&](IfStatement const *if_statement) {
         result = std::format("{} {} {}", if_statement->if_token.type,
             expression_to_string(if_statement->condition, tabs),
             statement_to_string(if_statement->true_branch_body, tabs));
@@ -554,18 +579,18 @@ std::string statement_to_string(Statement const *type, int tabs) {
                 statement_to_string(if_statement->false_branch.value().branch_body, tabs));
         }
     },
-    [&](WhileStatement const * while_statement) {
+    [&](WhileStatement const *while_statement) {
         result = std::format("{} {} {}", while_statement->while_token.type,
             expression_to_string(while_statement->condition, tabs),
             statement_to_string(while_statement->body, tabs));
     },
-    [&](AssignmentStatement const * assignment_statement) {
+    [&](AssignmentStatement const *assignment_statement) {
         result = std::format("{} {} {};", 
             expression_to_string(assignment_statement->assignee, tabs),
             assignment_statement->assign.type,
             expression_to_string(assignment_statement->value, tabs));
     },
-    [&](BlockStatement const * block_statement) {
+    [&](BlockStatement const *block_statement) {
         result = "{\n";
         for (auto statement : block_statement->body) {
             result += std::format("{}{}\n", indent(tabs + 1),
@@ -574,13 +599,19 @@ std::string statement_to_string(Statement const *type, int tabs) {
         result += indent(tabs);
         result += "}";
     },
-    [&](ExpressionStatement const * expression_statement) {
+    [&](ExpressionStatement const *expression_statement) {
         result = std::format("{};", 
             expression_to_string(expression_statement->expression, tabs));
     },
-    [&](DeclarationStatement const * declaration_statement) {
+    [&](DeclarationStatement const *declaration_statement) {
         result = std::format("{}", 
             declaration_to_string(declaration_statement->declaration, tabs));
+    },
+    [&](BreakStatement const *break_statement) {
+        result = std::format("{};", break_statement->token.type);
+    },
+    [&](ContinueStatement const *continue_statement) {
+        result = std::format("{};", continue_statement->token.type);
     },
     }, type->variant);
     return result;
@@ -627,6 +658,12 @@ std::string expression_to_string(Expression const *type, int tabs) {
             subscript->open_bracket.type,
             expression_to_string(subscript->index, tabs),
             subscript->close_bracket.type);
+    },
+    [&](StringLiteralExpression const *string) {
+        result += std::format("\"{}\"", string->string.value);
+    },
+    [&](FloatLiteralExpression const *float_literal) {
+        result += std::format("{}", float_literal->value);
     },
     }, type->variant);
     return result;

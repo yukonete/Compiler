@@ -216,6 +216,15 @@ void Lexer::tokenize() {
             break;
         }
 
+        case '\"': {
+            auto [str, ok] = parse_string();
+            if (ok) {
+                token.type = TokenType::string;
+                token.value = str;
+            }
+            break;
+        }
+
         case '0':
         case '1':
         case '2':
@@ -226,8 +235,11 @@ void Lexer::tokenize() {
         case '7':
         case '8':
         case '9': {
-            token.value = parse_integer();
-            token.type = TokenType::integer;
+            auto parse_result = parse_number();
+            if (parse_result.ok) {
+                token.type = parse_result.type;
+                token.value = parse_result.value;
+            }
             break;
         }
 
@@ -345,16 +357,68 @@ void Lexer::eat_char() {
     input_cursor_ += 1;
 }
 
-std::string_view Lexer::parse_integer() {
+Lexer::ParseNumberResult Lexer::parse_number() {
+    auto token_type = TokenType::integer;
+    
     auto integer_start = input_cursor_;
     auto count = 0;
-    auto ch = peek_next_char();
-    while (std::isdigit(ch)) {
+    while (true) {
+        auto ch = peek_next_char();
+        
+        if (!(std::isdigit(ch) || ch == '.')) {
+            break;
+        }
+
+        if (ch == '.') {
+            if (token_type == TokenType::float_literal) {
+                return {};
+            }
+            token_type = TokenType::float_literal;
+        }
+
         count += 1;
         eat_char();
-        ch = peek_next_char();
     }
-    return input_.substr(integer_start, count);
+
+    return ParseNumberResult{
+        .value = input_.substr(integer_start, count),
+        .type = token_type,
+        .ok = true,
+    };
+}
+
+Lexer::ParseStringResult Lexer::parse_string() {
+    auto ch = peek_next_char();
+    assert(ch == '\"');
+    eat_char();
+
+    auto str = std::string{};
+    while (true) {
+        ch = peek_next_char();
+        
+        if (ch == '\"' || ch == -1) {
+            eat_char();
+            break;
+        }
+
+        if (is_new_line(ch)) {
+            skip_whitespaces_and_comments();
+            ch = peek_next_char();
+        }
+        
+        str += ch;
+        eat_char();
+    }
+
+    if (ch == '\"') {
+        strings.push_back(std::move(str));
+        return ParseStringResult{
+            .str = strings.back(),
+            .ok = true,
+        };
+    }
+
+    return {};
 }
 
 std::string_view Lexer::parse_identifier() {
@@ -383,7 +447,7 @@ void Lexer::skip_whitespaces_and_comments() {
             eat_char();
             while (true) {
                 ch = peek_next_char();
-                if (is_new_line(ch)) {
+                if (is_new_line(ch) || ch == -1) {
                     break;
                 }
                 eat_char();
@@ -440,6 +504,8 @@ std::string_view token_type_to_string(TokenType type) {
         case comma: return ",";
         case ampersand: return "&";
 
+        case float_literal: return "float";
+        case string: return "string";
         case identifier: return "identifier";
         case integer: return "integer";
         case keyword_if: return "if";
@@ -456,6 +522,8 @@ std::string_view token_type_to_string(TokenType type) {
         case keyword_transmute: return "transmute";
         case keyword_type: return "type";
         case keyword_var: return "var";
+        case keyword_break: return "break";
+        case keyword_continue: return "continue";
         case eof: return "eof";
     }
 

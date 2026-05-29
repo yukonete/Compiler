@@ -27,8 +27,6 @@ enum class Precedence {
     call,
 };
 
-std::string node_to_string(const Node *node, int tabs);
-
 class Parser {
 public:
     Parser(std::string_view input, ArenaAllocator *arena, FILE *log = stderr);
@@ -41,16 +39,13 @@ private:
     Statement *parse_statement();
 
     Declaration *parse_declaration();
-    DeclarationStatement *parse_declaration_statement(); 
     ConstDeclaration *parse_constant_declaration();
     VariableDeclaration *parse_variable_declaration();
     TypeDeclaration *parse_type_declaration();
     ProcedureDeclaration *parse_procedure_declaration();
 
-    ExpressionStatement *parse_expression_statement();
     IfStatement *parse_if_statement();
     WhileStatement *parse_while_statement();
-    AssignmentStatement *parse_assignment_statement();
     BlockStatement *parse_block_statement();
     ReturnStatement *parse_return_statement();
 
@@ -94,7 +89,6 @@ private:
     ArenaAllocator *arena_ = nullptr;
     FILE *log_ = nullptr;
 
-    Token expected_token_;
     int error_count_ = 0;
 };
 
