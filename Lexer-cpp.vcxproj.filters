@@ -44,6 +44,12 @@
     <ClInclude Include="Code\types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Code\ast.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Code\log.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Text Include="lang.txt" />

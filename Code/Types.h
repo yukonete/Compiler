@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "base.h"
-#include "parser.h"
+#include "ast.h"
 
 namespace TypeCheck {
 

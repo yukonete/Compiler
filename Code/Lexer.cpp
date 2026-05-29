@@ -21,7 +21,12 @@ const Token &Lexer::next_token() {
 
 // peek is how much to look ahead
 const Token &Lexer::peek_token(int peek) {
-    if (tokens_cursor_ + peek < tokens_.size()) {
+    auto index = tokens_cursor_ + peek;
+    if (index < 0) {
+        panic("No previous token");
+    }
+
+    if (index < std::ssize(tokens_)) {
         return tokens_.at(tokens_cursor_ + peek);
     }
 
@@ -50,7 +55,7 @@ void Lexer::uneat_token() {
 }
 
 void Lexer::tokenize() {
-    skip_whitespaces();
+    skip_whitespaces_and_comments();
     auto ch = peek_next_char();
 
     Token token;
@@ -74,6 +79,12 @@ void Lexer::tokenize() {
             } else {
                 token.type = TokenType::bang;
             }
+            eat_char();
+            break;
+        }
+
+        case '.': {
+            token.type = TokenType::dot;
             eat_char();
             break;
         }
@@ -215,7 +226,7 @@ void Lexer::tokenize() {
         case '7':
         case '8':
         case '9': {
-            token.integer_value = parse_integer();
+            token.value = parse_integer();
             token.type = TokenType::integer;
             break;
         }
@@ -273,9 +284,8 @@ void Lexer::tokenize() {
         case 'Y':
         case 'Z':
         case '_': {
-            const auto identifier = parse_identifier();
-            token.identifier = identifier;
-            token.type = check_identifier_for_keyword(identifier);
+            token.value = parse_identifier();
+            token.type = check_identifier_for_keyword(token.value);
             break;
         }
 
@@ -299,7 +309,7 @@ void Lexer::tokenize() {
 }
 
 int Lexer::peek_next_char() const {
-    if (input_cursor_ >= input_.length()) {
+    if (input_cursor_ >= std::ssize(input_)) {
         return -1;
     }
     return input_.at(input_cursor_);
@@ -314,7 +324,7 @@ int Lexer::peek_char(int peek) const {
     }
 
     auto cursor = input_cursor_ + peek;
-    if (cursor >= input_.length()) {
+    if (cursor >= std::ssize(input_)) {
         return -1;
     }
 
@@ -335,21 +345,21 @@ void Lexer::eat_char() {
     input_cursor_ += 1;
 }
 
-s64 Lexer::parse_integer() {
-    s64 result = 0;
+std::string_view Lexer::parse_integer() {
+    auto integer_start = input_cursor_;
+    auto count = 0;
     auto ch = peek_next_char();
     while (std::isdigit(ch)) {
-        result *= 10;
-        result += ch - '0';
+        count += 1;
         eat_char();
         ch = peek_next_char();
     }
-    return result;
+    return input_.substr(integer_start, count);
 }
 
 std::string_view Lexer::parse_identifier() {
-    u64 identifier_start = input_cursor_;
-    u64 count = 0;
+    s64 identifier_start = input_cursor_;
+    s64 count = 0;
     auto ch = peek_next_char();
     while (std::isalnum(ch) || ch == '_') {
         count += 1;
@@ -360,12 +370,30 @@ std::string_view Lexer::parse_identifier() {
     return input_.substr(identifier_start, count);
 }
 
-void Lexer::skip_whitespaces() {
-    while (true) {
-        const auto ch = peek_next_char();
+bool Lexer::is_new_line(int ch) {
+    return ch == '\n' || (ch == '\r' && peek_char(1) == '\n');
+}
 
-        if (ch == ' ' || ch == '\t' || ch == '\n' ||
-            (ch == '\r' && peek_char(1) == '\n')) {
+void Lexer::skip_whitespaces_and_comments() {
+    while (true) {
+        auto ch = peek_next_char();
+
+        if (ch == '/' && peek_char(1) == '/') {
+            eat_char();
+            eat_char();
+            while (true) {
+                ch = peek_next_char();
+                if (is_new_line(ch)) {
+                    break;
+                }
+                eat_char();
+            }
+
+            eat_char();
+            continue;
+        } 
+
+        if (ch == ' ' || ch == '\t' || is_new_line(ch)) {
             eat_char();
             continue;
         }
@@ -375,11 +403,11 @@ void Lexer::skip_whitespaces() {
 }
 
 std::string_view token_type_to_string(TokenType type) {
-
     switch (type) {
         using enum TokenType;
         case invalid: return "invalid";
 
+        case dot: return ".";
         case plus: return "+";
         case minus: return "-";
         case star: return "*";
@@ -417,8 +445,9 @@ std::string_view token_type_to_string(TokenType type) {
         case keyword_if: return "if";
         case keyword_else: return "else";
         case keyword_while: return "while";
+        case keyword_for: return "for";
         case keyword_return: return "return";
-        case keyword_proc: return "proc";
+        case keyword_fn: return "fn";
         case keyword_const: return "const";
         case keyword_struct: return "struct";
         case keyword_true: return "true";
@@ -426,9 +455,9 @@ std::string_view token_type_to_string(TokenType type) {
         case keyword_cast: return "cast";
         case keyword_transmute: return "transmute";
         case keyword_type: return "type";
+        case keyword_var: return "var";
         case eof: return "eof";
     }
-
 
     return "unknown";
 }

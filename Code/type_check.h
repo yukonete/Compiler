@@ -6,10 +6,12 @@
 #include <optional>
 
 #include "base.h"
-#include "parser.h"
+#include "ast.h"
 #include "types.h"
+#include "log.h"
 
 namespace TypeCheck {
+
 struct Scope {
     Scope *parent = nullptr;
     std::unordered_map<std::string_view, Type *> declarations;
@@ -19,7 +21,7 @@ struct Scope {
 
 class TypeChecker {
 public:
-    TypeChecker(Arena *arena, FILE *log = stderr) : log_{log}, arena_{arena} {
+    TypeChecker(ArenaAllocator *arena, FILE *log = stderr) : log_{log}, arena_{arena} {
     }
     bool do_type_check(Ast::Program *program);
     Scope global_scope;
@@ -38,7 +40,7 @@ private:
 
     int error_count_ = 0;
     FILE *log_ = nullptr;
-    Arena *arena_ = nullptr;
+    ArenaAllocator *arena_ = nullptr;
 };
 
 std::string type_to_string(const Type *type, bool declaration = false);

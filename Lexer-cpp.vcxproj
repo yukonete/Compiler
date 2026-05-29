@@ -151,8 +151,10 @@
     <ClCompile Include="Code\type_check.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Code\ast.h" />
     <ClInclude Include="Code\base.h" />
     <ClInclude Include="Code\lexer.h" />
+    <ClInclude Include="Code\log.h" />
     <ClInclude Include="Code\parser.h" />
     <ClInclude Include="Code\types.h" />
     <ClInclude Include="Code\type_check.h" />

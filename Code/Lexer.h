@@ -13,13 +13,15 @@ enum class TokenType {
     identifier,
     integer,
 
+    dot,
+
     plus,
     minus,
-    plus_assign,
     star,
     divide,
     modulo,
-
+    
+    plus_assign,
     minus_assign,
     multiply_assign,
     divide_assign,
@@ -38,11 +40,13 @@ enum class TokenType {
 
     return_arrow,
 
+    keyword_var,
     keyword_if,
     keyword_else,
+    keyword_for,
     keyword_while,
     keyword_return,
-    keyword_proc,
+    keyword_fn,
     keyword_true,
     keyword_false,
     keyword_cast,
@@ -77,11 +81,7 @@ struct Token {
     TokenType type = TokenType::invalid;
     FileLocation start;
     FileLocation end;
-
-    union {
-        std::string_view identifier = {};
-        s64 integer_value;
-    };
+    std::string_view value;
 };
 
 std::string_view token_type_to_string(TokenType type);
@@ -93,8 +93,9 @@ public:
             {"if", TokenType::keyword_if},
             {"else", TokenType::keyword_else},
             {"while", TokenType::keyword_while},
+            {"for", TokenType::keyword_for},
             {"return", TokenType::keyword_return},
-            {"proc", TokenType::keyword_proc},
+            {"fn", TokenType::keyword_fn},
             {"true", TokenType::keyword_true},
             {"false", TokenType::keyword_false},
             {"cast", TokenType::keyword_cast},
@@ -102,6 +103,7 @@ public:
             {"type", TokenType::keyword_type},
             {"const", TokenType::keyword_const},
             {"struct", TokenType::keyword_struct},
+            {"var", TokenType::keyword_var},
     };
 
     Lexer(std::string_view input);
@@ -122,15 +124,16 @@ private:
     int peek_next_char() const;
     int peek_char(int peek) const;
     void eat_char();
-    s64 parse_integer();
+    std::string_view parse_integer();
     std::string_view parse_identifier();
-    void skip_whitespaces();
+    void skip_whitespaces_and_comments();
+    bool is_new_line(int ch);
 
     std::string_view input_;
-    u64 input_cursor_ = 0;
+    s64 input_cursor_ = 0;
 
     std::vector<Token> tokens_;
-    u64 tokens_cursor_ = 0;
+    s64 tokens_cursor_ = 0;
 
     FileLocation current_location_ = {1, 1};
 };

@@ -1,9 +1,9 @@
 #include <optional>
-#include <stack>
 #include <utility>
+#include <variant>
 
 #include "base.h"
-#include "parser.h"
+#include "ast.h"
 #include "type_check.h"
 #include "types.h"
 
@@ -26,68 +26,67 @@ std::optional<Type *> Scope::lookup_type(std::string_view type_name) {
 }
 
 Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) {
-    switch (ast_type->type) {
-        using enum Ast::NodeType;
+    return std::visit(Overloaded{
+    [&](Ast::TypeIdentifier const *ast_identifier) -> Type* {
+        auto identifier = ast_identifier->identifier->value();
 
-        case type_struct: {
-            auto ast_struct = static_cast<Ast::TypeStruct *>(ast_type);
-            auto st = arena_->push_item<Struct>();
-            st->ast_type = ast_type;
-            auto members_count = ast_struct->members.size();
-            st->members = arena_->push_array<StructMember>(members_count);
-            for (int i = 0; i < members_count; ++i) {
-                auto member = &st->members[i];
-                auto ast_member = ast_struct->members[i];
-
-                member->name = ast_member->identifier.identifier;
-                member->type = create_type_from_ast_type(scope, ast_member->type);
-            }
-            return st;
+        auto bultin_type = check_builtin_type(identifier);
+        if (bultin_type) {
+            return bultin_type.value();
         }
 
-        case type_identifier: {
-            auto ast_type_identifier =
-                static_cast<Ast::TypeIdentifier *>(ast_type);
-            auto identifier = ast_type_identifier->identifier.identifier;
-
-            auto bultin_type = check_builtin_type(identifier);
-            if (bultin_type) {
-                return bultin_type.value();
-            }
-
-            if (auto lookup_result = scope->lookup_type(identifier);
-                lookup_result) {
-                return lookup_result.value();
-            }
-
-            auto type = Type{};
-            type.kind = TypeKind::placeholder;
-            type.ast_type = ast_type;
-            type.type_name = identifier;
-            auto placeholder =
-                arena_->push_item<Type>(type);
-            return placeholder;
+        if (auto lookup_result = scope->lookup_type(identifier);
+            lookup_result) {
+            return lookup_result.value();
         }
 
-        case type_pointer: {
-            auto ast_pointer = static_cast<Ast::TypePointer *>(ast_type);
-            auto pointer = arena_->push_item<Pointer>();
-            pointer->ast_type = ast_type;
-            pointer->points_to =
-                create_type_from_ast_type(scope, ast_pointer->points_to);
-            return pointer;
+        auto type = Type{};
+        type.kind = TypeKind::placeholder;
+        type.ast_type = ast_type;
+        type.type_name = identifier;
+        auto placeholder =
+            arena_->push_item<Type>(type);
+        return placeholder;
+    },
+    [&](Ast::TypeStruct const* ast_struct) -> Type* {
+        auto type = arena_->push_item<Struct>();
+        type->ast_type = ast_type;
+
+        auto members_count = std::ssize(ast_struct->members);
+        type->members = arena_->push_array<StructMember>(members_count);
+        for (int i = 0; i < members_count; ++i) {
+            auto member = &type->members[i];
+            auto ast_member = ast_struct->members[i];
+
+            member->name = ast_member->identifier->value();
+            member->type = create_type_from_ast_type(scope, ast_member->type);
         }
 
-        case type_array: {
-            auto ast_array = static_cast<Ast::TypeArray *>(ast_type);
-            auto array = arena_->push_item<Array>();
-            array->count = ast_array->count;
-            array->elem_type = create_type_from_ast_type(scope, ast_array->elem_type);
-            return array;
+        return type;
+    },
+    [&](Ast::TypePointer const* ast_pointer) -> Type* {
+        auto pointer = arena_->push_item<Pointer>();
+        pointer->ast_type = ast_type;
+        pointer->points_to =
+            create_type_from_ast_type(scope, ast_pointer->points_to);
+        return pointer;
+    },
+    [&](Ast::TypeArray const* ast_array) -> Type* {
+        auto array = arena_->push_item<Array>();
+        auto integer_literal = ast_array->element_count->get_if<Ast::IntegerLiteralExpression>();
+        if (!integer_literal.has_value()) {
+            report_error(ast_array->open_bracket, "Array size should be integer literal (for now).");
+        } else {
+            array->count = integer_literal.value()->value;
         }
-
-        default: panic("Not implemented");
-    }
+        array->elem_type = create_type_from_ast_type(scope, ast_array->element_type);
+        return array;
+    },
+    [&](Ast::TypeProcedure const* ast_procedure) -> Type* {
+        report_error(ast_procedure->fn, "Declaring type of procedure is not supported (for now).");
+        return arena_->push_item<Type>();
+    },
+    }, ast_type->variant);
 }
 
 Type *TypeChecker::resolve_type(Scope *scope, Type *type, bool resolve_non_anonymous_types) {
@@ -100,10 +99,11 @@ Type *TypeChecker::resolve_type(Scope *scope, Type *type, bool resolve_non_anony
             case placeholder: {
                 auto lookup_result = scope->lookup_type(type->type_name);
                 if (lookup_result) {
-                    type = lookup_result.value(); 
+                    type = lookup_result.value();
                 } else {
-                    auto ast_identifier = static_cast<Ast::TypeIdentifier*>(type->ast_type);
-                    report_error(ast_identifier->identifier, "Type {} is not defined.", type->type_name);
+                    // For placeholders ast_type is always Ast::TypeIdentifier
+                    auto ast_identifier = type->ast_type->as<Ast::TypeIdentifier>();
+                    report_error(ast_identifier->identifier->token, "Type {} is not defined.", type->type_name);
                 }
                 break;
             }
@@ -248,7 +248,10 @@ static void calculate_size_and_alignment(Type *type) {
                 st_size += member.type->size;
             }
             st->align = biggest_align;
-            st->size = align_forward(st_size, st->align);
+            st->size = st_size;
+            if (!st->members.empty()) {
+                st->size = align_forward(st->size, st->align);
+            }
             return;
         }
 
@@ -280,7 +283,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
             }
             if (check_for_recursive_structs_recurse(&met_types, type)) {
                 if (met_types.at(0) == met_types.at(met_types.size() - 1)) {
-                    report_error(type->ast_declaration->identifier,
+                    report_error(type->ast_declaration->identifier->token,
                                  "Found self reference in type {}.",
                                  type->type_name);
                 }
@@ -299,7 +302,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
             }
             auto alias = static_cast<Alias *>(type);
             if (type_is_or_contains_alias(alias, alias->alias_to)) {
-                report_error(type->ast_declaration->identifier,
+                report_error(type->ast_declaration->identifier->token,
                              "Found self referencing alias {}.",
                              type->type_name);
                 result = true;
@@ -309,35 +312,45 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
     };
 
     for (auto statement : statements) {
-        if (statement->type == Ast::NodeType::declaration_type) {
-            auto type_decl =
-                static_cast<Ast::TypeDeclaration *>(statement);
-            auto type_name = type_decl->identifier.identifier;
-            if (scope->lookup_type(type_name)) {
-                report_error(type_decl->identifier,
+        if (statement->is<Ast::DeclarationStatement>()) {
+            auto decl = statement->as<Ast::DeclarationStatement>()->declaration;
+            auto decl_identifier = decl->identifier->value();
+            if (scope->lookup_type(decl_identifier)) {
+                report_error(decl->identifier->token,
                              "Declaration with identifier {} already exists.",
-                             type_name);
+                             decl_identifier);
                 return false;
             }
+            if (!decl->is<Ast::TypeDeclaration>()) {
+                report_error(decl->identifier->token, 
+                    "Declaration {} is not a type. Type checker only supports types (for now).", 
+                    decl_identifier);
+                continue;
+            }
+            auto type_decl = decl->as<Ast::TypeDeclaration>();
             auto type = create_type_from_ast_type(scope, type_decl->declared_type);
-            if (type_decl->declared_type->type == Ast::NodeType::type_struct) {
+            if (type->kind == TypeKind::kind_struct) {
                 type->ast_declaration = type_decl;
-                type->type_name = type_name;
-                scope->declarations[type_name] = type;
+                type->type_name = decl_identifier;
+                scope->declarations[decl_identifier] = type;
             } else {
-                // If it is not a struct it has to be an alias
+                // If it is not a struct, then create alias to that type
+                // Instead maybe make struct an alias as well
+                // But then two aliases which declare same struct will be
+                // threated as same type
+                // But if i add distinct alias, than struct can just be distinct alias
                 auto alias = arena_->push_item<Alias>();
                 alias->ast_declaration = type_decl;
                 alias->ast_type = type_decl->declared_type;
                 alias->alias_to = type;
-                alias->type_name = type_name;
-                scope->declarations[type_name] = alias;
+                alias->type_name = decl_identifier;
+                scope->declarations[decl_identifier] = alias;
             }
         }
     }
 
     for (auto &[name, type] : scope->declarations) {
-        auto resolved_type = resolve_type(scope, type, true);
+        resolve_type(scope, type, true);
     }
 
     if (error_count_ != 0) {
@@ -361,7 +374,7 @@ bool TypeChecker::do_type_check(Ast::Program *program) {
     return add_type_declarations_to_scope(std::span(program->declarations), &global_scope);
 }
 
-std::string type_to_string(const Type *type, bool declaration) {
+std::string type_to_string(const Type *type, bool) {
     switch (type->kind) {
         using enum TypeKind;
         case invalid: {

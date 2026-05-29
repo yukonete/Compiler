@@ -20,6 +20,7 @@
 #include <string>
 #include <type_traits>
 #include <system_error>
+#include <utility>
 
 using u8 = uint8_t;
 using u16 = uint16_t;
@@ -40,17 +41,24 @@ using usize = size_t;
 using uintptr = uintptr_t;
 using intptr = intptr_t;
 
+template <typename T, typename... Types>
+concept AnyOf = (std::same_as<T, Types> || ...);
+
+template <class... Ts>
+struct Overloaded : Ts... {
+    using Ts::operator()...;
+};
+
 template <typename T>
 concept TriviallyCopyable = std::is_trivially_copyable_v<T>;
 
 template <typename T>
 concept TriviallyDestructible = std::is_trivially_destructible_v<T>;
 
-
-#define kilobytes(value) ((value) * 1024LL)
-#define megabytes(value) ((kilobytes(value)) * 1024LL)
-#define gigabytes(value) ((megabytes(value)) * 1024LL)
-#define terabytes(value) ((gigabytes(value)) * 1024LL)
+constexpr auto kilobytes(auto value) { return value * 1024; }
+constexpr auto megabytes(auto value) { return kilobytes(value) * 1024; }
+constexpr auto gigabytes(auto value) { return megabytes(value) * 1024; }
+constexpr auto terabytes(auto value) { return gigabytes(value) * 1024; }
 
 template <typename... Args>
 [[noreturn]] void panic_(std::format_string<Args...> fmt,
@@ -107,13 +115,34 @@ inline isize align_forward(isize pointer, isize alignment) {
     return pointer + (alignment - modulo);
 }
 
-class Arena {
-public:
-    constexpr static isize default_size = megabytes(2);
-    constexpr static isize allocation_default_alignment = 2 * sizeof(void *);
+inline void *align_forward(void *pointer, isize alignment) {
+    return reinterpret_cast<void *>(
+        align_forward(reinterpret_cast<isize>(pointer), alignment));
+}
 
-    Arena(isize size = default_size)
-        : data_(std::make_unique<u8[]>(size)), size_{size} {};
+constexpr isize allocation_default_alignment = 2 * sizeof(void *);
+
+struct FixedBuffer {
+    FixedBuffer() {
+    }
+    FixedBuffer(u8 *buffer, isize size)
+        : data_(buffer), size_{size} {};
+
+    const u8 *data() const {
+        return data_;
+    }
+
+    isize size() const {
+        return size_;
+    }
+
+    isize offset() const {
+        return offset_;
+    }
+
+    void clear() {
+        offset_ = 0;
+    }
 
     void *alloc(isize size, isize alignment = allocation_default_alignment) {
         assert(size >= 0 && alignment >= 0);
@@ -122,33 +151,125 @@ public:
             return nullptr;
         }
 
-        const auto base_adress = reinterpret_cast<isize>(data_.get());
+        const auto base_adress = reinterpret_cast<isize>(data_);
         const auto current_pointer = base_adress + offset_;
         const auto mem_offset =
             align_forward(current_pointer, alignment) - base_adress;
 
         if (mem_offset + size > size_) {
-            panic("Arena is out of memory");
+            return nullptr;
         }
 
         offset_ = mem_offset + size;
-        return data_.get() + mem_offset;
+        return data_ + mem_offset;
     };
 
-    template <TriviallyDestructible Item, typename... Args>
-    Item *push_item(Args &&...args) {
-        auto pointer = static_cast<Item *>(alloc(sizeof(Item), alignof(Item)));
-        return new (pointer) Item{static_cast<Args &&>(args)...};
+private:
+    u8 *data_ = nullptr;
+    isize size_ = 0;
+    isize offset_ = 0;
+};
+
+class Arena {
+public:
+    constexpr static isize default_size = megabytes(2);
+
+    Arena(isize size = default_size) : first(ArenaMemoryBlock::create(size)) {};
+
+    void *alloc(isize size, isize alignment = allocation_default_alignment) {
+        return first->alloc(size, alignment);
+    };
+
+    void clear() {
+        if (first != nullptr) {
+            first->clear();
+        }
     }
 
-    // template <TriviallyCopyable Item>
-    // Item *push_item(Item item) {
-    //     auto pointer = static_cast<Item *>(alloc(sizeof(Item), alignof(Item)));
-    //     *pointer = item;
-    //     return pointer;
-    // }
+    ~Arena() {
+        clear();
+    }
 
-    template <TriviallyDestructible Item> std::span<Item> push_array(isize count) {
+private:
+    struct ArenaMemoryBlock {
+        struct Deleter {
+            void operator()(ArenaMemoryBlock *pointer) const {
+                pointer->~ArenaMemoryBlock();
+                delete[] reinterpret_cast<u8*>(pointer);
+            };
+        };
+
+        static std::unique_ptr<ArenaMemoryBlock, Deleter> create(isize size) {
+            static_assert(alignof(ArenaMemoryBlock) <  __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+
+            auto block_info_size_plus_alignment = align_forward(
+                sizeof(ArenaMemoryBlock), allocation_default_alignment);
+            auto to_allocate = block_info_size_plus_alignment + size;
+
+            auto memory_block = new u8[to_allocate]{};
+            auto block = new (memory_block) ArenaMemoryBlock;
+
+            block->buffer = FixedBuffer{
+                static_cast<u8 *>(memory_block) + block_info_size_plus_alignment,
+                size};
+
+            return std::unique_ptr<ArenaMemoryBlock, Deleter>(block, Deleter{});
+        }
+
+        FixedBuffer buffer;
+        std::unique_ptr<ArenaMemoryBlock, Deleter> next = nullptr;
+
+        void *alloc(isize size,
+                    isize alignment = allocation_default_alignment) {
+            if (size > buffer.size() || size == 0) {
+                return nullptr;
+            }
+
+            auto allocated = buffer.alloc(size, alignment);
+            if (allocated != nullptr) {
+                return allocated;
+            }
+
+            if (next == nullptr) {
+                next = create(buffer.size());
+            }
+
+            return next->alloc(size, alignment);
+        };
+
+        void clear() {
+            if (next != nullptr) {
+                next->clear();
+            }
+            buffer.clear();
+        }
+    };
+
+    std::unique_ptr<ArenaMemoryBlock, ArenaMemoryBlock::Deleter> first;
+};
+
+template <typename Buffer> 
+struct BumpAllocator {
+    BumpAllocator(Buffer *buffer) : buffer{buffer} {
+        
+    }
+
+    void *alloc(isize size, isize alignment = allocation_default_alignment) {
+        return buffer->alloc(size, alignment);
+    };
+
+    template <typename Item, typename... Args>
+    Item *push_item(Args &&...args) {
+        return push_item_impl<Item>(std::forward<Args>(args)...);
+    }
+
+    template <typename Item>
+    Item *push_item(Item &&item) {
+        return push_item_impl<Item>(std::forward<Item>(item));
+    }
+
+    template <TriviallyDestructible Item>
+    std::span<Item> push_array(isize count) {
         return std::span<Item>{push_array_pointer<Item>(count),
                                static_cast<std::span<Item>::size_type>(count)};
     }
@@ -160,25 +281,60 @@ public:
         return result;
     }
 
-    template <TriviallyDestructible Item> Item *push_array_pointer(isize count) {
-        assert(count >= 0);
+    template <TriviallyDestructible Item>
+    Item *push_array_pointer(isize count) {
         auto pointer =
             static_cast<Item *>(alloc(sizeof(Item) * count, alignof(Item)));
-        for (int i = 0; i < count; ++i) {
+        for (isize i = 0; i < count; ++i) {
             new (&pointer[i]) Item{};
         }
         return pointer;
     }
 
     void clear() {
-        offset_ = 0;
+        while (last_allocation_ != nullptr) {
+            last_allocation_->destructor(last_allocation_->object);
+            last_allocation_ = last_allocation_->previous;
+        }
+        if (buffer != nullptr) {
+            buffer->clear();
+        }
+    }
+
+    ~BumpAllocator() {
+        // TODO: Maybe i should not clear and only call destructors
+        clear();
     }
 
 private:
-    std::unique_ptr<u8[]> data_;
-    isize size_ = 0;
-    isize offset_ = 0;
+    template <typename Item, typename... Args>
+    Item *push_item_impl(Args &&...args) {
+        auto pointer = alloc(sizeof(Item), alignof(Item));
+        if constexpr (!TriviallyDestructible<Item>) {
+            last_allocation_ = push_item(AllocationWithDestructor{
+                .object = pointer,
+                .destructor =
+                    [](void *object) { static_cast<Item *>(object)->~Item(); },
+                .previous = last_allocation_,
+            });
+        }
+        return new (pointer) Item{std::forward<Args>(args)...};
+    }
+
+    struct AllocationWithDestructor {
+        using DestructorFunc = void(void *);
+
+        void *object = nullptr;
+        DestructorFunc *destructor = nullptr;
+        AllocationWithDestructor *previous = nullptr;
+    };
+
+    Buffer *buffer = nullptr;
+    AllocationWithDestructor *last_allocation_ = nullptr;
 };
+
+using ArenaAllocator = BumpAllocator<Arena>;
+using FixedBufferAllocator = BumpAllocator<FixedBuffer>;
 
 struct ReadFileToStringResult {
     std::string content;
