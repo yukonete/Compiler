@@ -15,8 +15,8 @@ inline std::string_view diagnostics_level_to_string(DiagnosticsLevel level) {
 }
 
 template <typename... Args>
-void log_diagnostics(FILE *log, DiagnosticsLevel level, const Token &token,
+void log_diagnostics(FILE *log, DiagnosticsLevel level, const FileLocation &location,
                      std::format_string<Args...> fmt, Args &&...args) {
-    std::print(log, "{} at ({}, {}): ", diagnostics_level_to_string(level), token.start.line, token.start.column);
+    std::print(log, "{} at ({}, {}): ", diagnostics_level_to_string(level), location.line, location.column);
     std::println(log, fmt, std::forward<Args>(args)...);
 }

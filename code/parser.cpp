@@ -13,19 +13,6 @@
 
 namespace Ast {
 
-static bool is_declaration(Node node) {
-    if (std::holds_alternative<Declaration*>(node)) {
-        return true;
-    }
-
-    auto statement = std::get_if<Statement*>(&node);
-    if (statement == nullptr) {
-        return false;
-    }
-
-    return (*statement)->is<DeclarationStatement>();
-};
-
 Parser::Parser(std::string_view input, ArenaAllocator *arena, FILE *log)
     : lexer_{input}, arena_{arena}, log_{log} {
 }
@@ -39,7 +26,7 @@ Program Parser::parse_program() {
         }
 
         auto statement = parse_statement();
-        if (!is_declaration(statement)) {
+        if (!statement->is<DeclarationStatement>()) {
             report_error(token, "Expected declaration.");
         }
         result.declarations.push_back(statement);
@@ -186,44 +173,78 @@ TypeDeclaration *Parser::parse_type_declaration() {
     return declaration;
 }
 
-ProcedureDeclaration *Parser::parse_procedure_declaration() {
-    auto proc = New<ProcedureDeclaration>();
-    // For now parse type here, but it should be separate function,
-    // so that it can be called when type declaration
-    proc->type = New<TypeProcedure>(expect_token(TokenType::keyword_fn));
-    proc->identifier = parse_identifier();
+TypeProcedure *Parser::parse_procedure_type(bool skip_identifier) {
+    auto type = New<TypeProcedure>(expect_token(TokenType::keyword_fn));
+    if (skip_identifier) {
+        if (!next_token_is(TokenType::identifier)) {
+            panic("Called parse_procedure_type with skip_identifier = true but "
+                  "there was no identifier.");
+        }
+        lexer_.eat_token();
+    }
+
     expect_token(TokenType::open_paren);
     bool first_parameter = true;
-    proc->type->parameters = parse_until_token<ProcedureParameter>(
-        TokenType::close_paren, [this, &first_parameter](auto temp) {
-            auto parameter = New<ProcedureParameter>();
-            if (!first_parameter) {
-                expect_token(TokenType::comma);
-            } else {
-                first_parameter = false;
-            }
-            parameter->identifier = parse_identifier();
-            expect_token(TokenType::colon);
-            parameter->type = parse_type();
-            temp->push_back(parameter);
-        });
+    auto parameters = std::vector<ProcedureParameter*>();
+    while (!(next_token_is(TokenType::close_paren) ||
+                next_token_is(TokenType::eof))) {
+        auto parameter = New<ProcedureParameter>();
+        if (!first_parameter) {
+            expect_token(TokenType::comma);
+        } else {
+            first_parameter = false;
+        }
+        parameter->identifier = parse_identifier();
+        expect_token(TokenType::colon);
+        parameter->type = parse_type();
+        parameters.push_back(parameter);
+    }
+    expect_token(TokenType::close_paren);
+
+    type->parameters = arena_->push_array(std::span{parameters});
+
     expect_token(TokenType::return_arrow);
-    proc->type->return_type = parse_type();
-    proc->body = parse_block_statement();
+    type->return_type = parse_type();
+    return type;
+}
+
+ProcedureDeclaration *Parser::parse_procedure_declaration() {
+    auto proc = New<ProcedureDeclaration>();
+    expect_token(TokenType::keyword_fn);
+    proc->identifier = parse_identifier();
+    lexer_.uneat_token(); // Put identifier back (it is going to be skipped in
+                           // parse_procedure_type)
+    lexer_.uneat_token(); // Put fn back
+    proc->type = parse_procedure_type(true);
+    proc->body = parse_statements_sequence();
     return proc;
+}
+
+std::span<Statement*> Parser::parse_statements_sequence() {
+    expect_token(TokenType::open_brace);
+
+    auto statements = std::vector<Statement *>();
+    while (!(next_token_is(TokenType::close_brace) ||
+             next_token_is(TokenType::eof))) {
+        auto statement = parse_statement();
+        statements.push_back(statement);
+    }
+    expect_token(TokenType::close_brace);
+
+    return arena_->push_array(std::span{statements});
 }
 
 IfStatement *Parser::parse_if_statement() {
     auto statement = New<IfStatement>(expect_token(TokenType::keyword_if));
     statement->condition = parse_expression();
-    statement->true_branch_body = parse_statement();
+    statement->true_branch_body = parse_statements_sequence();
     if (!next_token_is(TokenType::keyword_else)) {
         return statement;
     }
 
-    statement->false_branch = IfStatement::ElseBranch {
+    statement->else_branch = IfStatement::ElseBranch {
         .else_token = expect_token(TokenType::keyword_else),
-        .branch_body = parse_statement(),
+        .body = parse_statements_sequence(),
     };
     return statement;
 }
@@ -231,7 +252,7 @@ IfStatement *Parser::parse_if_statement() {
 WhileStatement *Parser::parse_while_statement() {
     auto statement = New<WhileStatement>(expect_token(TokenType::keyword_while));
     statement->condition = parse_expression();
-    statement->body = parse_statement();
+    statement->body = parse_statements_sequence();
     return statement;
 }
 
@@ -263,7 +284,7 @@ Type *Parser::parse_type() {
             type_struct->open_brace = expect_token(TokenType::open_brace);
 
             auto members = std::vector<StructMember *>();
-            auto declarations = std::vector<Declaration *>();
+            auto declarations = std::vector<DeclarationStatement *>();
             while (!(next_token_is(TokenType::close_brace) ||
                      next_token_is(TokenType::eof))) {
                 if (next_token_is(TokenType::identifier)) {
@@ -276,12 +297,19 @@ Type *Parser::parse_type() {
                     continue;
                 }
                 // Next token is not an identifier, which means that it is not a member
-                // Which means it has to be a declaration
-                declarations.push_back(parse_declaration());
-                auto var_decl = declarations.back()->get_if<VariableDeclaration>();
-                if (var_decl.has_value()) {
-                    report_error(var_decl.value()->var, 
-                        "Variable declarations are not allowed in a struct.");
+                // Which means it has to be a declaration, but not a variable declaration
+                auto statement = parse_statement();
+                if (!statement->is<DeclarationStatement>()) {
+                    // TODO: I need a token here but i can not get it,
+                    // so i need to store location in a base class 
+                    report_error({}, "Expected declaration or struct member.");
+                } else {
+                    declarations.push_back(statement->as<DeclarationStatement>());
+                    auto decl = declarations.back()->declaration;
+                    if (decl->is<VariableDeclaration>()) {
+                        report_error(decl->as<VariableDeclaration>()->var, 
+                            "Variable declarations are not allowed inside of a struct.");
+                    }
                 }
             }
             type_struct->close_brace = expect_token(TokenType::close_brace);
@@ -290,6 +318,12 @@ Type *Parser::parse_type() {
             type_struct->declarations = arena_->push_array(std::span(declarations));
             
             type = type_struct;
+            break;
+        }
+
+        case keyword_fn: {
+            lexer_.uneat_token();
+            type = parse_procedure_type();
             break;
         }
 
@@ -303,7 +337,6 @@ Type *Parser::parse_type() {
         }
 
         default: {
-            type = New<Type>();
             report_error(token, "Token \"{}\" can not be parsed as a type.",
                          token.type);
             break;
@@ -323,11 +356,7 @@ ReturnStatement *Parser::parse_return_statement() {
 
 BlockStatement *Parser::parse_block_statement() {
     auto block = New<BlockStatement>(expect_token(TokenType::open_brace));
-    block->body =
-        parse_until_token<Statement>(TokenType::close_brace, [this](auto temp) {
-            const auto statement = parse_statement();
-            temp->push_back(statement);
-        });
+    block->body = parse_statements_sequence();
     block->close_brace = lexer_.peek_token(-1);
     return block;
 }
@@ -425,7 +454,6 @@ Expression *Parser::parse_unary_expression() {
         }
 
         default: {
-            expression = New<Expression>();
             report_error(
                 token, "Token \"{}\" can not be parsed as a unary expression.",
                 token.type);
@@ -442,26 +470,29 @@ Expression *Parser::parse_binary_expression(Expression *left) {
     if (token.type == TokenType::open_paren) {
         auto call = New<CallOperatorExpression>(token);
         call->callable = left;
+
+        auto arguments = std::vector<Expression*>();
         bool first_argument = true;
-        call->arguments = parse_until_token<Expression>(
-            TokenType::close_paren, [this, &first_argument](auto temp) {
-                if (!first_argument) {
-                    expect_token(TokenType::comma);
-                } else {
-                    first_argument = false;
-                }
-                auto argument = parse_expression();
-                temp->push_back(argument);
-            });
-        call->close_paren = lexer_.peek_token(-1);
+        while (!(next_token_is(TokenType::close_paren) ||
+                 next_token_is(TokenType::eof))) {
+            if (!first_argument) {
+                expect_token(TokenType::comma);
+            } else {
+                first_argument = false;
+            }
+            auto argument = parse_expression();
+            arguments.push_back(argument);
+        }
+        call->close_paren = expect_token(TokenType::close_paren);
+        call->arguments = arena_->push_array(std::span{arguments});
         return call;
     }
 
     if (token.type == TokenType::open_bracket) {
-        auto subscript = New<ArraySubscriptExpression>(token);
-        subscript->array = left;
-        subscript->index = parse_expression();
-        subscript->close_bracket = expect_token(TokenType::close_bracket);
+        auto subscript = New<BinaryOperatorExpression>(token);
+        subscript->left = left;
+        subscript->right = parse_expression();
+        expect_token(TokenType::close_bracket);
         return subscript;
     }
 
@@ -503,7 +534,7 @@ static std::string indent(int tabs) {
 std::string node_to_string(Node node, int tabs) {
     return std::visit(Overloaded{
     [&](Statement const *statement) {
-        return statement_to_string(statement, tabs);
+        return statement_to_string(statement, tabs);;
     },
     [&](Expression const *expression) {
         return expression_to_string(expression, tabs);
@@ -517,193 +548,277 @@ std::string node_to_string(Node node, int tabs) {
     }, node);
 }
 
-std::string type_to_string(const Type *type, int tabs) {
+std::string type_to_string(const Type *type, int tabs, bool include_fn) {
     auto result = std::string{};
-    std::visit(Overloaded{
-    [&](const TypeIdentifier *type_ident) {
-        result = type_ident->identifier->value();
-    },
-    [&](const TypeStruct *type_struct) {
-        result = std::format("{} {{\n", type_struct->struct_token.type);
-        for (auto member : type_struct->members) {
-            result += std::format("{}{}: {};\n", indent(tabs + 1),
-                member->identifier->value(),
-                type_to_string(member->type, tabs + 1));
+    switch (type->kind) {
+        using enum Type::Kind;
+
+        case IDENTIFIER: {
+            auto type_ident = type->as<TypeIdentifier>();
+            result += type_ident->identifier->value();
+            break;
         }
-        for (auto declaration : type_struct->declarations) {
-            result += std::format("{}{}\n", indent(tabs+1), 
-                declaration_to_string(declaration, tabs+1));
-        }
-        result += indent(tabs);
-        result += "}";
-    },
-    [&](const TypePointer *type_pointer) {
-        result = std::format("*{}", type_to_string(type_pointer->points_to, tabs));
-    },
-    [&](const TypeArray *type_array) {
-        result = std::format("[{}]{}", 
-            expression_to_string(type_array->element_count, tabs),
-            type_to_string(type_array->element_type, tabs));
-    },
-    [&](const TypeProcedure *type_proc) {
-        result += "(";
-        for (int i = 0; i < std::ssize(type_proc->parameters); ++i) {
-            auto parameter = type_proc->parameters[i];
-            result += std::format("{}: {}", parameter->identifier->value(),
-                            type_to_string(parameter->type, tabs));
-            if (i != std::ssize(type_proc->parameters) - 1) {
-                result += ", ";
+
+        case STRUCT: {
+            auto type_struct = type->as<TypeStruct>();
+            result += std::format("{} {{\n", type_struct->struct_token.type);
+            for (auto member : type_struct->members) {
+                result += std::format("{}{}: {};\n", indent(tabs + 1),
+                    member->identifier->value(),
+                    type_to_string(member->type, tabs + 1));
             }
-        }
-        result += std::format(") -> {}", 
-            type_to_string(type_proc->return_type, tabs));
-    },
-    }, type->variant);
-    return result;
-}
-
-std::string statement_to_string(Statement const *type, int tabs) {
-    auto result = std::string{};
-    std::visit(Overloaded{
-    [&](ReturnStatement const *return_statement) {
-        result = std::format("{} {};", return_statement->return_token.type,
-            expression_to_string(return_statement->value, tabs));
-    },
-    [&](IfStatement const *if_statement) {
-        result = std::format("{} {} {}", if_statement->if_token.type,
-            expression_to_string(if_statement->condition, tabs),
-            statement_to_string(if_statement->true_branch_body, tabs));
-        if (if_statement->false_branch.has_value()) {
-            result += std::format(" {} {}",
-                if_statement->false_branch.value().else_token.type,
-                statement_to_string(if_statement->false_branch.value().branch_body, tabs));
-        }
-    },
-    [&](WhileStatement const *while_statement) {
-        result = std::format("{} {} {}", while_statement->while_token.type,
-            expression_to_string(while_statement->condition, tabs),
-            statement_to_string(while_statement->body, tabs));
-    },
-    [&](AssignmentStatement const *assignment_statement) {
-        result = std::format("{} {} {};", 
-            expression_to_string(assignment_statement->assignee, tabs),
-            assignment_statement->assign.type,
-            expression_to_string(assignment_statement->value, tabs));
-    },
-    [&](BlockStatement const *block_statement) {
-        result = "{\n";
-        for (auto statement : block_statement->body) {
-            result += std::format("{}{}\n", indent(tabs + 1),
-                statement_to_string(statement, tabs + 1));
-        }
-        result += indent(tabs);
-        result += "}";
-    },
-    [&](ExpressionStatement const *expression_statement) {
-        result = std::format("{};", 
-            expression_to_string(expression_statement->expression, tabs));
-    },
-    [&](DeclarationStatement const *declaration_statement) {
-        result = std::format("{}", 
-            declaration_to_string(declaration_statement->declaration, tabs));
-    },
-    [&](BreakStatement const *break_statement) {
-        result = std::format("{};", break_statement->token.type);
-    },
-    [&](ContinueStatement const *continue_statement) {
-        result = std::format("{};", continue_statement->token.type);
-    },
-    }, type->variant);
-    return result;
-}
-
-std::string expression_to_string(Expression const *type, int tabs) {
-    auto result = std::string{};
-    std::visit(Overloaded{
-    [&](IntegerLiteralExpression const *integer_literal) {
-        result = std::format("{}", integer_literal->value);
-    },
-    [&](BoolLiteralExpression const *bool_literal) {
-        result = std::format("{}", bool_literal->value);
-    },
-    [&](IdentifierExpression const *identifier) {
-        result = identifier->identifier->value();
-    },
-    [&](UnaryOperatorExpression const *unary_operator) {
-        result = std::format("({}{})", unary_operator->op.type,
-            expression_to_string(unary_operator->right, tabs));
-    },
-    [&](BinaryOperatorExpression const *binary_operator) {
-        result = std::format("({}{}{})",
-            expression_to_string(binary_operator->left, tabs),
-            binary_operator->op.type,
-            expression_to_string(binary_operator->right, tabs));
-    },
-    [&](CallOperatorExpression const *call_operator) {
-        auto callable = std::get<IdentifierExpression*>(call_operator->callable->variant);
-        result = std::format("{}(", callable->identifier->value());
-        for (int i = 0; i < std::ssize(call_operator->arguments); ++i) {
-            auto arg = call_operator->arguments[i];
-            result += expression_to_string(arg, tabs);
-
-            if (i != std::ssize(call_operator->arguments) - 1) {
-                result += ", ";
+            for (auto declaration : type_struct->declarations) {
+                result += std::format("{}\n", statement_to_string(declaration, tabs+1));
             }
+            result += indent(tabs);
+            result += "}";
+            break;
         }
-        result += ')';
-    },
-    [&](ArraySubscriptExpression const *subscript) {
-        result += std::format("{}{}{}{}", 
-            expression_to_string(subscript->array, tabs),
-            subscript->open_bracket.type,
-            expression_to_string(subscript->index, tabs),
-            subscript->close_bracket.type);
-    },
-    [&](StringLiteralExpression const *string) {
-        result += std::format("\"{}\"", string->string.value);
-    },
-    [&](FloatLiteralExpression const *float_literal) {
-        result += std::format("{}", float_literal->value);
-    },
-    }, type->variant);
+
+        case POINTER: {
+            auto type_pointer = type->as<TypePointer>();
+            result += std::format("*{}", type_to_string(type_pointer->points_to, tabs));
+            break;
+        }
+
+        case ARRAY: {
+            auto type_array = type->as<TypeArray>();
+            result += std::format("[{}]{}", 
+                expression_to_string(type_array->element_count, tabs),
+                type_to_string(type_array->element_type, tabs));
+            break;
+        }
+
+        case FUNCTION: {
+            auto type_function = type->as<TypeProcedure>();
+            if (include_fn) {
+                result += "fn";
+            }
+            result += "(";
+            for (int i = 0; i < std::ssize(type_function->parameters); ++i) {
+                auto parameter = type_function->parameters[i];
+                result += std::format("{}: {}", parameter->identifier->value(),
+                                type_to_string(parameter->type, tabs));
+                if (i != std::ssize(type_function->parameters) - 1) {
+                    result += ", ";
+                }
+            }
+            result += std::format(") -> {}", 
+                type_to_string(type_function->return_type, tabs));
+            break;
+        }
+    }
     return result;
 }
 
-std::string declaration_to_string(Declaration const *decl, int tabs) {
-    auto result = std::string{};
-    std::visit(Overloaded{
-    [&](VariableDeclaration const *var_decl) -> void {
-        result = std::format("{} {}", var_decl->var.type, var_decl->identifier->value());
-        if (var_decl->variable_type.has_value()) {
-            result += std::format(": {}", type_to_string(var_decl->variable_type.value(), tabs));
-        }
-       
-        if (var_decl->value.has_value()) {
-            result += std::format(" = {}", 
-                expression_to_string(var_decl->value.value(), tabs));
-        }
-        result += ";";
-    },
-    [&](ConstDeclaration const *const_decl) -> void {
-        result = std::format("{} {}", const_decl->const_token.type, const_decl->identifier->value());
-        if (const_decl->variable_type.has_value()) {
-            result += std::format(": {}", type_to_string(const_decl->variable_type.value(), tabs));
+static std::string statements_to_string(std::span<Statement*> statements, int tabs) {
+    auto result = std::string{"{\n"};
+    for (auto statement : statements) {
+        result += statement_to_string(statement, tabs + 1);
+        result += '\n';
+    }
+    result += indent(tabs);
+    result += "}";
+    return result;
+} 
+
+std::string statement_to_string(const Statement *type, int tabs) {
+    auto result = indent(tabs);
+    switch (type->kind) {
+        using enum Statement::Kind;
+
+        case RETURN: {
+            auto return_statement = type->as<ReturnStatement>();
+            result += std::format("return {};", 
+                expression_to_string(return_statement->value, tabs));
+            break;
         }
 
-        result += std::format(" = {}",
-            expression_to_string(const_decl->value, tabs));
-        result += ";";
-    },
-    [&](ProcedureDeclaration const *procedure_decl) {
-        result = std::format("{} {}{} {}", procedure_decl->type->fn.type, procedure_decl->identifier->value(), 
-                        type_to_string(procedure_decl->type, tabs),
-                        statement_to_string(procedure_decl->body, tabs));
-    },
-    [&](TypeDeclaration const *type_decl) {
-        result = std::format("{} {} = {};", type_decl->type_token.type, type_decl->identifier->value(),
-                        type_to_string(type_decl->declared_type, tabs));
-    },
-    }, decl->variant);
+        case IF: {
+            auto if_statement = type->as<IfStatement>();
+            result += std::format("if {} {}",
+                expression_to_string(if_statement->condition, tabs), 
+                statements_to_string(if_statement->true_branch_body, tabs));
+            if (if_statement->else_branch.has_value()) {
+                result += std::format(" else {}",
+                     statements_to_string(if_statement->else_branch.value().body, tabs));
+            }
+            break;
+        }
+
+        case WHILE: {
+            auto while_statement = type->as<WhileStatement>();
+            result += std::format("while {} {}",
+                expression_to_string(while_statement->condition, tabs),
+                statements_to_string(while_statement->body, tabs));
+            break;
+        }
+
+        case ASSIGNMENT: {
+            auto assignment_statement = type->as<AssignmentStatement>();
+            result += std::format("{} {} {};", 
+                expression_to_string(assignment_statement->assignee, tabs),
+                assignment_statement->assign.type,
+                expression_to_string(assignment_statement->value, tabs));
+            break;
+        }
+
+        case BLOCK: {
+            auto block_statement = type->as<BlockStatement>();
+            result += statements_to_string(block_statement->body, tabs);
+            break;
+        }
+    
+        case EXPRESSION: {
+            auto expression_statement = type->as<ExpressionStatement>();
+            result += std::format("{};", 
+                expression_to_string(expression_statement->expression, tabs));
+            break;
+        }
+
+        case DECLARATION: {
+            auto declaration_statement = type->as<DeclarationStatement>();
+            result += std::format("{}", 
+                declaration_to_string(declaration_statement->declaration, tabs));
+            break;
+        }
+
+        case BREAK: {
+            result += "break;";
+            break;
+        }
+
+        case CONTINUE: {
+            result += "continue;";
+            break;
+        }
+    }
+    return result;
+}
+
+std::string expression_to_string(const Expression *expression, int tabs) {
+    auto result = std::string{};
+    switch (expression->kind) {
+        using enum Expression::Kind;
+        
+        case INTEGER_LITERAL: {
+            auto integer_literal = expression->as<IntegerLiteralExpression>();
+            result += std::format("{}", integer_literal->value);
+            break;
+        }
+
+        case BOOL_LITERAL: {
+            auto bool_literal = expression->as<BoolLiteralExpression>();
+            result += std::format("{}", bool_literal->value);
+            break;
+        }
+
+        case IDENTIFIER: {
+            auto identifier = expression->as<IdentifierExpression>();
+            result += identifier->identifier->value();
+            break;
+        }
+
+        case UNARY_OPERATOR: {
+            auto unary_operator = expression->as<UnaryOperatorExpression>();
+            result += std::format("({}{})", unary_operator->op.type,
+                expression_to_string(unary_operator->right, tabs));
+            break;
+        }
+
+        case BINARY_OPERATOR: {
+            auto binary_operator = expression->as<BinaryOperatorExpression>();
+            result += std::format("({}{}{}",
+                expression_to_string(binary_operator->left, tabs),
+                binary_operator->op.type,
+                expression_to_string(binary_operator->right, tabs));
+            if (binary_operator->op.type == TokenType::open_bracket) {
+                result += ']';
+            }
+            result += ')';
+            break;
+        }
+
+        case CALL_OPERATOR: {
+            auto call_operator = expression->as<CallOperatorExpression>();
+            result += std::format("{}(", expression_to_string(call_operator->callable, tabs));
+            for (int i = 0; i < std::ssize(call_operator->arguments); ++i) {
+                auto arg = call_operator->arguments[i];
+                result += expression_to_string(arg, tabs);
+
+                if (i != std::ssize(call_operator->arguments) - 1) {
+                    result += ", ";
+                }
+            }
+            result += ')';
+            break;
+        }
+
+        case STRING_LITERAL: {
+            auto string = expression->as<StringLiteralExpression>();
+            result += std::format("\"{}\"", string->string.value);
+            break;
+        }
+
+        case FLOAT_LITERAL: {
+            auto float_literal = expression->as<FloatLiteralExpression>();
+            result += std::format("{}", float_literal->value);
+            break;
+        }
+    }
+    return result;
+}
+
+std::string declaration_to_string(const Declaration *decl, int tabs) {
+    auto result = std::string{};
+    switch (decl->kind) {
+        using enum Declaration::Kind;
+
+        case VARIABLE: {
+            auto variable = decl->as<VariableDeclaration>();
+            result += std::format("{} {}", variable->var.type, variable->identifier->value());
+            if (variable->variable_type.has_value()) {
+                result += std::format(": {}", type_to_string(variable->variable_type.value(), tabs));
+            }
+        
+            if (variable->value.has_value()) {
+                result += std::format(" = {}", 
+                    expression_to_string(variable->value.value(), tabs));
+            }
+            result += ";";
+            break;
+        }
+
+        case CONSTANT: {
+            auto constant = decl->as<ConstDeclaration>();
+            result += std::format("{} {}", constant->const_token.type, constant->identifier->value());
+            if (constant->variable_type.has_value()) {
+                result += std::format(": {}", type_to_string(constant->variable_type.value(), tabs));
+            }
+
+            result += std::format(" = {}",
+                expression_to_string(constant->value, tabs));
+            result += ";";
+            break;
+        }
+
+        case FUNCTION: {
+            auto function = decl->as<ProcedureDeclaration>();
+            result += std::format("fn {}{} {}", 
+                function->identifier->value(), 
+                type_to_string(function->type, tabs, false),
+                statements_to_string(function->body, tabs));
+            break;
+        }
+
+        case TYPE: {
+            auto type = decl->as<TypeDeclaration>();
+            result += std::format("type {} = {};",
+                type->identifier->value(),
+                type_to_string(type->declared_type, tabs));
+            break;
+        }
+    }
     return result;
 }
 };

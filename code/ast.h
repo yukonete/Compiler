@@ -48,14 +48,6 @@ struct ArraySubscriptExpression;
 struct FloatLiteralExpression;
 struct StringLiteralExpression;
 
-struct Identifier {
-    Token token;
-
-    std::string_view value() const {
-        return token.value;
-    }
-};
-
 template <typename Node, typename Variant>
 struct AstVariantBase {
     AstVariantBase() = default;
@@ -107,73 +99,93 @@ struct AstVariantBase {
     }
 };
 
-using StatementVariant =
-    std::variant<ExpressionStatement *, IfStatement *, WhileStatement *,
-                 AssignmentStatement *, BlockStatement *, ReturnStatement *,
-                 DeclarationStatement *, ContinueStatement *, BreakStatement *>;
+struct Identifier {
+    Token token;
 
-struct Statement : AstVariantBase<Statement, StatementVariant> {
-    StatementVariant variant;
+    std::string_view value() const {
+        return token.value;
+    }
 };
 
-using DeclarationVariant =
-    std::variant<VariableDeclaration *, ProcedureDeclaration *,
-                 ConstDeclaration *, TypeDeclaration *>;
+#define DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(type)                           \
+    template <typename T>                                                      \
+    constexpr bool is() const                                                  \
+        requires std::derived_from<T, type>                                    \
+    {                                                                          \
+        return kind == T::KIND;                                                \
+    }                                                                          \
+    template <typename T>                                                      \
+    const T *as() const                                                        \
+        requires std::derived_from<T, type>                                    \
+    {                                                                          \
+        if (!is<T>()) {                                                        \
+            panic("Wrong AST downcast");                                       \
+        }                                                                      \
+        return static_cast<const T *>(this);                                   \
+    }                                                                          \
+    template <typename T>                                                      \
+    T *as()                                                                    \
+        requires std::derived_from<T, type>                                    \
+    {                                                                          \
+        if (!is<T>()) {                                                        \
+            panic("Wrong AST downcast");                                       \
+        }                                                                      \
+        return static_cast<T *>(this);                                   \
+    }
 
-struct Declaration : AstVariantBase<Declaration, DeclarationVariant> {             
-    DeclarationVariant variant;
-    Identifier *identifier = nullptr;
-};
+struct Statement {
+    enum class Kind : u8 {
+        IF,
+        WHILE,
+        ASSIGNMENT,
+        BLOCK,
+        RETURN,
+        DECLARATION,
+        CONTINUE,
+        BREAK,
+        EXPRESSION,
+    };
 
-using ExpressionVariant =
-    std::variant<IntegerLiteralExpression *, UnaryOperatorExpression *,
-                 BinaryOperatorExpression *, BoolLiteralExpression *,
-                 IdentifierExpression *, CallOperatorExpression *,
-                 ArraySubscriptExpression *, StringLiteralExpression *,
-                 FloatLiteralExpression *>;
+    constexpr Statement(Kind kind) : kind{kind} {}
 
-struct Expression : AstVariantBase<Expression, ExpressionVariant> {
-    ExpressionVariant variant;
-};
+    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Statement);
 
-using TypeVariant = std::variant<TypeIdentifier *, TypeStruct *, TypeArray *, TypePointer *,
-                 TypeProcedure *>;
-
-struct Type : AstVariantBase<Type, TypeVariant> {
-    TypeVariant variant;
+    Kind kind;
 };
 
 struct IfStatement : public Statement {
-    IfStatement(const Token &if_token) : if_token{if_token} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::IF;
+
+    constexpr IfStatement(const Token &if_token) 
+        : Statement{KIND}, if_token{if_token} {}
 
     struct ElseBranch {
         Token else_token;
-        Statement *branch_body = nullptr;
+        std::span<Statement *> body;
     };
 
     Token if_token;
     Expression *condition = nullptr;
-    Statement *true_branch_body = nullptr;
-
-    std::optional<ElseBranch> false_branch;
+    std::span<Statement *> true_branch_body;
+    std::optional<ElseBranch> else_branch;
 };
 
 struct WhileStatement : public Statement {
-    WhileStatement(const Token &while_token) : while_token{while_token} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::WHILE;
+
+    constexpr WhileStatement(const Token &while_token) 
+        : Statement{KIND}, while_token{while_token} {}
 
     Token while_token;
     Expression *condition = nullptr;
-    Statement *body = nullptr;
+    std::span<Statement *> body;
 };
 
 struct BlockStatement : public Statement {
-    BlockStatement(const Token &open_brace) : open_brace{open_brace} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::BLOCK;
+    
+    constexpr BlockStatement(const Token &open_brace) 
+        : Statement{KIND}, open_brace{open_brace} {}
 
     Token open_brace;
     Token close_brace;
@@ -181,18 +193,20 @@ struct BlockStatement : public Statement {
 };
 
 struct ReturnStatement : public Statement {
-    ReturnStatement(const Token &return_token) : return_token{return_token} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::RETURN;
+
+    constexpr ReturnStatement(const Token &return_token) 
+        : Statement{KIND}, return_token{return_token} {}
 
     Token return_token;
     Expression *value = nullptr;
 };
 
 struct AssignmentStatement : public Statement {
-    AssignmentStatement(const Token &assign) : assign{assign} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::ASSIGNMENT;
+    
+    constexpr AssignmentStatement(Token const &assign) 
+        : Statement{KIND}, assign{assign} {}
 
     Token assign;
     Expression *assignee = nullptr;
@@ -200,41 +214,60 @@ struct AssignmentStatement : public Statement {
 };
 
 struct ExpressionStatement : public Statement {
-    ExpressionStatement() {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::EXPRESSION;
+    
+    constexpr ExpressionStatement() : Statement{KIND} {}
 
     Expression *expression = nullptr;
 };
 
 struct DeclarationStatement : public Statement {
-    DeclarationStatement() {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::DECLARATION;
+    
+    constexpr DeclarationStatement() : Statement{KIND} {}
 
     Declaration *declaration = nullptr;
 };
 
 struct BreakStatement : public Statement {
-    BreakStatement(Token const &token) : token{token} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::BREAK;
+    
+    constexpr BreakStatement(const Token &token) 
+        : Statement{KIND}, token{token} {}
 
     Token token;
 };
 
 struct ContinueStatement : public Statement {
-    ContinueStatement(Token const &token) : token{token} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::CONTINUE;
+    
+    constexpr ContinueStatement(const Token &token) 
+        : Statement{KIND}, token{token} {}
 
     Token token;
 };
 
+struct Declaration {
+    enum class Kind : u8 {
+        VARIABLE,
+        FUNCTION,
+        CONSTANT,
+        TYPE,
+    };
+    
+    constexpr Declaration(Kind kind) : kind{kind} {}
+
+    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Declaration);
+
+    Kind kind;
+    Identifier *identifier = nullptr;
+};
+
 struct VariableDeclaration : public Declaration {
-    VariableDeclaration(const Token &var) : var{var} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::VARIABLE;
+
+    constexpr VariableDeclaration(const Token &var) 
+        : Declaration{KIND}, var{var} {}
 
     Token var;
     std::optional<Type *> variable_type;
@@ -242,9 +275,10 @@ struct VariableDeclaration : public Declaration {
 };
 
 struct ConstDeclaration : public Declaration {
-    ConstDeclaration(const Token &const_token) : const_token{const_token} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::CONSTANT;
+
+    constexpr ConstDeclaration(const Token &const_token) 
+        : Declaration{KIND}, const_token{const_token} {}
 
     Token const_token;
     std::optional<Type *> variable_type;
@@ -252,34 +286,152 @@ struct ConstDeclaration : public Declaration {
 };
 
 struct ProcedureDeclaration : public Declaration {
-    ProcedureDeclaration() {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::FUNCTION;
+    
+    constexpr ProcedureDeclaration() : Declaration{KIND} {}
 
     TypeProcedure *type = nullptr;
-    BlockStatement *body = nullptr;
+    std::span<Statement*> body;
 };
 
 struct TypeDeclaration : public Declaration {
-    TypeDeclaration(const Token &type_token) : type_token{type_token} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::TYPE;
+
+    constexpr TypeDeclaration(const Token &type_token) 
+        : Declaration{KIND}, type_token{type_token} {}
 
     Token type_token;
     Type *declared_type = nullptr;
 };
 
+struct Expression {
+    enum class Kind : u8 {
+        INTEGER_LITERAL,
+        UNARY_OPERATOR,
+        BINARY_OPERATOR,
+        BOOL_LITERAL,
+        IDENTIFIER,
+        CALL_OPERATOR,
+        STRING_LITERAL,
+        FLOAT_LITERAL,
+    };
+
+    constexpr Expression(Kind kind) : kind{kind} {}
+
+    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Expression);
+
+    Kind kind;
+};
+
+struct IntegerLiteralExpression : public Expression {
+    static constexpr auto KIND = Kind::INTEGER_LITERAL;
+
+    constexpr IntegerLiteralExpression(const Token &literal) 
+        : Expression{KIND}, literal{literal} {}
+
+    Token literal;
+    s64 value = 0;
+};
+
+struct IdentifierExpression : public Expression {
+    static constexpr auto KIND = Kind::IDENTIFIER;
+
+    constexpr IdentifierExpression() : Expression{KIND} {}
+
+    Identifier *identifier = nullptr;
+};
+
+struct UnaryOperatorExpression : public Expression {
+    static constexpr auto KIND = Kind::UNARY_OPERATOR;
+    
+    constexpr UnaryOperatorExpression(const Token &op) 
+        : Expression{KIND}, op{op} {}
+
+    Token op;
+    Expression *right = nullptr;
+};
+
+struct BinaryOperatorExpression : public Expression {
+    static constexpr auto KIND = Kind::BINARY_OPERATOR;
+
+    constexpr BinaryOperatorExpression(const Token &op) 
+        : Expression{KIND}, op{op} {}
+    
+    Token op;
+    Expression *left = nullptr;
+    Expression *right = nullptr;
+};
+
+struct BoolLiteralExpression : public Expression {
+    static constexpr auto KIND = Kind::BOOL_LITERAL;
+
+    BoolLiteralExpression(const Token &literal) 
+        : Expression{KIND}, literal{literal} {}
+
+    Token literal;
+    bool value = false;
+};
+
+struct CallOperatorExpression : public Expression {
+    static constexpr auto KIND = Kind::CALL_OPERATOR;
+
+    constexpr CallOperatorExpression(const Token &open_paren) 
+        : Expression{KIND}, open_paren{open_paren} {}
+
+    Token open_paren;
+    Token close_paren;
+    Expression *callable = nullptr;
+    std::span<Expression *> arguments;
+};
+
+struct StringLiteralExpression : public Expression {
+    static constexpr auto KIND = Kind::STRING_LITERAL;
+
+    constexpr StringLiteralExpression(Token const &string) 
+        : Expression{KIND}, string{string} {}
+
+    Token string;
+};
+
+struct FloatLiteralExpression : public Expression {
+    static constexpr auto KIND = Kind::FLOAT_LITERAL;
+
+    constexpr FloatLiteralExpression(Token const &literal) 
+        : Expression{KIND}, literal{literal} {}
+
+    Token literal;
+    f64 value = 0.0;
+};
+
+struct Type {
+    enum class Kind : u8 {
+        IDENTIFIER,
+        STRUCT,
+        POINTER,
+        FUNCTION,
+        ARRAY,
+    };
+
+    constexpr Type(Kind kind) : kind{kind} {}
+
+    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Type);
+
+    Kind kind;
+};
+
 struct TypeIdentifier : public Type {
-    TypeIdentifier() {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::IDENTIFIER;
+
+    constexpr TypeIdentifier() : Type{KIND} {}
 
     Identifier *identifier = nullptr;
 };
 
 struct TypePointer : public Type {
-    TypePointer(const Token &pointer_token) : pointer_token{pointer_token} {
-        variant = this;
+    static constexpr auto KIND = Kind::POINTER;
+
+    constexpr TypePointer(const Token &pointer_token) 
+        : Type{KIND}, pointer_token{pointer_token} {
     }
 
     Token pointer_token;
@@ -287,9 +439,10 @@ struct TypePointer : public Type {
 };
 
 struct TypeArray : public Type {
-    TypeArray(const Token &open_bracket) : open_bracket{open_bracket} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::ARRAY;
+
+    constexpr TypeArray(const Token &open_bracket) 
+        : Type{KIND}, open_bracket{open_bracket} {}
 
     Token open_bracket;
     Token close_bracket;
@@ -303,9 +456,9 @@ struct ProcedureParameter {
 };
 
 struct TypeProcedure : public Type {
-    TypeProcedure(const Token &fn) : fn{fn} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::FUNCTION;
+
+    constexpr TypeProcedure(const Token &fn) : Type{KIND}, fn{fn} {}
 
     Token fn;
     std::span<ProcedureParameter *> parameters;
@@ -318,99 +471,16 @@ struct StructMember {
 };
 
 struct TypeStruct : public Type {
-    TypeStruct(const Token &struct_token) : struct_token{struct_token} {
-        variant = this;
-    }
+    static constexpr auto KIND = Kind::STRUCT;
+    
+    constexpr TypeStruct(const Token &struct_token) 
+        : Type{KIND}, struct_token{struct_token} {}
 
     Token struct_token;
     Token open_brace;
     Token close_brace;
     std::span<StructMember *> members;
-    std::span<Declaration *> declarations;
-};
-
-struct IntegerLiteralExpression : public Expression {
-    IntegerLiteralExpression(const Token &literal) : literal{literal} {
-        variant = this;
-    }
-
-    Token literal;
-    s64 value = 0;
-};
-
-struct IdentifierExpression : public Expression {
-    IdentifierExpression() {
-        variant = this;
-    }
-
-    Identifier *identifier = nullptr;
-};
-
-struct UnaryOperatorExpression : public Expression {
-    UnaryOperatorExpression(const Token &op) : op{op} {
-        variant = this;
-    }
-
-    Token op;
-    Expression *right = nullptr;
-};
-
-struct BinaryOperatorExpression : public Expression {
-    BinaryOperatorExpression(const Token &op) : op{op} {
-        variant = this;
-    }
-    
-    Token op;
-    Expression *left = nullptr;
-    Expression *right = nullptr;
-};
-
-struct BoolLiteralExpression : public Expression {
-    BoolLiteralExpression(const Token &literal) : literal{literal} {
-        variant = this;
-    }
-
-    Token literal;
-    bool value = false;
-};
-
-struct CallOperatorExpression : public Expression {
-    CallOperatorExpression(const Token &open_paren) : open_paren{open_paren} {
-        variant = this;
-    }
-
-    Token open_paren;
-    Token close_paren;
-    Expression *callable = nullptr;
-    std::span<Expression *> arguments;
-};
-
-struct ArraySubscriptExpression : public Expression {
-    ArraySubscriptExpression(const Token &open_bracket) : open_bracket{open_bracket} {
-        variant = this;
-    }
-
-    Token open_bracket;
-    Token close_bracket;
-    Expression *array = nullptr;
-    Expression *index = nullptr;
-};
-
-struct StringLiteralExpression : public Expression {
-    StringLiteralExpression(Token const &string) : string{string} {
-        variant = this;
-    }
-
-    Token string;
-};
-
-struct FloatLiteralExpression : public Expression {
-    FloatLiteralExpression(Token const &literal) : literal{literal} {
-        variant = this;
-    }
-
-    Token literal;
-    f64 value = 0.0;
+    std::span<DeclarationStatement *> declarations;
 };
 
 using Node = std::variant<Statement*, Type*, Expression*, Declaration*>;
@@ -423,7 +493,7 @@ struct Program {
 std::string node_to_string(Node node, int tabs = 0);
 std::string statement_to_string(Statement const *type, int tabs);
 std::string expression_to_string(Expression const *type, int tabs);
-std::string type_to_string(Type const *type, int tabs = 0);
+std::string type_to_string(Type const *type, int tabs = 0, bool include_fn = true);
 std::string declaration_to_string(Declaration const *decl, int tabs);
 
 }; // namespace Ast

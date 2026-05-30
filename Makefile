@@ -36,7 +36,7 @@ $(OBJDIR)%.o : $(SRC_DIR)%.cpp
 
 -include $(DEPS)
 
-.PHONY: clean rebuild
+.PHONY: clean rebuild run
 
 rebuild: clean
 	$(MAKE) $(TARGET)

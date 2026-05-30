@@ -26,67 +26,78 @@ std::optional<Type *> Scope::lookup_type(std::string_view type_name) {
 }
 
 Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) {
-    return std::visit(Overloaded{
-    [&](Ast::TypeIdentifier const *ast_identifier) -> Type* {
-        auto identifier = ast_identifier->identifier->value();
+    switch (ast_type->kind) {
+        using enum Ast::Type::Kind;
 
-        auto bultin_type = check_builtin_type(identifier);
-        if (bultin_type) {
-            return bultin_type.value();
+        case IDENTIFIER: {
+            auto identifier = ast_type->as<Ast::TypeIdentifier>()->identifier->value();
+
+            auto bultin_type = check_builtin_type(identifier);
+            if (bultin_type) {
+                return bultin_type.value();
+            }
+
+            if (auto lookup_result = scope->lookup_type(identifier);
+                lookup_result) {
+                return lookup_result.value();
+            }
+
+            auto type = Type{};
+            type.kind = TypeKind::placeholder;
+            type.ast_type = ast_type;
+            type.type_name = identifier;
+            auto placeholder =
+                arena_->push_item<Type>(type);
+            return placeholder;
+        }
+        
+        case STRUCT: {
+            auto ast_struct = ast_type->as<Ast::TypeStruct>();
+            auto type = arena_->push_item<Struct>();
+            type->ast_type = ast_type;
+
+            auto members_count = std::ssize(ast_struct->members);
+            type->members = arena_->push_array<StructMember>(members_count);
+            for (int i = 0; i < members_count; ++i) {
+                auto member = &type->members[i];
+                auto ast_member = ast_struct->members[i];
+
+                member->name = ast_member->identifier->value();
+                member->type = create_type_from_ast_type(scope, ast_member->type);
+            }
+
+            return type;
         }
 
-        if (auto lookup_result = scope->lookup_type(identifier);
-            lookup_result) {
-            return lookup_result.value();
+        case POINTER: {
+            auto ast_pointer = ast_type->as<Ast::TypePointer>();
+            auto pointer = arena_->push_item<Pointer>();
+            pointer->ast_type = ast_type;
+            pointer->points_to =
+                create_type_from_ast_type(scope, ast_pointer->points_to);
+            return pointer;
         }
 
-        auto type = Type{};
-        type.kind = TypeKind::placeholder;
-        type.ast_type = ast_type;
-        type.type_name = identifier;
-        auto placeholder =
-            arena_->push_item<Type>(type);
-        return placeholder;
-    },
-    [&](Ast::TypeStruct const* ast_struct) -> Type* {
-        auto type = arena_->push_item<Struct>();
-        type->ast_type = ast_type;
-
-        auto members_count = std::ssize(ast_struct->members);
-        type->members = arena_->push_array<StructMember>(members_count);
-        for (int i = 0; i < members_count; ++i) {
-            auto member = &type->members[i];
-            auto ast_member = ast_struct->members[i];
-
-            member->name = ast_member->identifier->value();
-            member->type = create_type_from_ast_type(scope, ast_member->type);
+        case ARRAY: {
+            auto ast_array = ast_type->as<Ast::TypeArray>();
+            auto array = arena_->push_item<Array>();
+            if (!ast_array->element_count->is<Ast::IntegerLiteralExpression>()) {
+                report_error(ast_array->open_bracket, "Array size should be integer literal (for now).");
+            } else {
+                array->count = ast_array->element_count->as<Ast::IntegerLiteralExpression>()->value;
+            }
+            array->elem_type = create_type_from_ast_type(scope, ast_array->element_type);
+            return array; 
         }
 
-        return type;
-    },
-    [&](Ast::TypePointer const* ast_pointer) -> Type* {
-        auto pointer = arena_->push_item<Pointer>();
-        pointer->ast_type = ast_type;
-        pointer->points_to =
-            create_type_from_ast_type(scope, ast_pointer->points_to);
-        return pointer;
-    },
-    [&](Ast::TypeArray const* ast_array) -> Type* {
-        auto array = arena_->push_item<Array>();
-        auto integer_literal = ast_array->element_count->get_if<Ast::IntegerLiteralExpression>();
-        if (!integer_literal.has_value()) {
-            report_error(ast_array->open_bracket, "Array size should be integer literal (for now).");
-        } else {
-            array->count = integer_literal.value()->value;
+        case FUNCTION: {
+            auto ast_procedure = ast_type->as<Ast::TypeProcedure>();
+            report_error(ast_procedure->fn, "Declaring type of procedure is not supported (for now).");
+            return arena_->push_item<Type>();
         }
-        array->elem_type = create_type_from_ast_type(scope, ast_array->element_type);
-        return array;
-    },
-    [&](Ast::TypeProcedure const* ast_procedure) -> Type* {
-        report_error(ast_procedure->fn, "Declaring type of procedure is not supported (for now).");
-        return arena_->push_item<Type>();
-    },
-    }, ast_type->variant);
+    }
+
+    panic("Should be unreachable")
 }
 
 Type *TypeChecker::resolve_type(Scope *scope, Type *type, bool resolve_non_anonymous_types) {

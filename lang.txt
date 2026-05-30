@@ -34,7 +34,13 @@ if expression statement
 else statement
 
 // While
-while expression statement
+while expression {
+	statements
+}
+
+if expression { 
+	statements 
+}
 
 // Pointers
 // * applied to type means pointer to that type

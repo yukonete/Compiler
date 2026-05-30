@@ -48,25 +48,15 @@ private:
     WhileStatement *parse_while_statement();
     BlockStatement *parse_block_statement();
     ReturnStatement *parse_return_statement();
+    std::span<Statement*> parse_statements_sequence();
 
     Expression *parse_expression(Precedence precedence = Precedence::lowest);
     Expression *parse_unary_expression();
     Expression *parse_binary_expression(Expression *left);
 
     Type *parse_type();
+    TypeProcedure *parse_procedure_type(bool skip_identifier = false);
     Identifier *parse_identifier();
-
-    template <typename NodeType, std::invocable<std::vector<NodeType *> *> Func>
-    std::span<NodeType *> parse_until_token(TokenType token, Func parse_func) {
-        std::vector<NodeType *> temp;
-        temp.reserve(16);
-        while (!(next_token_is(token) || next_token_is(TokenType::invalid) ||
-                 next_token_is(TokenType::eof))) {
-            parse_func(&temp);
-        }
-        expect_token(token);
-        return arena_->push_array(std::span(temp));
-    }
 
     template <typename NodeType, typename... Args>
     NodeType *New(Args &&...args) {
@@ -81,7 +71,7 @@ private:
     void report_error(const Token &token, std::format_string<Args...> fmt,
                       Args &&...args) {
         error_count_ += 1;
-        log_diagnostics(log_, DiagnosticsLevel::Error, token, fmt,
+        log_diagnostics(log_, DiagnosticsLevel::Error, token.start, fmt,
                         std::forward<Args>(args)...);
     }
 

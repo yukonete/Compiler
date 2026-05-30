@@ -35,7 +35,7 @@ private:
     void report_error(const Token &token, std::format_string<Args...> fmt,
                         Args &&...args) {
         error_count_ += 1;
-        log_diagnostics(log_, DiagnosticsLevel::Error, token, fmt, std::forward<Args>(args)...);
+        log_diagnostics(log_, DiagnosticsLevel::Error, token.start, fmt, std::forward<Args>(args)...);
     }
 
     int error_count_ = 0;
