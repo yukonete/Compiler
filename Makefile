@@ -1,6 +1,6 @@
 CONFIG ?= debug
 
-CXXFLAGS = -std=c++23 -Wall -Wextra -fhardened -pedantic -MMD -MP
+CXXFLAGS = -std=c++23 -Wall -Wextra -fhardened -pedantic -MMD -MP -fno-rtti -fno-exceptions
 LINK=-lstdc++exp
 
 BUILD_DIR = build/
@@ -36,7 +36,7 @@ $(OBJDIR)%.o : $(SRC_DIR)%.cpp
 
 -include $(DEPS)
 
-.PHONY: clean rebuild run
+.PHONY: clean rebuild
 
 rebuild: clean
 	$(MAKE) $(TARGET)

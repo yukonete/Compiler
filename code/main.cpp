@@ -12,7 +12,7 @@ int main(int argc, char **argv) {
 	}
 
 	Arena arena;
-	auto arena_allocator = ArenaAllocator{&arena};
+	auto arena_allocator = ArenaAllocator{arena};
 
 	auto [input, ok] = read_file_to_string(input_file_name);
 	if (!ok) {
@@ -20,8 +20,8 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	input += '\n';
-	
-	auto parser = Ast::Parser(input, &arena_allocator);
+
+	auto parser = Ast::Parser(input, arena_allocator);
 	auto program = parser.parse_program();
 	if (program.error_count != 0) {
 		std::println("Parsing error");
@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
 
 	std::println("AST to code:");
 	for (auto statement : program.declarations) {
-		auto node_string = Ast::node_to_string(statement);
+		auto node_string = Ast::statement_to_string(statement, 0);
 		std::println("{}", node_string);
 	}
 

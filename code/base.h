@@ -123,8 +123,7 @@ inline void *align_forward(void *pointer, isize alignment) {
 constexpr isize allocation_default_alignment = 2 * sizeof(void *);
 
 struct FixedBuffer {
-    FixedBuffer() {
-    }
+    FixedBuffer() {}
     FixedBuffer(u8 *buffer, isize size)
         : data_(buffer), size_{size} {};
 
@@ -184,10 +183,6 @@ public:
         if (first != nullptr) {
             first->clear();
         }
-    }
-
-    ~Arena() {
-        clear();
     }
 
 private:
@@ -250,12 +245,20 @@ private:
 
 template <typename Buffer> 
 struct BumpAllocator {
-    BumpAllocator(Buffer *buffer) : buffer{buffer} {
-        
+    constexpr BumpAllocator(Buffer &buffer) : buffer{buffer} {}
+    constexpr BumpAllocator(const BumpAllocator &other) = delete;
+
+    constexpr BumpAllocator(BumpAllocator &&other) {
+        buffer = std::exchange(other.buffer, nullptr);
+        last_allocation_ = std::exchange(other.last_allocation_, nullptr);
+    }
+
+    constexpr BumpAllocator& operator=(BumpAllocator &&other) {
+        return *new (drop()) BumpAllocator{other};
     }
 
     void *alloc(isize size, isize alignment = allocation_default_alignment) {
-        return buffer->alloc(size, alignment);
+        return buffer.alloc(size, alignment);
     };
 
     template <typename Item, typename... Args>
@@ -292,18 +295,22 @@ struct BumpAllocator {
     }
 
     void clear() {
+        drop();
+        if (buffer != nullptr) {
+            buffer.clear();
+        }
+    }
+
+    BumpAllocator* drop() {
         while (last_allocation_ != nullptr) {
             last_allocation_->destructor(last_allocation_->object);
             last_allocation_ = last_allocation_->previous;
         }
-        if (buffer != nullptr) {
-            buffer->clear();
-        }
+        return this;
     }
 
     ~BumpAllocator() {
-        // TODO: Maybe i should not clear and only call destructors
-        clear();
+        drop();
     }
 
 private:
@@ -329,7 +336,7 @@ private:
         AllocationWithDestructor *previous = nullptr;
     };
 
-    Buffer *buffer = nullptr;
+    Buffer &buffer;
     AllocationWithDestructor *last_allocation_ = nullptr;
 };
 

@@ -30,7 +30,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
         using enum Ast::Type::Kind;
 
         case IDENTIFIER: {
-            auto identifier = ast_type->as<Ast::TypeIdentifier>()->identifier->value();
+            auto identifier = ast_type->as<Ast::TypeIdentifier>()->get_full_type_name();
 
             auto bultin_type = check_builtin_type(identifier);
             if (bultin_type) {
@@ -62,7 +62,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
                 auto member = &type->members[i];
                 auto ast_member = ast_struct->members[i];
 
-                member->name = ast_member->identifier->value();
+                member->name = ast_member->identifier->value;
                 member->type = create_type_from_ast_type(scope, ast_member->type);
             }
 
@@ -82,7 +82,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
             auto ast_array = ast_type->as<Ast::TypeArray>();
             auto array = arena_->push_item<Array>();
             if (!ast_array->element_count->is<Ast::IntegerLiteralExpression>()) {
-                report_error(ast_array->open_bracket, "Array size should be integer literal (for now).");
+                report_error(ast_array->element_count->location, "Array size should be integer literal (for now).");
             } else {
                 array->count = ast_array->element_count->as<Ast::IntegerLiteralExpression>()->value;
             }
@@ -92,7 +92,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
 
         case FUNCTION: {
             auto ast_procedure = ast_type->as<Ast::TypeProcedure>();
-            report_error(ast_procedure->fn, "Declaring type of procedure is not supported (for now).");
+            report_error(ast_procedure->location, "Declaring type of procedure is not supported (for now).");
             return arena_->push_item<Type>();
         }
     }
@@ -112,9 +112,7 @@ Type *TypeChecker::resolve_type(Scope *scope, Type *type, bool resolve_non_anony
                 if (lookup_result) {
                     type = lookup_result.value();
                 } else {
-                    // For placeholders ast_type is always Ast::TypeIdentifier
-                    auto ast_identifier = type->ast_type->as<Ast::TypeIdentifier>();
-                    report_error(ast_identifier->identifier->token, "Type {} is not defined.", type->type_name);
+                    report_error(type->ast_type->location, "Type {} is not defined.", type->type_name);
                 }
                 break;
             }
@@ -294,7 +292,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
             }
             if (check_for_recursive_structs_recurse(&met_types, type)) {
                 if (met_types.at(0) == met_types.at(met_types.size() - 1)) {
-                    report_error(type->ast_declaration->identifier->token,
+                    report_error(type->ast_declaration->identifier->location,
                                  "Found self reference in type {}.",
                                  type->type_name);
                 }
@@ -313,7 +311,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
             }
             auto alias = static_cast<Alias *>(type);
             if (type_is_or_contains_alias(alias, alias->alias_to)) {
-                report_error(type->ast_declaration->identifier->token,
+                report_error(type->ast_declaration->identifier->location,
                              "Found self referencing alias {}.",
                              type->type_name);
                 result = true;
@@ -325,15 +323,15 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
     for (auto statement : statements) {
         if (statement->is<Ast::DeclarationStatement>()) {
             auto decl = statement->as<Ast::DeclarationStatement>()->declaration;
-            auto decl_identifier = decl->identifier->value();
+            auto decl_identifier = decl->identifier->value;
             if (scope->lookup_type(decl_identifier)) {
-                report_error(decl->identifier->token,
+                report_error(decl->identifier->location,
                              "Declaration with identifier {} already exists.",
                              decl_identifier);
                 return false;
             }
             if (!decl->is<Ast::TypeDeclaration>()) {
-                report_error(decl->identifier->token, 
+                report_error(decl->identifier->location, 
                     "Declaration {} is not a type. Type checker only supports types (for now).", 
                     decl_identifier);
                 continue;

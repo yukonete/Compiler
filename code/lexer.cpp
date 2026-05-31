@@ -5,14 +5,17 @@
 #include "base.h"
 #include "lexer.h"
 
+const FileLocation FileLocation::no_location = FileLocation{
+    static_cast<u64>(-1), 
+    static_cast<u64>(-1), 
+    static_cast<u64>(-1)
+};
+
 static TokenType check_identifier_for_keyword(std::string_view identifier) {
     if (Lexer::keywords.contains(identifier)) {
         return Lexer::keywords.at(identifier);
     }
     return TokenType::identifier;
-}
-
-Lexer::Lexer(std::string_view input) : input_{input} {
 }
 
 const Token &Lexer::next_token() {
@@ -35,11 +38,7 @@ const Token &Lexer::peek_token(int peek) {
 }
 
 const Token &Lexer::previous_token() const {
-    if (tokens_cursor_ - 1 >= 0) {
-        return tokens_.at(tokens_cursor_ - 1);
-    }
-
-    panic("No previous token");
+    return tokens_.at(tokens_cursor_ - 1);
 }
 
 void Lexer::eat_token() {
@@ -316,44 +315,41 @@ void Lexer::tokenize() {
 
     token.end = current_location_;
     token.end.column -= 1;
+    token.end.byte -= 1;
     assert(token.end.column != 0);
     tokens_.push_back(token);
 }
 
 int Lexer::peek_next_char() const {
-    if (input_cursor_ >= std::ssize(input_)) {
-        return -1;
-    }
-    return input_.at(input_cursor_);
+    return peek_char(0);
 }
 
 int Lexer::peek_char(int peek) const {
     if (peek < 0) {
-        return -1;
-    }
-    if (peek == 0) {
-        return peek_next_char();
+        panic("Peeking previous characters is not allowed")
     }
 
-    auto cursor = input_cursor_ + peek;
-    if (cursor >= std::ssize(input_)) {
+    auto index = input_cursor_ + peek;
+    if (index >= std::ssize(input_)) {
         return -1;
     }
 
-    return input_.at(cursor);
+    return input_.at(index);
 }
 
 void Lexer::eat_char() {
     const auto ch = peek_next_char();
-    if (ch == '\n' || (ch == '\r' && peek_char(1) == '\n')) {
+    if (is_new_line(ch)) {
         current_location_.line += 1;
         current_location_.column = 1;
         if (ch == '\r') {
+            current_location_.byte += 1;
             input_cursor_ += 1;
         }
     } else {
         current_location_.column += 1;
     }
+    current_location_.byte += 1;
     input_cursor_ += 1;
 }
 
@@ -387,12 +383,12 @@ Lexer::ParseNumberResult Lexer::parse_number() {
     };
 }
 
-Lexer::ParseStringResult Lexer::parse_string() {
+Lexer::ParseStringResult Lexer::parse_string() {    
     auto ch = peek_next_char();
     assert(ch == '\"');
     eat_char();
-
-    auto str = std::string{};
+    auto string_start = input_cursor_;
+    auto count = 0;
     while (true) {
         ch = peek_next_char();
         
@@ -401,19 +397,24 @@ Lexer::ParseStringResult Lexer::parse_string() {
             break;
         }
 
+        if (ch == '\\') {
+            if (peek_char(1) == '\"') {
+                count += 1;
+                eat_char();
+            }
+        }
+
         if (is_new_line(ch)) {
-            skip_whitespaces_and_comments();
-            ch = peek_next_char();
+            return {};
         }
         
-        str += ch;
+        count += 1;
         eat_char();
     }
 
     if (ch == '\"') {
-        strings.push_back(std::move(str));
         return ParseStringResult{
-            .str = strings.back(),
+            .str = input_.substr(string_start, count),
             .ok = true,
         };
     }

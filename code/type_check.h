@@ -32,10 +32,10 @@ private:
     bool add_type_declarations_to_scope(std::span<Ast::Statement *> statements, Scope *scope);
 
     template <typename... Args>
-    void report_error(const Token &token, std::format_string<Args...> fmt,
+    void report_error(const FileLocation &location, std::format_string<Args...> fmt,
                         Args &&...args) {
         error_count_ += 1;
-        log_diagnostics(log_, DiagnosticsLevel::Error, token.start, fmt, std::forward<Args>(args)...);
+        log_diagnostics(log_, DiagnosticsLevel::Error, location, fmt, std::forward<Args>(args)...);
     }
 
     int error_count_ = 0;

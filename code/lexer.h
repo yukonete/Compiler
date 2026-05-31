@@ -81,6 +81,9 @@ enum class TokenType {
 struct FileLocation {
     u64 line = 0;
     u64 column = 0;
+    u64 byte = 0;
+
+    static const FileLocation no_location;
 };
 
 struct Token {
@@ -114,9 +117,11 @@ public:
             {"continue", TokenType::keyword_continue},
     };
 
-    Lexer(std::string_view input);
-    Lexer(const Lexer &) = delete;
-    Lexer(const Lexer &&) = delete;
+    constexpr Lexer(std::string_view input) : input_{input} {}
+    constexpr Lexer(const Lexer &) = delete;
+    constexpr Lexer& operator=(const Lexer &) = delete;
+    constexpr Lexer(Lexer&&) = default;
+    constexpr Lexer& operator=(Lexer &&) = default;
 
     // Might invalidate references to tokens
     const Token &next_token();
@@ -154,10 +159,8 @@ private:
 
     std::vector<Token> tokens_;
     s64 tokens_cursor_ = 0;
-
-    FileLocation current_location_ = {1, 1};
-
-    std::deque<std::string> strings;
+    
+    FileLocation current_location_ = {.line = 1, .column = 1, .byte = 0};
 };
 
 template <> struct std::formatter<TokenType> {

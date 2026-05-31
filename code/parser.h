@@ -29,10 +29,9 @@ enum class Precedence {
 
 class Parser {
 public:
-    Parser(std::string_view input, ArenaAllocator *arena, FILE *log = stderr);
+    constexpr Parser(std::string_view input, ArenaAllocator &arena, FILE *log = stderr)
+        : lexer_{input}, arena_{arena}, log_{log} {}
 
-    // If error_count is not 0 then indentifiers might have incorrect values in
-    // union
     Program parse_program();
 
 private:
@@ -59,24 +58,32 @@ private:
     Identifier *parse_identifier();
 
     template <typename NodeType, typename... Args>
-    NodeType *New(Args &&...args) {
-        return arena_->push_item<NodeType>(std::forward<Args>(args)...);
+    NodeType *New(Args &&...args) 
+    requires std::derived_from<NodeType, Node>
+    {
+        return arena_.push_item<NodeType>(std::forward<Args>(args)...);
     };
-    
+
+    template<typename NodeType>
+    std::span<NodeType*> NewArray(std::span<NodeType*> nodes)
+    requires std::derived_from<NodeType, Node>
+    {
+        return arena_.push_array(nodes);
+    }
+
     const Token &expect_token(TokenType type);
 
     bool next_token_is(TokenType type);
 
     template <typename... Args>
-    void report_error(const Token &token, std::format_string<Args...> fmt,
+    void report_error(const FileLocation &location, std::format_string<Args...> fmt,
                       Args &&...args) {
         error_count_ += 1;
-        log_diagnostics(log_, DiagnosticsLevel::Error, token.start, fmt,
-                        std::forward<Args>(args)...);
+        log_diagnostics(log_, DiagnosticsLevel::Error, location, fmt, std::forward<Args>(args)...);
     }
 
     Lexer lexer_;
-    ArenaAllocator *arena_ = nullptr;
+    ArenaAllocator &arena_;
     FILE *log_ = nullptr;
 
     int error_count_ = 0;
