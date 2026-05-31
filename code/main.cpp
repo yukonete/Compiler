@@ -11,8 +11,8 @@ int main(int argc, char **argv) {
 		input_file_name = argv[1];
 	}
 
-	Arena arena;
-	auto arena_allocator = ArenaAllocator{arena};
+	DynamicArena arena;
+	auto arena_allocator = DynamicArenaStorage{arena};
 
 	auto [input, ok] = read_file_to_string(input_file_name);
 	if (!ok) {

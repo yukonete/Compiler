@@ -29,7 +29,7 @@ enum class Precedence {
 
 class Parser {
 public:
-    constexpr Parser(std::string_view input, ArenaAllocator &arena, FILE *log = stderr)
+    constexpr Parser(std::string_view input, DynamicArenaStorage &arena, FILE *log = stderr)
         : lexer_{input}, arena_{arena}, log_{log} {}
 
     Program parse_program();
@@ -83,7 +83,7 @@ private:
     }
 
     Lexer lexer_;
-    ArenaAllocator &arena_;
+    DynamicArenaStorage &arena_;
     FILE *log_ = nullptr;
 
     int error_count_ = 0;

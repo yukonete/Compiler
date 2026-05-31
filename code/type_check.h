@@ -21,7 +21,7 @@ struct Scope {
 
 class TypeChecker {
 public:
-    TypeChecker(ArenaAllocator *arena, FILE *log = stderr) : log_{log}, arena_{arena} {
+    TypeChecker(DynamicArenaStorage *arena, FILE *log = stderr) : log_{log}, arena_{arena} {
     }
     bool do_type_check(Ast::Program *program);
     Scope global_scope;
@@ -40,7 +40,7 @@ private:
 
     int error_count_ = 0;
     FILE *log_ = nullptr;
-    ArenaAllocator *arena_ = nullptr;
+    DynamicArenaStorage *arena_ = nullptr;
 };
 
 std::string type_to_string(const Type *type, bool declaration = false);

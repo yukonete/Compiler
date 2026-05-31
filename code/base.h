@@ -41,17 +41,6 @@ using usize = size_t;
 using uintptr = uintptr_t;
 using intptr = intptr_t;
 
-template <typename T, typename... Types>
-concept AnyOf = (std::same_as<T, Types> || ...);
-
-template <class... Ts>
-struct Overloaded : Ts... {
-    using Ts::operator()...;
-};
-
-template <typename T>
-concept TriviallyCopyable = std::is_trivially_copyable_v<T>;
-
 template <typename T>
 concept TriviallyDestructible = std::is_trivially_destructible_v<T>;
 
@@ -122,9 +111,9 @@ inline void *align_forward(void *pointer, isize alignment) {
 
 constexpr isize allocation_default_alignment = 2 * sizeof(void *);
 
-struct FixedBuffer {
-    FixedBuffer() {}
-    FixedBuffer(u8 *buffer, isize size)
+struct Arena {
+    Arena() {}
+    Arena(u8 *buffer, isize size)
         : data_(buffer), size_{size} {};
 
     const u8 *data() const {
@@ -169,11 +158,12 @@ private:
     isize offset_ = 0;
 };
 
-class Arena {
+class DynamicArena {
 public:
     constexpr static isize default_size = megabytes(2);
 
-    Arena(isize size = default_size) : first(ArenaMemoryBlock::create(size)) {};
+    DynamicArena(isize size = default_size) : first(MemoryBlock::create(size)) {};
+
 
     void *alloc(isize size, isize alignment = allocation_default_alignment) {
         return first->alloc(size, alignment);
@@ -186,33 +176,33 @@ public:
     }
 
 private:
-    struct ArenaMemoryBlock {
+    struct MemoryBlock {
         struct Deleter {
-            void operator()(ArenaMemoryBlock *pointer) const {
-                pointer->~ArenaMemoryBlock();
+            void operator()(MemoryBlock *pointer) const {
+                pointer->~MemoryBlock();
                 delete[] reinterpret_cast<u8*>(pointer);
             };
         };
 
-        static std::unique_ptr<ArenaMemoryBlock, Deleter> create(isize size) {
-            static_assert(alignof(ArenaMemoryBlock) <  __STDCPP_DEFAULT_NEW_ALIGNMENT__);
+        static std::unique_ptr<MemoryBlock, Deleter> create(isize size) {
+            static_assert(alignof(MemoryBlock) <  __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 
             auto block_info_size_plus_alignment = align_forward(
-                sizeof(ArenaMemoryBlock), allocation_default_alignment);
+                sizeof(MemoryBlock), allocation_default_alignment);
             auto to_allocate = block_info_size_plus_alignment + size;
 
             auto memory_block = new u8[to_allocate]{};
-            auto block = new (memory_block) ArenaMemoryBlock;
+            auto block = new (memory_block) MemoryBlock;
 
-            block->buffer = FixedBuffer{
+            block->buffer = Arena {
                 static_cast<u8 *>(memory_block) + block_info_size_plus_alignment,
                 size};
 
-            return std::unique_ptr<ArenaMemoryBlock, Deleter>(block, Deleter{});
+            return std::unique_ptr<MemoryBlock, Deleter>(block, Deleter{});
         }
 
-        FixedBuffer buffer;
-        std::unique_ptr<ArenaMemoryBlock, Deleter> next = nullptr;
+        Arena buffer;
+        std::unique_ptr<MemoryBlock, Deleter> next = nullptr;
 
         void *alloc(isize size,
                     isize alignment = allocation_default_alignment) {
@@ -240,25 +230,28 @@ private:
         }
     };
 
-    std::unique_ptr<ArenaMemoryBlock, ArenaMemoryBlock::Deleter> first;
+    std::unique_ptr<MemoryBlock, MemoryBlock::Deleter> first;
 };
 
-template <typename Buffer> 
-struct BumpAllocator {
-    constexpr BumpAllocator(Buffer &buffer) : buffer{buffer} {}
-    constexpr BumpAllocator(const BumpAllocator &other) = delete;
+// I do not know how to better name this but this is basically
+// an arena, except it will call destructors for objects
+// that were allocted from Arena
+template <typename Buffer>
+struct ArenaStorage {
+    constexpr ArenaStorage(Buffer &buffer) : buffer_{buffer} {}
+    constexpr ArenaStorage(const ArenaStorage &other) = delete;
 
-    constexpr BumpAllocator(BumpAllocator &&other) {
-        buffer = std::exchange(other.buffer, nullptr);
+    constexpr ArenaStorage(ArenaStorage &&other) {
+        buffer_ = other.buffer_;
         last_allocation_ = std::exchange(other.last_allocation_, nullptr);
     }
 
-    constexpr BumpAllocator& operator=(BumpAllocator &&other) {
-        return *new (drop()) BumpAllocator{other};
+    constexpr ArenaStorage& operator=(ArenaStorage &&other) {
+        return *new (drop()) ArenaStorage{other};
     }
 
     void *alloc(isize size, isize alignment = allocation_default_alignment) {
-        return buffer.alloc(size, alignment);
+        return buffer_.alloc(size, alignment);
     };
 
     template <typename Item, typename... Args>
@@ -294,14 +287,7 @@ struct BumpAllocator {
         return pointer;
     }
 
-    void clear() {
-        drop();
-        if (buffer != nullptr) {
-            buffer.clear();
-        }
-    }
-
-    BumpAllocator* drop() {
+    ArenaStorage* drop() {
         while (last_allocation_ != nullptr) {
             last_allocation_->destructor(last_allocation_->object);
             last_allocation_ = last_allocation_->previous;
@@ -309,7 +295,7 @@ struct BumpAllocator {
         return this;
     }
 
-    ~BumpAllocator() {
+    ~ArenaStorage() {
         drop();
     }
 
@@ -336,12 +322,12 @@ private:
         AllocationWithDestructor *previous = nullptr;
     };
 
-    Buffer &buffer;
+    Buffer &buffer_;
     AllocationWithDestructor *last_allocation_ = nullptr;
 };
 
-using ArenaAllocator = BumpAllocator<Arena>;
-using FixedBufferAllocator = BumpAllocator<FixedBuffer>;
+using DynamicArenaStorage = ArenaStorage<DynamicArena>;
+using StaticArenaAllocator = ArenaStorage<Arena>;
 
 struct ReadFileToStringResult {
     std::string content;
