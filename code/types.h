@@ -5,7 +5,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "base.h"
 #include "ast.h"
 
 namespace TypeCheck {

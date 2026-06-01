@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-#include "base.h"
+#include "base/arena.h"
 #include "lexer.h"
 #include "log.h"
 #include "ast.h"
@@ -29,8 +29,8 @@ enum class Precedence {
 
 class Parser {
 public:
-    constexpr Parser(std::string_view input, DynamicArenaStorage &arena, FILE *log = stderr)
-        : lexer_{input}, arena_{arena}, log_{log} {}
+    constexpr Parser(std::string_view input, Allocator allocator, FILE *log = stderr)
+        : lexer_{input}, arena_{allocator}, log_{log} {}
 
     Program parse_program();
 
@@ -61,14 +61,18 @@ private:
     NodeType *New(Args &&...args) 
     requires std::derived_from<NodeType, Node>
     {
-        return arena_.push_item<NodeType>(std::forward<Args>(args)...);
+        return arena_.create<NodeType>(std::forward<Args>(args)...);
     };
 
     template<typename NodeType>
     std::span<NodeType*> NewArray(std::span<NodeType*> nodes)
     requires std::derived_from<NodeType, Node>
     {
-        return arena_.push_array(nodes);
+        auto array = arena_.allocate<NodeType*>(nodes.size());
+        for (usize i = 0; i < nodes.size(); ++i) {
+            array[i] = nodes[i];
+        }
+        return std::span{array, nodes.size()};
     }
 
     const Token &expect_token(TokenType type);
@@ -83,10 +87,12 @@ private:
     }
 
     Lexer lexer_;
-    DynamicArenaStorage &arena_;
-    FILE *log_ = nullptr;
+    DynamicArena arena_;
 
-    int error_count_ = 0;
+    FILE *log_ = nullptr;
+    std::vector<Statement*> statements_;
+
+    u64 error_count_ = 0;
 };
 
 }; // namespace Ast

@@ -2,7 +2,7 @@
 #include <utility>
 #include <variant>
 
-#include "base.h"
+#include "base/panic.h" 
 #include "ast.h"
 #include "type_check.h"
 #include "types.h"
@@ -47,18 +47,18 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
             type.ast_type = ast_type;
             type.type_name = identifier;
             auto placeholder =
-                arena_->push_item<Type>(type);
+                arena_->create<Type>(type);
             return placeholder;
         }
         
         case STRUCT: {
             auto ast_struct = ast_type->as<Ast::TypeStruct>();
-            auto type = arena_->push_item<Struct>();
+            auto type = arena_->create<Struct>();
             type->ast_type = ast_type;
 
-            auto members_count = std::ssize(ast_struct->members);
-            type->members = arena_->push_array<StructMember>(members_count);
-            for (int i = 0; i < members_count; ++i) {
+            auto members_count = ast_struct->members.size();
+            // type->members = arena_->push_array<StructMember>(members_count);
+            for (usize i = 0; i < members_count; ++i) {
                 auto member = &type->members[i];
                 auto ast_member = ast_struct->members[i];
 
@@ -71,7 +71,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
 
         case POINTER: {
             auto ast_pointer = ast_type->as<Ast::TypePointer>();
-            auto pointer = arena_->push_item<Pointer>();
+            auto pointer = arena_->create<Pointer>();
             pointer->ast_type = ast_type;
             pointer->points_to =
                 create_type_from_ast_type(scope, ast_pointer->points_to);
@@ -80,7 +80,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
 
         case ARRAY: {
             auto ast_array = ast_type->as<Ast::TypeArray>();
-            auto array = arena_->push_item<Array>();
+            auto array = arena_->create<Array>();
             if (!ast_array->element_count->is<Ast::IntegerLiteralExpression>()) {
                 report_error(ast_array->element_count->location, "Array size should be integer literal (for now).");
             } else {
@@ -93,7 +93,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
         case FUNCTION: {
             auto ast_procedure = ast_type->as<Ast::TypeProcedure>();
             report_error(ast_procedure->location, "Declaring type of procedure is not supported (for now).");
-            return arena_->push_item<Type>();
+            return arena_->create<Type>();
         }
     }
 
@@ -253,13 +253,13 @@ static void calculate_size_and_alignment(Type *type) {
                 if (member.type->align > biggest_align) {
                     biggest_align = member.type->align;
                 }
-                st_size = align_forward(st_size, member.type->align);
+                st_size = round(st_size, member.type->align);
                 st_size += member.type->size;
             }
             st->align = biggest_align;
             st->size = st_size;
             if (!st->members.empty()) {
-                st->size = align_forward(st->size, st->align);
+                st->size = round(st->size, st->align);
             }
             return;
         }
@@ -348,7 +348,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
                 // But then two aliases which declare same struct will be
                 // threated as same type
                 // But if i add distinct alias, than struct can just be distinct alias
-                auto alias = arena_->push_item<Alias>();
+                auto alias = arena_->create<Alias>();
                 alias->ast_declaration = type_decl;
                 alias->ast_type = type_decl->declared_type;
                 alias->alias_to = type;

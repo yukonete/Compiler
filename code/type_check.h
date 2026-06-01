@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <optional>
 
-#include "base.h"
+#include "base/arena.h"
 #include "ast.h"
 #include "types.h"
 #include "log.h"
@@ -21,7 +21,7 @@ struct Scope {
 
 class TypeChecker {
 public:
-    TypeChecker(DynamicArenaStorage *arena, FILE *log = stderr) : log_{log}, arena_{arena} {
+    TypeChecker(DynamicArena *arena, FILE *log = stderr) : log_{log}, arena_{arena} {
     }
     bool do_type_check(Ast::Program *program);
     Scope global_scope;
@@ -38,9 +38,9 @@ private:
         log_diagnostics(log_, DiagnosticsLevel::Error, location, fmt, std::forward<Args>(args)...);
     }
 
-    int error_count_ = 0;
+    u64 error_count_ = 0;
     FILE *log_ = nullptr;
-    DynamicArenaStorage *arena_ = nullptr;
+    DynamicArena *arena_ = nullptr;
 };
 
 std::string type_to_string(const Type *type, bool declaration = false);

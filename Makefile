@@ -1,6 +1,7 @@
 CONFIG ?= debug
 
 CXXFLAGS = -std=c++23 -Wall -Wextra -fhardened -pedantic -MMD -MP -fno-rtti -fno-exceptions
+INCLUDE = -Icode/
 LINK=-lstdc++exp
 
 BUILD_DIR = build/
@@ -17,8 +18,8 @@ else
 endif
 
 OBJDIR = $(CONFIGURATION_DIR)obj/
-SRCS = $(wildcard $(SRC_DIR)*.cpp)
-OBJS := $(addprefix $(OBJDIR), $(notdir $(SRCS:.cpp=.o)))
+SRCS := $(shell find $(SRC_DIR) -name "*.cpp")
+OBJS := $(addprefix $(OBJDIR), $(SRCS:.cpp=.o))
 DEPS := $(OBJS:.o=.d)
 
 TARGET_DIR = $(CONFIGURATION_DIR)bin/
@@ -31,8 +32,9 @@ debug: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET) $(LINK)
 
-$(OBJDIR)%.o : $(SRC_DIR)%.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+$(OBJDIR)%.o : %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
 
 -include $(DEPS)
 

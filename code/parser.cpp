@@ -6,28 +6,38 @@
 #include <string_view>
 #include <vector>
 
-#include "base.h"
+#include "base/panic.h"
+#include "ast.h"
 #include "lexer.h"
 #include "parser.h"
-#include "ast.h"
 
 namespace Ast {
 
 Program Parser::parse_program() {
-    Program result;
     while (true) {
-        if (lexer_.next_token().type == TokenType::eof) {
+        const auto &token = lexer_.next_token();
+
+        if (token.type == TokenType::eof) {
             break;
+        }
+
+        if (token.type == TokenType::invalid) {
+            report_error(token.start, "Invalid token");
+            lexer_.eat_token();
+            continue;
         }
 
         auto statement = parse_statement();
         if (!statement->is<DeclarationStatement>()) {
             report_error(statement->location, "Expected declaration.");
         }
-        result.declarations.push_back(statement);
+        statements_.push_back(statement);
     }
-    result.error_count = error_count_;
-    return result;
+
+    return Program{
+        .declarations = std::span{statements_},
+        .error_count = error_count_,
+    };
 }
 
 Identifier *Parser::parse_identifier() {
@@ -128,7 +138,7 @@ Declaration *Parser::parse_declaration() {
         
         default: panic("Not a declaration");
     }
-
+    assert(declaration != nullptr);
     return declaration;
 }
 
@@ -543,12 +553,12 @@ bool Parser::next_token_is(TokenType type) {
     return lexer_.next_token().type == type;
 }
 
-static std::string indent(int tabs) {
+static std::string indent(u64 tabs) {
     constexpr auto tab_width = 4;
     return std::string(tab_width * tabs, ' ');
 };
 
-std::string type_to_string(const Type *type, int tabs, bool include_fn) {
+std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
     auto result = std::string{};
     switch (type->kind) {
         using enum Type::Kind;
@@ -595,11 +605,11 @@ std::string type_to_string(const Type *type, int tabs, bool include_fn) {
                 result += "fn";
             }
             result += "(";
-            for (int i = 0; i < std::ssize(type_function->parameters); ++i) {
+            for (usize i = 0; i < type_function->parameters.size(); ++i) {
                 const auto &parameter = type_function->parameters[i];
                 result += std::format("{}: {}", parameter->identifier->value,
                                 type_to_string(parameter->type, tabs));
-                if (i != std::ssize(type_function->parameters) - 1) {
+                if (i != type_function->parameters.size() - 1) {
                     result += ", ";
                 }
             }
@@ -611,7 +621,7 @@ std::string type_to_string(const Type *type, int tabs, bool include_fn) {
     return result;
 }
 
-static std::string statements_to_string(std::span<Statement*> statements, int tabs) {
+static std::string statements_to_string(std::span<Statement*> statements, u64 tabs) {
     auto result = std::string{"{\n"};
     for (auto statement : statements) {
         result += statement_to_string(statement, tabs + 1);
@@ -622,7 +632,7 @@ static std::string statements_to_string(std::span<Statement*> statements, int ta
     return result;
 } 
 
-std::string statement_to_string(const Statement *type, int tabs) {
+std::string statement_to_string(const Statement *type, u64 tabs) {
     auto result = indent(tabs);
     switch (type->kind) {
         using enum Statement::Kind;
@@ -696,7 +706,7 @@ std::string statement_to_string(const Statement *type, int tabs) {
     return result;
 }
 
-std::string expression_to_string(const Expression *expression, int tabs) {
+std::string expression_to_string(const Expression *expression, u64 tabs) {
     auto result = std::string{};
     switch (expression->kind) {
         using enum Expression::Kind;
@@ -742,11 +752,11 @@ std::string expression_to_string(const Expression *expression, int tabs) {
         case CALL_OPERATOR: {
             auto call_operator = expression->as<CallOperatorExpression>();
             result += std::format("{}(", expression_to_string(call_operator->callable, tabs));
-            for (int i = 0; i < std::ssize(call_operator->arguments); ++i) {
+            for (usize i = 0; i < call_operator->arguments.size(); ++i) {
                 auto arg = call_operator->arguments[i];
                 result += expression_to_string(arg, tabs);
 
-                if (i != std::ssize(call_operator->arguments) - 1) {
+                if (i != call_operator->arguments.size() - 1) {
                     result += ", ";
                 }
             }
@@ -769,7 +779,7 @@ std::string expression_to_string(const Expression *expression, int tabs) {
     return result;
 }
 
-std::string declaration_to_string(const Declaration *decl, int tabs) {
+std::string declaration_to_string(const Declaration *decl, u64 tabs) {
     auto result = std::string{};
     switch (decl->kind) {
         using enum Declaration::Kind;

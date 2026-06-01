@@ -1,8 +1,9 @@
 #include <array>
 #include <cctype>
 #include <string_view>
+#include <cassert>
 
-#include "base.h"
+#include "base/panic.h"
 #include "lexer.h"
 
 const FileLocation FileLocation::no_location = FileLocation{
@@ -24,12 +25,12 @@ const Token &Lexer::next_token() {
 
 // peek is how much to look ahead
 const Token &Lexer::peek_token(int peek) {
-    auto index = tokens_cursor_ + peek;
+    auto index = static_cast<isize>(tokens_cursor_) + peek;
     if (index < 0) {
         panic("No previous token");
     }
 
-    if (index < std::ssize(tokens_)) {
+    if (static_cast<usize>(index) < tokens_.size()) {
         return tokens_.at(tokens_cursor_ + peek);
     }
 
@@ -324,13 +325,9 @@ int Lexer::peek_next_char() const {
     return peek_char(0);
 }
 
-int Lexer::peek_char(int peek) const {
-    if (peek < 0) {
-        panic("Peeking previous characters is not allowed")
-    }
-
+int Lexer::peek_char(usize peek) const {
     auto index = input_cursor_ + peek;
-    if (index >= std::ssize(input_)) {
+    if (index >= input_.size()) {
         return -1;
     }
 
@@ -423,8 +420,8 @@ Lexer::ParseStringResult Lexer::parse_string() {
 }
 
 std::string_view Lexer::parse_identifier() {
-    s64 identifier_start = input_cursor_;
-    s64 count = 0;
+    usize identifier_start = input_cursor_;
+    usize count = 0;
     auto ch = peek_next_char();
     while (std::isalnum(ch) || ch == '_') {
         count += 1;

@@ -5,9 +5,11 @@
 #include <span>
 #include <variant>
 #include <string_view>
+#include <cassert>
 
-#include "base.h"
-#include "lexer.h"
+#include "base/types.h"
+
+#include "lexer.h" // Potentially remove lexer.h form here
 
 namespace Ast {
 
@@ -61,19 +63,16 @@ struct StringLiteralExpression;
     const T *as() const                                                        \
         requires std::derived_from<T, type>                                    \
     {                                                                          \
-        if (!is<T>()) {                                                        \
-            panic("Wrong AST downcast");                                       \
-        }                                                                      \
+        assert(is<T>());                                                       \
         return static_cast<const T *>(this);                                   \
     }                                                                          \
     template <typename T>                                                      \
     T *as()                                                                    \
         requires std::derived_from<T, type>                                    \
     {                                                                          \
-        if (!is<T>()) {                                                        \
-            panic("Wrong AST downcast");                                       \
-        }                                                                      \
-        return static_cast<T *>(this);                                   \
+        assert(is<T>());                                                       \
+                                                                               \
+        return static_cast<T *>(this);                                         \
     }
 
 // AST conventions:
@@ -401,10 +400,10 @@ struct TypeIdentifier : public Type {
     // temporary
     std::string get_full_type_name() const {
         auto result = std::string{};
-        for (int i = 0; i < std::ssize(identifier); ++i) {
+        for (usize i = 0; i < identifier.size(); ++i) {
             result += identifier[i]->value;
 
-            if (i != std::ssize(identifier) - 1) {
+            if (i != identifier.size() - 1) {
                 result += '.';
             }
         }
@@ -457,14 +456,14 @@ struct TypeStruct : public Type {
 };
 
 struct Program {
-    std::vector<Statement *> declarations;
-    int error_count = 0;
+    std::span<Statement *> declarations;
+    u64 error_count = 0;
 };
 
-std::string statement_to_string(Statement const *type, int tabs);
-std::string expression_to_string(Expression const *type, int tabs);
-std::string type_to_string(Type const *type, int tabs = 0, bool include_fn = true);
-std::string declaration_to_string(Declaration const *decl, int tabs);
+std::string statement_to_string(Statement const *type, u64 tabs);
+std::string expression_to_string(Expression const *type, u64 tabs);
+std::string type_to_string(Type const *type, u64 tabs = 0, bool include_fn = true);
+std::string declaration_to_string(Declaration const *decl, u64 tabs);
 
 }; // namespace Ast
 #endif // #ifndef AST_H

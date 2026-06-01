@@ -1,17 +1,20 @@
 #pragma once
 
-#include "base.h"
+#include <string_view>
+#include <format>
+#include <print>
+
 #include "lexer.h"
 
 enum class DiagnosticsLevel { Warning, Error };
 
-inline std::string_view diagnostics_level_to_string(DiagnosticsLevel level) {
+constexpr std::string_view diagnostics_level_to_string(DiagnosticsLevel level) {
     switch (level) {
         using enum DiagnosticsLevel;
         case Warning: return "Warning";
         case Error: return "Error";
     }
-    return "";
+    return "Invalid DiagnosticsLevel";
 }
 
 template <typename... Args>

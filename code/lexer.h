@@ -5,9 +5,8 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
-#include <deque>
 
-#include "base.h"
+#include "base/types.h"
 
 enum class TokenType {
     invalid = 0,
@@ -146,7 +145,7 @@ private:
 
     void tokenize();
     int peek_next_char() const;
-    int peek_char(int peek) const;
+    int peek_char(usize peek) const;
     void eat_char();
     ParseNumberResult parse_number();
     std::string_view parse_identifier();
@@ -155,10 +154,10 @@ private:
     bool is_new_line(int ch);
 
     std::string_view input_;
-    s64 input_cursor_ = 0;
+    usize input_cursor_ = 0;
 
     std::vector<Token> tokens_;
-    s64 tokens_cursor_ = 0;
+    usize tokens_cursor_ = 0;
     
     FileLocation current_location_ = {.line = 1, .column = 1, .byte = 0};
 };
