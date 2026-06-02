@@ -47,7 +47,6 @@ private:
     WhileStatement *parse_while_statement();
     BlockStatement *parse_block_statement();
     ReturnStatement *parse_return_statement();
-    std::span<Statement*> parse_statements_sequence();
 
     Expression *parse_expression(Precedence precedence = Precedence::lowest);
     Expression *parse_unary_expression();
@@ -55,19 +54,17 @@ private:
 
     Type *parse_type();
     TypeProcedure *parse_procedure_type(bool skip_identifier = false);
+    
     Identifier *parse_identifier();
+    Field *parse_field();
 
     template <typename NodeType, typename... Args>
-    NodeType *New(Args &&...args) 
-    requires std::derived_from<NodeType, Node>
-    {
+    NodeType *New(Args &&...args) {
         return arena_.create<NodeType>(std::forward<Args>(args)...);
     };
 
     template<typename NodeType>
-    std::span<NodeType*> NewArray(std::span<NodeType*> nodes)
-    requires std::derived_from<NodeType, Node>
-    {
+    std::span<NodeType*> NewArray(std::span<NodeType*> nodes) {
         auto array = arena_.allocate<NodeType*>(nodes.size());
         for (usize i = 0; i < nodes.size(); ++i) {
             array[i] = nodes[i];

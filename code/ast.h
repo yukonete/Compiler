@@ -1,15 +1,15 @@
 #ifndef AST_H
 #define AST_H
 
+#include <cassert>
 #include <optional>
 #include <span>
-#include <variant>
 #include <string_view>
-#include <cassert>
+#include <variant>
 
 #include "base/types.h"
 
-#include "lexer.h" // Potentially remove lexer.h form here
+#include "lexer.h"
 
 namespace Ast {
 
@@ -76,46 +76,40 @@ struct StringLiteralExpression;
     }
 
 // AST conventions:
-// 1) All nodes derive from Node directly or indirectly.
-//    Which means that all nodes when created need to specify location,
-//    for nodes that do not have location (example, nodes that are 
-//    inserted into ast at later stages of compiler) 
-//    file location should be set to FileLocation::no_location.
-// 2) Pointers in AST are not allowed to be nullptr.  
-//    Only exceptions are pointers to Expression and Type which can be nullptr, 
-//    but only if there were errors in source code that is being parsed.
-// 3) If field of a node is optional, it is represented as std::optional<Node*> field.
-// 4) Nodes can not have non-trival destructors.
+// 1) Pointers in AST are not allowed to be nullptr.
+// 2) If a field of a node is optional, it is represented as std::optional<Node*>
+// field.
+// 3) Nodes can not have non-trival destructors.
+// 4) Even though AST has BAD nodes, later stages of compiler should
+// assume those are not existent because those nodes are created only when
+// there is an error in a source code.
 
 // TODOs:
-// 1) For each node, require all field values in the constructor.
-// 2) Since i probably will want to modify AST at later stages of compilation
-//    move logic of storing nodes from Parser to some kind of AstStorage.
-//    Or just pass Parse to TypeChecker and later stages as well
+// 1) Add start_token() and end_token() functions that will take any node and 
+// give it's respective tokens (if there are any) 
+// 1) Maybe move logic of storing nodes to AstFile
 // 2) Search parser.cpp for more.
 
-struct Node {
-    constexpr Node(const FileLocation &location)
-        : location{location} {}
+struct Identifier {
+    constexpr Identifier(const Token &token) : token{token} {
+    }
 
-    FileLocation location;
+    Token token;
 };
 
-struct Identifier : Node {
-    constexpr Identifier(const FileLocation &location) : Node{location} {}
+struct Field {
+    constexpr Field(Identifier *identifier, Type *type)
+        : identifier{identifier}, type{type} {
+    }
 
-    std::string_view value;
+    Identifier *identifier;
+    Type *type;
 };
 
-struct Field : public Node {
-    constexpr Field(const FileLocation &location) : Node{location} {}
-
-    Identifier *identifier = nullptr;
-    Type *type = nullptr;
-};
-
-struct Statement : public Node {
+struct Statement {
     enum class Kind : u8 {
+        BAD,
+        EMPTY,
         IF,
         WHILE,
         ASSIGNMENT,
@@ -127,159 +121,223 @@ struct Statement : public Node {
         EXPRESSION,
     };
 
-    constexpr Statement(Kind kind, const FileLocation &location) 
-        : Node{location}, kind{kind} {}
+    constexpr Statement(Kind kind) : kind{kind} {
+    }
 
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Statement);
 
     Kind kind;
 };
 
+struct BadStatement : public Statement {
+    static constexpr auto KIND = Kind::BAD;
+
+    constexpr BadStatement(const Token &token) 
+        : Statement{KIND}, token{token} {
+    }
+     
+    Token token;
+};
+
+struct EmptyStatement : public Statement {
+    static constexpr auto KIND = Kind::EMPTY;
+
+    constexpr EmptyStatement(const Token &token) 
+        : Statement{KIND}, token{token} {
+    }
+
+    Token token;
+};
+
 struct IfStatement : public Statement {
     static constexpr auto KIND = Kind::IF;
 
-    constexpr IfStatement(const FileLocation &if_location) 
-        : Statement{KIND, if_location} {}
-
     struct ElseBranch {
-        FileLocation else_location;
-        std::span<Statement *> body;
+        constexpr ElseBranch(const Token &token, Statement *body)
+            : token{token}, body{body} {
+        }
+        Token token;
+        Statement *body;
     };
 
-    Expression *condition = nullptr;
-    std::span<Statement *> true_branch_body;
+    constexpr IfStatement(const Token &token, Expression *condition,
+                          Statement *body,
+                          const std::optional<ElseBranch> &else_branch)
+        : Statement{KIND}, token{token}, condition{condition}, body{body},
+          else_branch{else_branch} {
+    }
+
+    Token token;
+    Expression *condition;
+    Statement *body;
     std::optional<ElseBranch> else_branch;
 };
 
 struct WhileStatement : public Statement {
     static constexpr auto KIND = Kind::WHILE;
 
-    constexpr WhileStatement(const FileLocation &while_location) 
-        : Statement{KIND, while_location} {}
+    constexpr WhileStatement(const Token &token, Expression *condition,
+                             Statement *body)
+        : Statement{KIND}, token{token}, condition{condition}, body{body} {
+    }
 
-    Expression *condition = nullptr;
-    std::span<Statement *> body;
+    Token token;
+    Expression *condition;
+    Statement *body;
 };
 
 struct BlockStatement : public Statement {
     static constexpr auto KIND = Kind::BLOCK;
-    
-    constexpr BlockStatement(const FileLocation &open_brace_location) 
-        : Statement{KIND, open_brace_location} {}
 
+    constexpr BlockStatement(const Token &open, std::span<Statement *> body,
+                             const Token &close)
+        : Statement{KIND}, open{open}, close{close}, body{body} {
+    }
+
+    Token open;
+    Token close;
     std::span<Statement *> body;
 };
 
 struct ReturnStatement : public Statement {
     static constexpr auto KIND = Kind::RETURN;
 
-    constexpr ReturnStatement(const FileLocation &return_location) 
-        : Statement{KIND, return_location} {}
+    constexpr ReturnStatement(const Token &token,
+                              std::optional<Expression *> value)
+        : Statement{KIND}, token{token}, value{value} {
+    }
 
-    Expression *value = nullptr;
+    Token token;
+    std::optional<Expression *> value;
 };
 
 struct AssignmentStatement : public Statement {
     static constexpr auto KIND = Kind::ASSIGNMENT;
 
-    constexpr AssignmentStatement(const FileLocation &assign_location)
-        : Statement{KIND, assign_location} {}
+    constexpr AssignmentStatement(Expression *expression, const Token &assign,
+                                  Expression *value)
+        : Statement{KIND}, assign{assign}, expression{expression}, value{value} {
+    }
 
-    TokenType assign_kind = TokenType::invalid;
-    Expression *assignee = nullptr;
-    Expression *value = nullptr;
+    Token assign;
+    Expression *expression;
+    Expression *value;
 };
 
 struct ExpressionStatement : public Statement {
     static constexpr auto KIND = Kind::EXPRESSION;
-    
-    constexpr ExpressionStatement(const FileLocation &location) 
-        : Statement{KIND, location} {}
 
-    Expression *expression = nullptr;
+    constexpr ExpressionStatement(Expression *expression)
+        : Statement{KIND}, expression{expression} {
+    }
+
+    Expression *expression;
 };
 
 struct DeclarationStatement : public Statement {
     static constexpr auto KIND = Kind::DECLARATION;
-    
-    constexpr DeclarationStatement(const FileLocation &location) 
-        : Statement{KIND, location} {}
 
-    Declaration *declaration = nullptr;
+    constexpr DeclarationStatement(Declaration *declaration)
+        : Statement{KIND}, declaration{declaration} {
+    }
+
+    Declaration *declaration;
 };
 
 struct BreakStatement : public Statement {
     static constexpr auto KIND = Kind::BREAK;
-    
-    constexpr BreakStatement(const FileLocation &break_location) 
-        : Statement{KIND, break_location} {}
+
+    constexpr BreakStatement(const Token &token)
+        : Statement{KIND}, token{token} {
+    }
+
+    Token token;
 };
 
 struct ContinueStatement : public Statement {
     static constexpr auto KIND = Kind::CONTINUE;
-    
-    constexpr ContinueStatement(const FileLocation &continue_location) 
-        : Statement{KIND, continue_location} {}
+
+    constexpr ContinueStatement(const Token &token)
+        : Statement{KIND}, token{token} {
+    }
+
+    Token token;
 };
 
-struct Declaration : public Node {
+struct Declaration {
     enum class Kind : u8 {
         VARIABLE,
         FUNCTION,
         CONSTANT,
         TYPE,
     };
-    
-    constexpr Declaration(Kind kind, const FileLocation &location) 
-        :  Node{location}, kind{kind} {}
+
+    constexpr Declaration(Kind kind, Identifier *identifier)
+        : kind{kind}, identifier{identifier} {
+    }
 
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Declaration);
 
     Kind kind;
-    Identifier *identifier = nullptr;
+    Identifier *identifier;
 };
 
 struct VariableDeclaration : public Declaration {
     static constexpr auto KIND = Kind::VARIABLE;
 
-    constexpr VariableDeclaration(const FileLocation &var_location) 
-        : Declaration{KIND, var_location} {}
+    constexpr VariableDeclaration(const Token &token, Identifier *identifier,
+                                  std::optional<Type *> type,
+                                  std::optional<Expression *> value)
+        : Declaration{KIND, identifier}, token{token}, type{type},
+          value{value} {
+    }
 
-    std::optional<Type*> variable_type;
-    std::optional<Expression*> value;
+    Token token;
+    std::optional<Type *> type;
+    std::optional<Expression *> value;
 };
 
 struct ConstDeclaration : public Declaration {
     static constexpr auto KIND = Kind::CONSTANT;
 
-    constexpr ConstDeclaration(const FileLocation &const_location) 
-        : Declaration{KIND, const_location} {}
+    constexpr ConstDeclaration(const Token &token, Identifier *identifier,
+                               std::optional<Type *> type, Expression *value)
+        : Declaration{KIND, identifier}, token{token}, type{type},
+          value{value} {
+    }
 
-    std::optional<Type *> variable_type;
-    Expression *value = nullptr;
+    Token token;
+    std::optional<Type *> type;
+    Expression *value;
 };
 
 struct ProcedureDeclaration : public Declaration {
     static constexpr auto KIND = Kind::FUNCTION;
-    
-    constexpr ProcedureDeclaration(const FileLocation &location) 
-        : Declaration{KIND, location} {}
 
-    TypeProcedure *type = nullptr;
-    std::span<Statement*> body;
+    constexpr ProcedureDeclaration(Identifier *identifier, TypeProcedure *type,
+                                   BlockStatement *body)
+        : Declaration{KIND, identifier}, type{type}, body{body} {
+    }
+
+    TypeProcedure *type;
+    BlockStatement *body;
 };
 
 struct TypeDeclaration : public Declaration {
     static constexpr auto KIND = Kind::TYPE;
 
-    constexpr TypeDeclaration(const FileLocation &type_location) 
-        : Declaration{KIND, type_location} {}
+    constexpr TypeDeclaration(const Token &token, Identifier *identifier,
+                              Type *type)
+        : Declaration{KIND, identifier}, token{token}, type{type} {
+    }
 
-    Type *declared_type = nullptr;
+    Token token;
+    Type *type;
 };
 
-struct Expression : public Node {
+struct Expression {
     enum class Kind : u8 {
+        BAD,
         INTEGER_LITERAL,
         UNARY_OPERATOR,
         BINARY_OPERATOR,
@@ -288,51 +346,69 @@ struct Expression : public Node {
         CALL_OPERATOR,
         STRING_LITERAL,
         FLOAT_LITERAL,
+        INDEX,
+        SELECTOR,
     };
 
-    constexpr Expression(Kind kind, const FileLocation &location) 
-        : Node{location}, kind{kind} {}
+    constexpr Expression(Kind kind) : kind{kind} {
+    }
 
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Expression);
 
     Kind kind;
 };
 
+struct BadExpression : public Expression {
+    static constexpr auto KIND = Kind::BAD;
+
+    constexpr BadExpression(const Token &token)
+        : Expression{KIND}, token{token} {
+    }
+
+    Token token;
+};
+
 struct IntegerLiteralExpression : public Expression {
     static constexpr auto KIND = Kind::INTEGER_LITERAL;
 
-    constexpr IntegerLiteralExpression(const FileLocation &literal_location) 
-        : Expression{KIND, literal_location} {}
+    constexpr IntegerLiteralExpression(const Token &token, s64 value)
+        : Expression{KIND}, token{token}, value{value} {
+    }
 
-    s64 value = 0;
+    Token token;
+    s64 value;
 };
 
 struct IdentifierExpression : public Expression {
     static constexpr auto KIND = Kind::IDENTIFIER;
 
-    constexpr IdentifierExpression(const FileLocation &location) 
-        : Expression{KIND, location} {}
+    constexpr IdentifierExpression(Identifier *identifier)
+        : Expression{KIND}, identifier{identifier} {
+    }
 
-    Identifier *identifier = nullptr;
+    Identifier *identifier;
 };
 
 struct UnaryOperatorExpression : public Expression {
     static constexpr auto KIND = Kind::UNARY_OPERATOR;
-    
-    constexpr UnaryOperatorExpression(const FileLocation &op_location) 
-        : Expression{KIND, op_location} {}
 
-    TokenType op = TokenType::invalid;
-    Expression *right = nullptr;
+    constexpr UnaryOperatorExpression(const Token &op, Expression *right)
+        : Expression{KIND}, op{op}, right{right} {
+    }
+
+    Token op;
+    Expression *right;
 };
 
 struct BinaryOperatorExpression : public Expression {
     static constexpr auto KIND = Kind::BINARY_OPERATOR;
 
-    constexpr BinaryOperatorExpression(const FileLocation &op_location) 
-        : Expression{KIND, op_location} {}
-    
-    TokenType op = TokenType::invalid;
+    constexpr BinaryOperatorExpression(Expression *left, const Token &op,
+                                       Expression *right)
+        : Expression{KIND}, op{op}, left{left}, right{right} {
+    }
+
+    Token op;
     Expression *left = nullptr;
     Expression *right = nullptr;
 };
@@ -340,42 +416,83 @@ struct BinaryOperatorExpression : public Expression {
 struct BoolLiteralExpression : public Expression {
     static constexpr auto KIND = Kind::BOOL_LITERAL;
 
-    BoolLiteralExpression(const FileLocation &literal_location) 
-        : Expression{KIND, literal_location} {}
+    BoolLiteralExpression(const Token &token, bool value)
+        : Expression{KIND}, token{token}, value{value} {
+    }
 
-    bool value = false;
+    Token token;
+    bool value;
 };
 
 struct CallOperatorExpression : public Expression {
     static constexpr auto KIND = Kind::CALL_OPERATOR;
 
-    constexpr CallOperatorExpression(const FileLocation &open_paren_location) 
-        : Expression{KIND, open_paren_location} {}
+    constexpr CallOperatorExpression(Expression *expression, const Token &open,
+                                     std::span<Expression *> arguments,
+                                     const Token &close)
+        : Expression{KIND}, open{open}, close{close}, expression{expression},
+          arguments{arguments} {
+    }
 
-    Expression *callable = nullptr;
+    Token open;
+    Token close;
+    Expression *expression;
     std::span<Expression *> arguments;
 };
 
 struct StringLiteralExpression : public Expression {
     static constexpr auto KIND = Kind::STRING_LITERAL;
 
-    constexpr StringLiteralExpression(const FileLocation &string_location) 
-        : Expression{KIND, string_location} {}
+    constexpr StringLiteralExpression(const Token &token)
+        : Expression{KIND}, token{token} {
+    }
 
-    std::string_view string;
+    Token token;
 };
 
 struct FloatLiteralExpression : public Expression {
     static constexpr auto KIND = Kind::FLOAT_LITERAL;
 
-    constexpr FloatLiteralExpression(const FileLocation &literal_location) 
-        : Expression{KIND, literal_location} {}
+    constexpr FloatLiteralExpression(const Token &token, f64 value)
+        : Expression{KIND}, token{token}, value{value} {
+    }
 
-    f64 value = 0.0;
+    Token token;
+    f64 value;
 };
 
-struct Type : public Node {
+struct IndexExpression : public Expression {
+    static constexpr auto KIND = Kind::INDEX;
+
+    constexpr IndexExpression(Expression *expression, const Token &open,
+                              Expression *index, const Token &close)
+        : Expression{KIND}, open{open}, close{close}, expression{expression}, index{index} {
+    }
+
+    Token open;
+    Token close;
+    Expression *expression;
+    Expression *index;
+};
+
+// Is better to store selector expression as just another BinaryOperatorExpression?
+struct SelectorExpression : public Expression {
+    static constexpr auto KIND = Kind::SELECTOR;
+
+    constexpr SelectorExpression(Expression *expression,
+                                 const Token &token, Expression *selector)
+        : Expression{KIND}, token{token}, expression{expression},
+          selector{selector} {
+    }
+
+    Token token;
+    Expression *expression;
+    Expression *selector;
+};
+
+struct Type {
     enum class Kind : u8 {
+        BAD,
         IDENTIFIER,
         STRUCT,
         POINTER,
@@ -383,75 +500,109 @@ struct Type : public Node {
         ARRAY,
     };
 
-    constexpr Type(Kind kind, const FileLocation &location) 
-        : Node{location}, kind{kind} {}
+    constexpr Type(Kind kind) : kind{kind} {
+    }
 
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Type);
 
     Kind kind;
 };
 
+using TypePath = std::span<Identifier *>;
+
+struct BadType : public Type {
+    static constexpr auto KIND = Kind::BAD;
+
+    constexpr BadType(const Token &token)
+        : Type{KIND}, token{token} {
+    }
+
+    Token token;
+};
+
 struct TypeIdentifier : public Type {
     static constexpr auto KIND = Kind::IDENTIFIER;
 
-    constexpr TypeIdentifier(const FileLocation &location) 
-        : Type{KIND, location} {}
+    constexpr TypeIdentifier(TypePath path) : Type{KIND}, path{path} {
+    }
 
     // temporary
     std::string get_full_type_name() const {
         auto result = std::string{};
-        for (usize i = 0; i < identifier.size(); ++i) {
-            result += identifier[i]->value;
+        for (usize i = 0; i < path.size(); ++i) {
+            result += path[i]->token.value;
 
-            if (i != identifier.size() - 1) {
+            if (i != path.size() - 1) {
                 result += '.';
             }
         }
         return result;
     }
 
-    // Parts of path to identifier. For example, for type A.B span will contain
-    // two identifiers: A, B.
-    std::span<Identifier *> identifier;
+    TypePath path;
 };
 
 struct TypePointer : public Type {
     static constexpr auto KIND = Kind::POINTER;
 
-    constexpr TypePointer(const FileLocation &pointer_location) 
-        : Type{KIND, pointer_location} {
+    constexpr TypePointer(const Token &token, Type *type)
+        : Type{KIND}, token{token}, type{type} {
     }
 
-    Type *points_to = nullptr;
+    Token token;
+    Type *type;
 };
 
 struct TypeArray : public Type {
     static constexpr auto KIND = Kind::ARRAY;
 
-    constexpr TypeArray(const FileLocation &open_bracket_location) 
-        : Type{KIND, open_bracket_location} {}
+    constexpr TypeArray(const Token &open, Expression *count,
+                        const Token &close, Type *element_type)
+        : Type{KIND}, open{open}, close{close}, element_type{element_type}, 
+        count{count} {
+    }
 
-    Type *element_type = nullptr;
-    Expression *element_count = nullptr;
+    Token open;
+    Token close;
+
+    Type *element_type;
+    Expression *count;
 };
 
 struct TypeProcedure : public Type {
     static constexpr auto KIND = Kind::FUNCTION;
 
-    constexpr TypeProcedure(const FileLocation &fn_location) 
-        : Type{KIND, fn_location} {}
+    constexpr TypeProcedure(const Token &token, const Token &open,
+                            std::span<Field *> parameters, const Token &close,
+                            Type *return_type)
+        : Type{KIND}, token{token}, open{open}, close{close},
+          parameters{parameters}, return_type{return_type} {
+    }
 
-    std::span<Field*> parameters;
-    Type *return_type = nullptr;
+    Token token;
+    Token open;
+    Token close;
+
+    std::span<Field *> parameters;
+    Type *return_type;
 };
 
 struct TypeStruct : public Type {
     static constexpr auto KIND = Kind::STRUCT;
-    
-    constexpr TypeStruct(const FileLocation &struct_location) 
-        : Type{KIND, struct_location} {}
 
-    std::span<Field*> members;
+    constexpr TypeStruct(const Token &token, const Token &open,
+                         std::span<Field *> members,
+                         std::span<DeclarationStatement *> declarations,
+                         const Token &close)
+        : Type{KIND}, token{token}, open{open}, close{close}, members{members},
+          declarations{declarations} {
+    }
+
+    Token token;
+    Token open;
+    Token close;
+
+    std::span<Field *> members;
     std::span<DeclarationStatement *> declarations;
 };
 
@@ -460,10 +611,11 @@ struct Program {
     u64 error_count = 0;
 };
 
-std::string statement_to_string(Statement const *type, u64 tabs);
-std::string expression_to_string(Expression const *type, u64 tabs);
-std::string type_to_string(Type const *type, u64 tabs = 0, bool include_fn = true);
-std::string declaration_to_string(Declaration const *decl, u64 tabs);
+std::string statement_to_string(const Statement *type, u64 tabs);
+std::string expression_to_string(const Expression *type, u64 tabs);
+std::string type_to_string(const Type *type, u64 tabs = 0,
+                           bool include_fn = true);
+std::string declaration_to_string(const Declaration *decl, u64 tabs);
 
 }; // namespace Ast
 #endif // #ifndef AST_H

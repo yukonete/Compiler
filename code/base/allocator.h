@@ -92,7 +92,7 @@ struct Allocator : public AllocatorInterface<Allocator> {
                 return nullptr;
             }
         }    
-        assert("Should not trigger");
+        assert(false && "Should not trigger");
         return nullptr;
     }
 
@@ -137,7 +137,7 @@ constexpr inline auto NEW_ALLOCATOR = Allocator{
                 return nullptr;
             }
         }
-        assert("Should not trigger");
+        assert(false && "Should not trigger");
         return nullptr;
     }
 };

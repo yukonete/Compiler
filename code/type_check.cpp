@@ -29,6 +29,8 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
     switch (ast_type->kind) {
         using enum Ast::Type::Kind;
 
+        case BAD: panic("Bad type got in type checker");
+
         case IDENTIFIER: {
             auto identifier = ast_type->as<Ast::TypeIdentifier>()->get_full_type_name();
 
@@ -62,7 +64,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
                 auto member = &type->members[i];
                 auto ast_member = ast_struct->members[i];
 
-                member->name = ast_member->identifier->value;
+                member->name = ast_member->identifier->token.value;
                 member->type = create_type_from_ast_type(scope, ast_member->type);
             }
 
@@ -74,17 +76,18 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
             auto pointer = arena_->create<Pointer>();
             pointer->ast_type = ast_type;
             pointer->points_to =
-                create_type_from_ast_type(scope, ast_pointer->points_to);
+                create_type_from_ast_type(scope, ast_pointer->type);
             return pointer;
         }
 
         case ARRAY: {
             auto ast_array = ast_type->as<Ast::TypeArray>();
             auto array = arena_->create<Array>();
-            if (!ast_array->element_count->is<Ast::IntegerLiteralExpression>()) {
-                report_error(ast_array->element_count->location, "Array size should be integer literal (for now).");
+            if (!ast_array->count->is<Ast::IntegerLiteralExpression>()) {
+                // TODO:
+                report_error(/*ast_array->count->location*/{}, "Array size should be integer literal (for now).");
             } else {
-                array->count = ast_array->element_count->as<Ast::IntegerLiteralExpression>()->value;
+                array->count = ast_array->count->as<Ast::IntegerLiteralExpression>()->value;
             }
             array->elem_type = create_type_from_ast_type(scope, ast_array->element_type);
             return array; 
@@ -92,7 +95,7 @@ Type *TypeChecker::create_type_from_ast_type(Scope *scope, Ast::Type *ast_type) 
 
         case FUNCTION: {
             auto ast_procedure = ast_type->as<Ast::TypeProcedure>();
-            report_error(ast_procedure->location, "Declaring type of procedure is not supported (for now).");
+            report_error(ast_procedure->token.start, "Declaring type of procedure is not supported (for now).");
             return arena_->create<Type>();
         }
     }
@@ -112,7 +115,8 @@ Type *TypeChecker::resolve_type(Scope *scope, Type *type, bool resolve_non_anony
                 if (lookup_result) {
                     type = lookup_result.value();
                 } else {
-                    report_error(type->ast_type->location, "Type {} is not defined.", type->type_name);
+                    // TODO:
+                    report_error(/*type->ast_type->location*/{}, "Type {} is not defined.", type->type_name);
                 }
                 break;
             }
@@ -292,7 +296,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
             }
             if (check_for_recursive_structs_recurse(&met_types, type)) {
                 if (met_types.at(0) == met_types.at(met_types.size() - 1)) {
-                    report_error(type->ast_declaration->identifier->location,
+                    report_error(type->ast_declaration->identifier->token.start,
                                  "Found self reference in type {}.",
                                  type->type_name);
                 }
@@ -311,7 +315,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
             }
             auto alias = static_cast<Alias *>(type);
             if (type_is_or_contains_alias(alias, alias->alias_to)) {
-                report_error(type->ast_declaration->identifier->location,
+                report_error(type->ast_declaration->identifier->token.start,
                              "Found self referencing alias {}.",
                              type->type_name);
                 result = true;
@@ -323,21 +327,21 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
     for (auto statement : statements) {
         if (statement->is<Ast::DeclarationStatement>()) {
             auto decl = statement->as<Ast::DeclarationStatement>()->declaration;
-            auto decl_identifier = decl->identifier->value;
+            auto decl_identifier = decl->identifier->token.value;
             if (scope->lookup_type(decl_identifier)) {
-                report_error(decl->identifier->location,
+                report_error(decl->identifier->token.start,
                              "Declaration with identifier {} already exists.",
                              decl_identifier);
                 return false;
             }
             if (!decl->is<Ast::TypeDeclaration>()) {
-                report_error(decl->identifier->location, 
+                report_error(decl->identifier->token.start, 
                     "Declaration {} is not a type. Type checker only supports types (for now).", 
                     decl_identifier);
                 continue;
             }
             auto type_decl = decl->as<Ast::TypeDeclaration>();
-            auto type = create_type_from_ast_type(scope, type_decl->declared_type);
+            auto type = create_type_from_ast_type(scope, type_decl->type);
             if (type->kind == TypeKind::kind_struct) {
                 type->ast_declaration = type_decl;
                 type->type_name = decl_identifier;
@@ -350,7 +354,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
                 // But if i add distinct alias, than struct can just be distinct alias
                 auto alias = arena_->create<Alias>();
                 alias->ast_declaration = type_decl;
-                alias->ast_type = type_decl->declared_type;
+                alias->ast_type = type_decl->type;
                 alias->alias_to = type;
                 alias->type_name = decl_identifier;
                 scope->declarations[decl_identifier] = alias;
