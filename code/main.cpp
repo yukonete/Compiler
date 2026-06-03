@@ -8,27 +8,24 @@
 #include "ast.h"
 
 int main(int argc, char **argv) {
-	char const *input_file_name = "test.txt";
+	std::string_view input = "test.txt";
 	if (argc > 1) {
-		input_file_name = argv[1];
+		input = argv[1];
 	}
 
-	auto [input, ok] = read_file_to_string(input_file_name);
-	if (!ok) {
-		std::println("Coud not open/read the file.");
+	auto parser = Ast::Parser::open(input, NEW_ALLOCATOR);
+	if (!parser) {
+		std::println("Could not open/read file {}.", input);
 		return 1;
 	}
-	input += '\n';
 
-	auto parser = Ast::Parser(input, NEW_ALLOCATOR);
-	auto program = parser.parse_program();
-	if (program.error_count != 0) {
+	if (!parser->parse_program()) {
 		std::println("Parsing error");
 		return 1;
 	}
 
 	std::println("AST to code:");
-	for (auto statement : program.declarations) {
+	for (auto statement : parser->ast()) {
 		auto node_string = Ast::statement_to_string(statement, 0);
 		std::println("{}", node_string);
 	}

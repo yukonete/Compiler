@@ -5,17 +5,16 @@
 #include <optional>
 #include <span>
 #include <string_view>
-#include <variant>
+#include <concepts>
 
 #include "base/types.h"
+#include "base/arena.h"
 
 #include "lexer.h"
 
 namespace Ast {
 
 struct Program;
-
-struct Node;
 
 struct Statement;
 struct IfStatement;
@@ -81,12 +80,10 @@ struct StringLiteralExpression;
 // field.
 // 3) Nodes can not have non-trival destructors.
 // 4) Even though AST has BAD nodes, later stages of compiler should
-// assume those are not existent because those nodes are created only when
+// assume those do not exist because they are created only when
 // there is an error in a source code.
 
 // TODOs:
-// 1) Add start_token() and end_token() functions that will take any node and 
-// give it's respective tokens (if there are any) 
 // 1) Maybe move logic of storing nodes to AstFile
 // 2) Search parser.cpp for more.
 
@@ -121,10 +118,12 @@ struct Statement {
         EXPRESSION,
     };
 
+    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Statement);
+
     constexpr Statement(Kind kind) : kind{kind} {
     }
-
-    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Statement);
+    Token start_token() const;
+    Token end_token() const;
 
     Kind kind;
 };
@@ -272,11 +271,13 @@ struct Declaration {
         TYPE,
     };
 
+    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Declaration);
+
     constexpr Declaration(Kind kind, Identifier *identifier)
         : kind{kind}, identifier{identifier} {
     }
-
-    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Declaration);
+    Token start_token() const;
+    Token end_token() const;
 
     Kind kind;
     Identifier *identifier;
@@ -347,13 +348,14 @@ struct Expression {
         STRING_LITERAL,
         FLOAT_LITERAL,
         INDEX,
-        SELECTOR,
     };
+
+    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Expression);
 
     constexpr Expression(Kind kind) : kind{kind} {
     }
-
-    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Expression);
+    Token start_token() const;
+    Token end_token() const;
 
     Kind kind;
 };
@@ -475,21 +477,6 @@ struct IndexExpression : public Expression {
     Expression *index;
 };
 
-// Is better to store selector expression as just another BinaryOperatorExpression?
-struct SelectorExpression : public Expression {
-    static constexpr auto KIND = Kind::SELECTOR;
-
-    constexpr SelectorExpression(Expression *expression,
-                                 const Token &token, Expression *selector)
-        : Expression{KIND}, token{token}, expression{expression},
-          selector{selector} {
-    }
-
-    Token token;
-    Expression *expression;
-    Expression *selector;
-};
-
 struct Type {
     enum class Kind : u8 {
         BAD,
@@ -500,10 +487,12 @@ struct Type {
         ARRAY,
     };
 
+    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Type);
+
     constexpr Type(Kind kind) : kind{kind} {
     }
-
-    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Type);
+    Token start_token() const;
+    Token end_token() const;
 
     Kind kind;
 };
@@ -539,6 +528,7 @@ struct TypeIdentifier : public Type {
         return result;
     }
 
+    // Path should always have at least one identifier
     TypePath path;
 };
 
@@ -606,12 +596,11 @@ struct TypeStruct : public Type {
     std::span<DeclarationStatement *> declarations;
 };
 
-struct Program {
-    std::span<Statement *> declarations;
-    u64 error_count = 0;
-};
+template <typename T>
+concept Node = std::same_as<T, Statement> || std::same_as<T, Declaration> ||
+               std::same_as<T, Type> || std::same_as<T, Expression>;
 
-std::string statement_to_string(const Statement *type, u64 tabs);
+std::string statement_to_string(const Statement *type, u64 tabs, bool block_indent = true);
 std::string expression_to_string(const Expression *type, u64 tabs);
 std::string type_to_string(const Type *type, u64 tabs = 0,
                            bool include_fn = true);

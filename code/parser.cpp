@@ -13,7 +13,7 @@
 
 namespace Ast {
 
-Program Parser::parse_program() {
+bool Parser::parse_program() {
     while (true) {
         auto token = lexer_.next_token();
 
@@ -21,24 +21,14 @@ Program Parser::parse_program() {
             break;
         }
 
-        if (token.type == TokenType::invalid) {
-            report_error(token.start, "Invalid token");
-            lexer_.eat_token();
-            continue;
-        }
-
         auto statement = parse_statement();
         if (!statement->is<DeclarationStatement>()) {
-            // TODO:
-            report_error(token.start, "Expected declaration.");
+            syntax_error(statement, "Expected declaration.");
         }
         statements_.push_back(statement);
     }
 
-    return Program{
-        .declarations = std::span{statements_},
-        .error_count = error_count_,
-    };
+    return !any_errors();
 }
 
 Identifier *Parser::parse_identifier() {
@@ -99,7 +89,7 @@ Statement *Parser::parse_statement() {
                 next_token_is(TokenType::divide_assign) ||
                 next_token_is(TokenType::multiply_assign) ||
                 next_token_is(TokenType::modulo_assign)) {
-                const auto &assign_token = lexer_.next_token();
+                auto assign_token = lexer_.next_token();
                 lexer_.eat_token();
                 auto value = parse_expression();
                 expect_token(TokenType::semicolon);
@@ -142,7 +132,7 @@ Statement *Parser::parse_statement() {
             if (token.type == TokenType::invalid) {
                 token_string = token.value;
             }
-            report_error(token.start, "Unexpected token {}.", token_string);
+            syntax_error(token, "Unexpected token {}.", token_string);
             lexer_.eat_token();
             return New<BadStatement>(token);
         }
@@ -207,10 +197,9 @@ VariableDeclaration *Parser::parse_variable_declaration() {
 
     expect_token(TokenType::semicolon);
 
-    if (!type.has_value() && !value.has_value()) {
-        report_error(var_token.start, "Variable declaration has no type and value."
+    if (!type && !value) {
+        syntax_error(var_token, "Variable declaration has no type and value."
             " At least one should be specified.");
-        // TODO: Consider returning BadDeclaration here
     }
 
     return New<VariableDeclaration>(var_token, identifier, type, value);;
@@ -228,7 +217,7 @@ TypeDeclaration *Parser::parse_type_declaration() {
 TypeProcedure *Parser::parse_procedure_type(bool skip_identifier) {
     auto fn_token = expect_token(TokenType::keyword_fn);
     if (skip_identifier) {
-        if (!next_token_is(TokenType::identifier)) {
+        if (!next_token_is(TokenType::identifier) && !any_errors()) {
             panic("parse_procedure_type was called with skip_identifier = true but "
                   "there was no identifier.");
         }
@@ -343,19 +332,16 @@ Type *Parser::parse_type() {
                 // Next token is not an identifier, which means that it is not a
                 // member Which means it has to be a declaration, but not a
                 // variable declaration
-                auto token = lexer_.next_token();
                 auto statement = parse_statement();
                 if (!statement->is<DeclarationStatement>()) {
-                    // TODO: replace token
-                    report_error(token.start,
+                    syntax_error(statement,
                                  "Expected declaration or struct member.");
                 } else {
                     declarations_temp.push_back(
                         statement->as<DeclarationStatement>());
                     auto decl = declarations_temp.back()->declaration;
                     if (decl->is<VariableDeclaration>()) {
-                        // TODO: replace token
-                        report_error(token.start,
+                        syntax_error(decl,
                                      "Variable declarations are not allowed "
                                      "inside of a struct.");
                     }
@@ -383,7 +369,7 @@ Type *Parser::parse_type() {
         }
 
         default: {
-            report_error(token.start, "Token \"{}\" can not be parsed as a type.",
+            syntax_error(token, "Token \"{}\" can not be parsed as a type.",
                          token.type);
             return New<BadType>(token);
         }
@@ -490,8 +476,8 @@ Expression *Parser::parse_unary_expression() {
         case string: return New<StringLiteralExpression>(token);
 
         default: {
-            report_error(
-                token.start,
+            syntax_error(
+                token,
                 "Token \"{}\" can not be parsed as a unary expression.",
                 token.type);
             return New<BadExpression>(token);
@@ -547,7 +533,7 @@ const Token &Parser::expect_token(TokenType type) {
     const auto &token = lexer_.next_token();
     lexer_.eat_token();
     if (token.type != type) {
-        report_error(token.start, "Expected {}, got {}.", type, token.type);
+        syntax_error(token, "Expected {}, got {}.", type, token.type);
     }
     return token;
 }
@@ -629,19 +615,11 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
     return result;
 }
 
-static std::string statements_to_string(std::span<Statement*> statements, u64 tabs) {
-    auto result = std::string{"{\n"};
-    for (auto statement : statements) {
-        result += statement_to_string(statement, tabs + 1);
-        result += '\n';
+std::string statement_to_string(const Statement *type, u64 tabs, bool block_indent) {
+    auto result = std::string{};
+    if (!type->is<BlockStatement>() || block_indent) {
+        result += indent(tabs);
     }
-    result += indent(tabs);
-    result += "}";
-    return result;
-} 
-
-std::string statement_to_string(const Statement *type, u64 tabs) {
-    auto result = indent(tabs);
     switch (type->kind) {
         using enum Statement::Kind;
 
@@ -658,7 +636,7 @@ std::string statement_to_string(const Statement *type, u64 tabs) {
         case RETURN: {
             auto return_statement = type->as<ReturnStatement>();
             result += "return";
-            if (return_statement->value.has_value()) {
+            if (return_statement->value) {
                 result += std::format(" {}", expression_to_string(return_statement->value.value(), tabs));
             } 
             result += ';';
@@ -669,10 +647,10 @@ std::string statement_to_string(const Statement *type, u64 tabs) {
             auto if_statement = type->as<IfStatement>();
             result += std::format("if {} {}",
                 expression_to_string(if_statement->condition, tabs), 
-                statement_to_string(if_statement->body, tabs));
-            if (if_statement->else_branch.has_value()) {
+                statement_to_string(if_statement->body, tabs, false));
+            if (if_statement->else_branch) {
                 result += std::format(" else {}",
-                     statement_to_string(if_statement->else_branch.value().body, tabs));
+                     statement_to_string(if_statement->else_branch.value().body, tabs, false));
             }
             break;
         }
@@ -681,7 +659,7 @@ std::string statement_to_string(const Statement *type, u64 tabs) {
             auto while_statement = type->as<WhileStatement>();
             result += std::format("while {} {}",
                 expression_to_string(while_statement->condition, tabs),
-                statement_to_string(while_statement->body, tabs));
+                statement_to_string(while_statement->body, tabs, false));
             break;
         }
 
@@ -696,7 +674,13 @@ std::string statement_to_string(const Statement *type, u64 tabs) {
 
         case BLOCK: {
             auto block_statement = type->as<BlockStatement>();
-            result += statements_to_string(block_statement->body, tabs);
+            result += "{\n";
+            for (auto statement : block_statement->body) {
+                result += statement_to_string(statement, tabs + 1);
+                result += '\n';
+            }
+            result += indent(tabs);
+            result += "}";
             break;
         }
     
@@ -783,14 +767,6 @@ std::string expression_to_string(const Expression *expression, u64 tabs) {
             break;
         }
 
-        case SELECTOR: {
-            auto selector = expression->as<SelectorExpression>();
-            result += std::format("{}.{}",
-                expression_to_string(selector->expression, tabs),
-                expression_to_string(selector->selector, tabs));
-            break;
-        }
-
         case CALL_OPERATOR: {
             auto call_operator = expression->as<CallOperatorExpression>();
             result += std::format("{}(", expression_to_string(call_operator->expression, tabs));
@@ -829,11 +805,11 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
         case VARIABLE: {
             auto variable = decl->as<VariableDeclaration>();
             result += std::format("var {}", variable->identifier->token.value);
-            if (variable->type.has_value()) {
+            if (variable->type) {
                 result += std::format(": {}", type_to_string(variable->type.value(), tabs));
             }
         
-            if (variable->value.has_value()) {
+            if (variable->value) {
                 result += std::format(" = {}", 
                     expression_to_string(variable->value.value(), tabs));
             }
@@ -844,7 +820,7 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
         case CONSTANT: {
             auto constant = decl->as<ConstDeclaration>();
             result += std::format("const {}", constant->identifier->token.value);
-            if (constant->type.has_value()) {
+            if (constant->type) {
                 result += std::format(": {}", type_to_string(constant->type.value(), tabs));
             }
 

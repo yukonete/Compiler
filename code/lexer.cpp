@@ -374,7 +374,7 @@ Lexer::ParseNumberResult Lexer::parse_number() {
     }
 
     return ParseNumberResult{
-        .value = input_.substr(integer_start, count),
+        .value = std::string_view{input_}.substr(integer_start, count),
         .type = token_type,
         .ok = true,
     };
@@ -411,7 +411,7 @@ Lexer::ParseStringResult Lexer::parse_string() {
 
     if (ch == '\"') {
         return ParseStringResult{
-            .str = input_.substr(string_start, count),
+            .str = std::string_view{input_}.substr(string_start, count),
             .ok = true,
         };
     }
@@ -429,7 +429,7 @@ std::string_view Lexer::parse_identifier() {
         ch = peek_next_char();
     }
 
-    return input_.substr(identifier_start, count);
+    return std::string_view{input_}.substr(identifier_start, count);
 }
 
 bool Lexer::is_new_line(int ch) {

@@ -146,8 +146,9 @@ DynamicArena* DynamicArena::drop() {
     auto memory_block_header_size = round(sizeof(MemoryBlock), DEFAULT_ALIGNMENT);
     for (auto node = first_; node != nullptr;) {
         auto next = node->next;
+        auto memory_block_size = node->arena.size();
         node->~MemoryBlock();
-        allocator_.free(node, memory_block_header_size + node->arena.size());
+        allocator_.free(node, memory_block_header_size + memory_block_size);
         node = next;
     }
 

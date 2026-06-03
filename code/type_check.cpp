@@ -4,6 +4,7 @@
 
 #include "base/panic.h" 
 #include "ast.h"
+#include "parser.h"
 #include "type_check.h"
 #include "types.h"
 
@@ -383,8 +384,8 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
     return error_count_ == 0;
 }
 
-bool TypeChecker::do_type_check(Ast::Program *program) {
-    return add_type_declarations_to_scope(std::span(program->declarations), &global_scope);
+bool TypeChecker::do_type_check(Ast::Parser &parser) {
+    return add_type_declarations_to_scope(std::span{parser.ast()}, &global_scope);
 }
 
 std::string type_to_string(const Type *type, bool) {

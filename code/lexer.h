@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 
+#include "base/file.h"
 #include "base/types.h"
 
 enum class TokenType {
@@ -116,11 +117,21 @@ public:
             {"continue", TokenType::keyword_continue},
     };
 
-    constexpr Lexer(std::string_view input) : input_{input} {}
+    // Input should have trailing new line
+    constexpr explicit Lexer(std::string &&input) : input_{std::move(input)} {}
     constexpr Lexer(const Lexer &) = delete;
     constexpr Lexer& operator=(const Lexer &) = delete;
     constexpr Lexer(Lexer&&) = default;
     constexpr Lexer& operator=(Lexer &&) = default;
+
+    static std::optional<Lexer> open(std::string_view path) {
+        auto input = read_file_to_string(path);
+        if (!input) {
+            return {};
+        }
+        input.value() += '\n';
+        return Lexer{std::move(input.value())};
+    }
 
     // Might invalidate references to tokens
     const Token &next_token();
@@ -153,7 +164,7 @@ private:
     void skip_whitespaces_and_comments();
     bool is_new_line(int ch);
 
-    std::string_view input_;
+    std::string input_;
     usize input_cursor_ = 0;
 
     std::vector<Token> tokens_;

@@ -23,7 +23,7 @@ class TypeChecker {
 public:
     TypeChecker(DynamicArena *arena, FILE *log = stderr) : log_{log}, arena_{arena} {
     }
-    bool do_type_check(Ast::Program *program);
+    bool do_type_check(Ast::Parser &parser);
     Scope global_scope;
 
 private:

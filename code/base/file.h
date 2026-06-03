@@ -4,14 +4,10 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include "base/types.h"
 
-struct ReadFileToStringResult {
-    std::string content;
-    bool ok = false;
-};
-
-inline ReadFileToStringResult read_file_to_string(const char *path) {
+inline std::optional<std::string> read_file_to_string(const char *path) {
     auto err = std::error_code{};
     const auto file_size = std::filesystem::file_size(path, err);
     if (err) {
@@ -22,13 +18,18 @@ inline ReadFileToStringResult read_file_to_string(const char *path) {
     if (!file.is_open()) {
         return {};
     }
-
-    auto result = ReadFileToStringResult{.content = std::string(file_size, '\0')};
-    file.read(&result.content[0], file_size);
-    if (!file.fail()) {
-        result.ok = true;
+ 
+    auto result = std::string(file_size, '\0');
+    if (!file.read(&result[0], file_size)) {
+        return {};
     }
+    
     return result;
+}
+
+inline std::optional<std::string> read_file_to_string(std::string_view path) {
+    auto zero_terminated_path = std::string{path};
+    return read_file_to_string(zero_terminated_path.c_str());
 }
 
 #endif

@@ -29,10 +29,30 @@ enum class Precedence {
 
 class Parser {
 public:
-    constexpr Parser(std::string_view input, Allocator allocator, FILE *log = stderr)
-        : lexer_{input}, arena_{allocator}, log_{log} {}
+    constexpr Parser(Lexer &&lexer, Allocator allocator, FILE *log = stderr)
+        : lexer_{std::move(lexer)}, nodes_storage_{allocator}, log_{log} {}
 
-    Program parse_program();
+    static std::optional<Parser> open(std::string_view path, Allocator allocator, FILE *log = stderr) {
+        auto lexer = Lexer::open(path);
+        if (!lexer) {
+            return {};
+        }
+        return Parser{std::move(lexer.value()), allocator, log};
+    }
+
+    bool parse_program();
+
+    std::vector<Statement*> &ast() {
+        return statements_;
+    }
+
+    const std::vector<Statement*> &ast() const {
+        return statements_;
+    }
+
+    bool any_errors() const {
+        return error_count_ != 0;
+    }
 
 private:
     Statement *parse_statement();
@@ -60,12 +80,12 @@ private:
 
     template <typename NodeType, typename... Args>
     NodeType *New(Args &&...args) {
-        return arena_.create<NodeType>(std::forward<Args>(args)...);
+        return nodes_storage_.create<NodeType>(std::forward<Args>(args)...);
     };
 
     template<typename NodeType>
     std::span<NodeType*> NewArray(std::span<NodeType*> nodes) {
-        auto array = arena_.allocate<NodeType*>(nodes.size());
+        auto array = nodes_storage_.allocate<NodeType*>(nodes.size());
         for (usize i = 0; i < nodes.size(); ++i) {
             array[i] = nodes[i];
         }
@@ -77,19 +97,34 @@ private:
     bool next_token_is(TokenType type);
 
     template <typename... Args>
-    void report_error(const FileLocation &location, std::format_string<Args...> fmt,
+    void syntax_error(Node auto *node, 
+                      std::format_string<Args...> fmt,
                       Args &&...args) {
+        if (!any_errors()) { 
+            auto start_pos = node->start_token().start;
+            log_diagnostics(log_, DiagnosticsLevel::Error, start_pos, fmt, 
+                std::forward<Args>(args)...);
+        }
         error_count_ += 1;
-        log_diagnostics(log_, DiagnosticsLevel::Error, location, fmt, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    void syntax_error(const Token &token, 
+                      std::format_string<Args...> fmt,
+                      Args &&...args) {
+        if (!any_errors()) {
+            log_diagnostics(log_, DiagnosticsLevel::Error, token.start, fmt, 
+                std::forward<Args>(args)...);
+        }
+        error_count_ += 1;
     }
 
     Lexer lexer_;
-    DynamicArena arena_;
-
-    FILE *log_ = nullptr;
-    std::vector<Statement*> statements_;
-
+    DynamicArena nodes_storage_;
+    std::vector<Statement *> statements_;
     u64 error_count_ = 0;
+
+    FILE *log_;
 };
 
 }; // namespace Ast
