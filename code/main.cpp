@@ -20,7 +20,6 @@ int main(int argc, char **argv) {
 	}
 
 	if (!parser->parse_program()) {
-		std::println("Parsing error");
 		return 1;
 	}
 

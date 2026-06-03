@@ -95,6 +95,48 @@ struct Token {
 
 std::string_view token_type_to_string(TokenType type);
 
+enum class DiagnosticsLevel { Warning, Error };
+
+constexpr std::string_view diagnostics_level_to_string(DiagnosticsLevel level) {
+    switch (level) {
+        using enum DiagnosticsLevel;
+        case Warning: return "Warning";
+        case Error: return "Error";
+    }
+    return "Invalid DiagnosticsLevel";
+}
+
+
+inline std::string_view trim(std::string_view str) {
+    if (str.empty()) {
+        return str;
+    }
+
+    {
+        auto last_left_space_index = 0;
+        for (last_left_space_index = 0; last_left_space_index < std::ssize(str);
+             ++last_left_space_index) {
+            if (str.at(last_left_space_index) != ' ') {
+                break;
+            }
+        }
+        str = str.substr(last_left_space_index);
+    }
+
+    {
+        auto last_right_space_index = 0;
+        for (last_right_space_index = static_cast<int>(str.size()) - 1;
+             last_right_space_index >= 0; --last_right_space_index) {
+            if (str.at(last_right_space_index) != ' ') {
+                break;
+            }
+        }
+        str = str.substr(0, last_right_space_index + 1);
+    }
+
+    return str;
+}
+
 class Lexer {
 public:
     static const inline std::unordered_map<std::string_view, TokenType>
@@ -118,19 +160,21 @@ public:
     };
 
     // Input should have trailing new line
-    constexpr explicit Lexer(std::string &&input) : input_{std::move(input)} {}
+    constexpr explicit Lexer(std::string &&input, std::string &&file_name,
+                             FILE *log)
+        : input_{std::move(input)}, file_name_{file_name}, log{log} {
+    }
     constexpr Lexer(const Lexer &) = delete;
     constexpr Lexer& operator=(const Lexer &) = delete;
     constexpr Lexer(Lexer&&) = default;
     constexpr Lexer& operator=(Lexer &&) = default;
 
-    static std::optional<Lexer> open(std::string_view path) {
-        auto input = read_file_to_string(path);
-        if (!input) {
-            return {};
-        }
-        input.value() += '\n';
-        return Lexer{std::move(input.value())};
+    static std::optional<Lexer> open(std::string_view path, FILE *log = stderr) {
+        return read_file_to_string(path).transform(
+            [&](std::string &&file_content) {
+                file_content += '\n';
+                return Lexer{std::move(file_content), std::string{path}, log};
+            });
     }
 
     // Might invalidate references to tokens
@@ -142,35 +186,74 @@ public:
     void eat_token();
     void uneat_token();
 
-private:
-    struct ParseStringResult {
-        std::string_view str;
-        bool ok = false;
-    };
+    // TODO: Handle missing semicolon error reporting a bit differently
+    // (not here necessarily)
+    template <typename... Args>
+    void log_diagnostics(DiagnosticsLevel level, const FileLocation &start,
+                         const FileLocation &end,
+                         std::format_string<Args...> fmt, Args &&...args) {
+        assert(start.column != 0);
+        assert(end.column != 0);
+        assert(start.column <= end.column);
 
+        if (log == nullptr) {
+            return;
+        }
+        std::print(log, "{}({}:{}) {}: ", file_name_, start.line, start.column,
+            diagnostics_level_to_string(level));
+        std::println(log, fmt, std::forward<Args>(args)...);
+
+        auto line = get_line(start.byte);
+        u64 spaces = 0;
+        for (auto ch : line) {
+            if (ch != ' ' && ch != '\t') {
+                break;
+            }
+            spaces += 1;
+        }
+        line.remove_prefix(spaces);
+        
+        std::println("    {}", line);
+        assert(start.column > spaces);
+        std::print("    {:>{}}", '^', start.column - spaces);
+        if (start.line == end.line && start.column < end.column) {
+            std::print("{:~>{}}", '^', end.column - start.column);
+        }
+        std::println();
+    }
+
+    std::string_view get_line(u64 byte) const;
+
+    std::string_view input_view() const {
+        return input_;
+    }
+
+private:
     struct ParseNumberResult {
         std::string_view value;
         TokenType type; // integer or float
-        bool ok = false;
     };
 
     void tokenize();
     int peek_next_char() const;
     int peek_char(usize peek) const;
     void eat_char();
-    ParseNumberResult parse_number();
+    std::optional<ParseNumberResult> parse_number();
     std::string_view parse_identifier();
-    ParseStringResult parse_string();
+    std::optional<std::string_view> parse_string();
     void skip_whitespaces_and_comments();
-    bool is_new_line(int ch);
+    bool is_new_line(int ch) const;
 
     std::string input_;
+    std::string file_name_;
     usize input_cursor_ = 0;
 
     std::vector<Token> tokens_;
     usize tokens_cursor_ = 0;
     
     FileLocation current_location_ = {.line = 1, .column = 1, .byte = 0};
+
+    FILE *log;
 };
 
 template <> struct std::formatter<TokenType> {

@@ -12,7 +12,6 @@
 
 #include "base/arena.h"
 #include "lexer.h"
-#include "log.h"
 #include "ast.h"
 
 namespace Ast {
@@ -32,12 +31,11 @@ public:
     constexpr Parser(Lexer &&lexer, Allocator allocator, FILE *log = stderr)
         : lexer_{std::move(lexer)}, nodes_storage_{allocator}, log_{log} {}
 
-    static std::optional<Parser> open(std::string_view path, Allocator allocator, FILE *log = stderr) {
-        auto lexer = Lexer::open(path);
-        if (!lexer) {
-            return {};
-        }
-        return Parser{std::move(lexer.value()), allocator, log};
+    static std::optional<Parser> open(std::string_view path,
+                                      Allocator allocator, FILE *log = stderr) {
+        return Lexer::open(path, log).transform([&](Lexer &&lexer) {
+            return Parser{std::move(lexer), allocator};
+        });
     }
 
     bool parse_program();
@@ -97,24 +95,23 @@ private:
     bool next_token_is(TokenType type);
 
     template <typename... Args>
-    void syntax_error(Node auto *node, 
-                      std::format_string<Args...> fmt,
+    void syntax_error(Node auto *node, std::format_string<Args...> fmt,
                       Args &&...args) {
-        if (!any_errors()) { 
+        if (!any_errors()) {
             auto start_pos = node->start_token().start;
-            log_diagnostics(log_, DiagnosticsLevel::Error, start_pos, fmt, 
-                std::forward<Args>(args)...);
+            auto end_pos = node->end_token().end;
+            lexer_.log_diagnostics(DiagnosticsLevel::Error, start_pos, end_pos,
+                                   fmt, std::forward<Args>(args)...);
         }
         error_count_ += 1;
     }
 
     template <typename... Args>
-    void syntax_error(const Token &token, 
-                      std::format_string<Args...> fmt,
+    void syntax_error(const Token &token, std::format_string<Args...> fmt,
                       Args &&...args) {
         if (!any_errors()) {
-            log_diagnostics(log_, DiagnosticsLevel::Error, token.start, fmt, 
-                std::forward<Args>(args)...);
+            lexer_.log_diagnostics(DiagnosticsLevel::Error, token.start,
+                                   token.end, fmt, std::forward<Args>(args)...);
         }
         error_count_ += 1;
     }

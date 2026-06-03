@@ -19,6 +19,43 @@ static TokenType check_identifier_for_keyword(std::string_view identifier) {
     return TokenType::identifier;
 }
 
+std::string_view Lexer::get_line(u64 byte) const {
+    if (byte > input_.size()) {
+        return {};
+    }
+
+    // new line is not a token and byte is byte position of the token
+    // so it should never be new line
+    assert(!is_new_line(input_[byte]));
+
+    if (byte == 0) {
+        for (usize i = 0; i < input_.size(); ++i) {
+            if (is_new_line(input_[i])) {
+                return input_view().substr(0, i);
+            }
+        } 
+    }
+    
+    u64 start = 0;
+    for (auto i = byte - 1; i < input_.size(); --i) {
+        if (is_new_line(input_[i])) {
+            start = i + 1;
+            break;
+        }
+    }
+
+    u64 end = input_.size();
+    for (auto i = byte + 1; i < input_.size(); ++i) {
+        if (is_new_line(input_[i])) {
+            end = i;
+            break;
+        }
+    }
+
+    assert(end > start);
+    return input_view().substr(start, end - start);
+}
+
 const Token &Lexer::next_token() {
     return peek_token(0);
 }
@@ -217,10 +254,10 @@ void Lexer::tokenize() {
         }
 
         case '\"': {
-            auto [str, ok] = parse_string();
-            if (ok) {
+            auto str = parse_string();
+            if (str) {
                 token.type = TokenType::string;
-                token.value = str;
+                token.value = str.value();
             }
             break;
         }
@@ -236,9 +273,9 @@ void Lexer::tokenize() {
         case '8':
         case '9': {
             auto parse_result = parse_number();
-            if (parse_result.ok) {
-                token.type = parse_result.type;
-                token.value = parse_result.value;
+            if (parse_result) {
+                token.type = parse_result->type;
+                token.value = parse_result->value;
             }
             break;
         }
@@ -350,7 +387,7 @@ void Lexer::eat_char() {
     input_cursor_ += 1;
 }
 
-Lexer::ParseNumberResult Lexer::parse_number() {
+std::optional<Lexer::ParseNumberResult> Lexer::parse_number() {
     auto token_type = TokenType::integer;
     
     auto integer_start = input_cursor_;
@@ -374,13 +411,12 @@ Lexer::ParseNumberResult Lexer::parse_number() {
     }
 
     return ParseNumberResult{
-        .value = std::string_view{input_}.substr(integer_start, count),
+        .value = input_view().substr(integer_start, count),
         .type = token_type,
-        .ok = true,
     };
 }
 
-Lexer::ParseStringResult Lexer::parse_string() {    
+std::optional<std::string_view> Lexer::parse_string() {    
     auto ch = peek_next_char();
     assert(ch == '\"');
     eat_char();
@@ -410,10 +446,7 @@ Lexer::ParseStringResult Lexer::parse_string() {
     }
 
     if (ch == '\"') {
-        return ParseStringResult{
-            .str = std::string_view{input_}.substr(string_start, count),
-            .ok = true,
-        };
+        return input_view().substr(string_start, count);
     }
 
     return {};
@@ -429,10 +462,10 @@ std::string_view Lexer::parse_identifier() {
         ch = peek_next_char();
     }
 
-    return std::string_view{input_}.substr(identifier_start, count);
+    return input_view().substr(identifier_start, count);
 }
 
-bool Lexer::is_new_line(int ch) {
+bool Lexer::is_new_line(int ch) const {
     return ch == '\n' || (ch == '\r' && peek_char(1) == '\n');
 }
 

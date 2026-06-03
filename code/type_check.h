@@ -8,7 +8,6 @@
 #include "base/arena.h"
 #include "ast.h"
 #include "types.h"
-#include "log.h"
 
 namespace TypeCheck {
 
@@ -32,10 +31,10 @@ private:
     bool add_type_declarations_to_scope(std::span<Ast::Statement *> statements, Scope *scope);
 
     template <typename... Args>
-    void report_error(const FileLocation &location, std::format_string<Args...> fmt,
-                        Args &&...args) {
+    void report_error(const FileLocation &/*location*/, std::format_string<Args...> /*fmt*/,
+                        Args &&.../*args*/) {
         error_count_ += 1;
-        log_diagnostics(log_, DiagnosticsLevel::Error, location, fmt, std::forward<Args>(args)...);
+        // log_diagnostics(log_, DiagnosticsLevel::Error, location, fmt, std::forward<Args>(args)...);
     }
 
     u64 error_count_ = 0;
