@@ -385,7 +385,7 @@ bool TypeChecker::add_type_declarations_to_scope(std::span<Ast::Statement *> sta
 }
 
 bool TypeChecker::do_type_check(Ast::Parser &parser) {
-    return add_type_declarations_to_scope(std::span{parser.ast()}, &global_scope);
+    return add_type_declarations_to_scope(std::span{parser.ast}, &global_scope);
 }
 
 std::string type_to_string(const Type *type, bool) {

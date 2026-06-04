@@ -24,7 +24,7 @@ int main(int argc, char **argv) {
 	}
 
 	std::println("AST to code:");
-	for (auto statement : parser->ast()) {
+	for (auto statement : parser->ast) {
 		auto node_string = Ast::statement_to_string(statement, 0);
 		std::println("{}", node_string);
 	}

@@ -20,7 +20,7 @@ static TokenType check_identifier_for_keyword(std::string_view identifier) {
 }
 
 std::string_view Lexer::get_line(u64 byte) const {
-    if (byte > input_.size()) {
+    if (byte >= input_.size()) {
         return {};
     }
 

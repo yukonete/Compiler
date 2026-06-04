@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <algorithm>
 #include <string_view>
 #include <unordered_map>
@@ -106,37 +107,6 @@ constexpr std::string_view diagnostics_level_to_string(DiagnosticsLevel level) {
     return "Invalid DiagnosticsLevel";
 }
 
-
-inline std::string_view trim(std::string_view str) {
-    if (str.empty()) {
-        return str;
-    }
-
-    {
-        auto last_left_space_index = 0;
-        for (last_left_space_index = 0; last_left_space_index < std::ssize(str);
-             ++last_left_space_index) {
-            if (str.at(last_left_space_index) != ' ') {
-                break;
-            }
-        }
-        str = str.substr(last_left_space_index);
-    }
-
-    {
-        auto last_right_space_index = 0;
-        for (last_right_space_index = static_cast<int>(str.size()) - 1;
-             last_right_space_index >= 0; --last_right_space_index) {
-            if (str.at(last_right_space_index) != ' ') {
-                break;
-            }
-        }
-        str = str.substr(0, last_right_space_index + 1);
-    }
-
-    return str;
-}
-
 class Lexer {
 public:
     static const inline std::unordered_map<std::string_view, TokenType>
@@ -183,23 +153,40 @@ public:
     const Token &peek_token(int peek);
 
     const Token &previous_token() const;
+
+    // Finds first token that starts on byte or after
+    // and returs token that comes before it
+    // There has to be token before, otherwise crash
+    const Token &get_token_before(u64 byte) const {
+        auto token =
+            std::ranges::lower_bound(tokens_, byte, {}, [](const Token &token) {
+                return token.start.byte;
+            });
+
+        assert(token != tokens_.end());
+        assert(token != tokens_.begin());
+
+        return *std::prev(token);
+    }
+
     void eat_token();
     void uneat_token();
 
-    // TODO: Handle missing semicolon error reporting a bit differently
-    // (not here necessarily)
     template <typename... Args>
     void log_diagnostics(DiagnosticsLevel level, const FileLocation &start,
                          const FileLocation &end,
                          std::format_string<Args...> fmt, Args &&...args) {
         assert(start.column != 0);
-        assert(end.column != 0);
-        assert(start.column <= end.column);
+        
+        if (level == DiagnosticsLevel::Error) {
+            error_count_ += 1;
+        }
 
         if (log == nullptr) {
             return;
         }
-        std::print(log, "{}({}:{}) {}: ", file_name_, start.line, start.column,
+
+        std::print(log, "{}({}:{}): {}: ", file_name_, start.line, start.column,
             diagnostics_level_to_string(level));
         std::println(log, fmt, std::forward<Args>(args)...);
 
@@ -228,6 +215,14 @@ public:
         return input_;
     }
 
+    bool any_errors() const {
+        return error_count_ != 0;
+    }
+
+    u64 error_count() const {
+        return error_count_;
+    }
+
 private:
     struct ParseNumberResult {
         std::string_view value;
@@ -254,6 +249,7 @@ private:
     FileLocation current_location_ = {.line = 1, .column = 1, .byte = 0};
 
     FILE *log;
+    u64 error_count_ = 0;
 };
 
 template <> struct std::formatter<TokenType> {
