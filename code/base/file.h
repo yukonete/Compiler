@@ -5,6 +5,9 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <system_error>
+#include <string_view>
+
 #include "base/types.h"
 
 inline std::optional<std::string> read_file_to_string(const char *path) {

@@ -6,6 +6,9 @@
 #include "base/allocator.h"
 #include "base/arena.h"
 
+#ifndef __has_feature
+#define __has_feature(...) 0
+#endif
 
 #if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
 extern "C" void __asan_poison_memory_region(void const volatile*, decltype(sizeof 0));
@@ -19,7 +22,7 @@ extern "C" void __asan_unpoison_memory_region(void const volatile*, decltype(siz
   ((void)(addr), (void)(size))
 #define ASAN_UNPOISON_MEMORY_REGION(addr, size) \
   ((void)(addr), (void)(size))
-#endif 
+#endif
 
 
 Arena::Arena(std::span<u8> data) : data_{data} {
@@ -143,12 +146,11 @@ void DynamicArena::free_all() {
 }
 
 DynamicArena* DynamicArena::drop() {
-    auto memory_block_header_size = round(sizeof(MemoryBlock), DEFAULT_ALIGNMENT);
     for (auto node = first_; node != nullptr;) {
         auto next = node->next;
         auto memory_block_size = node->arena.size();
         node->~MemoryBlock();
-        allocator_.free(node, memory_block_header_size + memory_block_size);
+        allocator_.free(node, MEMORY_BLOCK_HEADER_SIZE + memory_block_size);
         node = next;
     }
 
@@ -163,14 +165,13 @@ bool DynamicArena::add_block(usize size) {
         size = block_size_;
     }
 
-    auto memory_block_header_size = round(sizeof(MemoryBlock), DEFAULT_ALIGNMENT);
-    auto memory_block = allocator_.allocate<u8>(memory_block_header_size + size);
+    auto memory_block = allocator_.allocate<u8>(MEMORY_BLOCK_HEADER_SIZE + size);
     if (memory_block == nullptr) {
         return false;
     }
 
     auto block = new (memory_block) MemoryBlock{
-        .arena = Arena{memory_block + memory_block_header_size, size},
+        .arena = Arena{memory_block + MEMORY_BLOCK_HEADER_SIZE, size},
     };
     if (first_ == nullptr) {
         first_ = block;

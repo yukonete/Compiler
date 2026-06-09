@@ -2,6 +2,7 @@
 #define TYPES_H_
 
 #include <cstdint>
+#include <cstdarg>
 
 using u8 = uint8_t;
 using u16 = uint16_t;

@@ -7,6 +7,7 @@
 #include <source_location>
 #include <stacktrace>
 #include <utility>
+#include <cstdlib>
 
 #include "base/types.h"
 
@@ -20,7 +21,7 @@ template <typename... Args>
                  "Stacktrace:\n"
                  "{}",
                  msg, loc.file_name(), loc.line(), std::stacktrace::current());
-    std::terminate();
+    std::exit(1);
 }
 
 #define panic(fmt, ...)                                                        \

@@ -4,12 +4,10 @@
 #include <cassert>
 #include <optional>
 #include <span>
-#include <string_view>
 #include <concepts>
+#include <string>
 
 #include "base/types.h"
-#include "base/arena.h"
-
 #include "lexer.h"
 
 namespace Ast {

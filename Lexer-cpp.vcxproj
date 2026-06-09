@@ -73,12 +73,12 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(SolutionDir)Build\$(Configuration)\</OutDir>
-    <IntDir>Build\$(Configuration)\</IntDir>
+    <OutDir>$(SolutionDir)build\$(Configuration)\bin\</OutDir>
+    <IntDir>build\$(Configuration)\obj\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(SolutionDir)Build\$(Configuration)\</OutDir>
-    <IntDir>Build\$(Configuration)\</IntDir>
+    <OutDir>$(SolutionDir)build\$(Configuration)\bin\</OutDir>
+    <IntDir>build\$(Configuration)\obj\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -118,6 +118,7 @@
       <DisableSpecificWarnings>4530;4100;4189</DisableSpecificWarnings>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
       <AdditionalOptions>/w44062 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>code;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -138,6 +139,7 @@
       <LanguageStandard>stdcpp23</LanguageStandard>
       <UseStandardPreprocessor>true</UseStandardPreprocessor>
       <AdditionalOptions>/w44062 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>code;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -145,19 +147,25 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="code\ast.cpp" />
+    <ClCompile Include="code\base\arena.cpp" />
     <ClCompile Include="Code\lexer.cpp" />
     <ClCompile Include="Code\main.cpp" />
     <ClCompile Include="Code\parser.cpp" />
-    <ClCompile Include="Code\type_check.cpp" />
+    <ClCompile Include="code\typer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Code\ast.h" />
-    <ClInclude Include="Code\base.h" />
+    <ClInclude Include="code\base\allocator.h" />
+    <ClInclude Include="code\base\arena.h" />
+    <ClInclude Include="code\base\file.h" />
+    <ClInclude Include="code\base\panic.h" />
+    <ClInclude Include="code\base\types.h" />
+    <ClInclude Include="code\entity.h" />
     <ClInclude Include="Code\lexer.h" />
-    <ClInclude Include="Code\log.h" />
     <ClInclude Include="Code\parser.h" />
+    <ClInclude Include="code\typer.h" />
     <ClInclude Include="Code\types.h" />
-    <ClInclude Include="Code\type_check.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="lang.txt" />

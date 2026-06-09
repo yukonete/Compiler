@@ -1,9 +1,11 @@
 #include <print>
+#include <string>
+#include <cstdlib>
+#include <optional>
+#include <string_view>
 
 #include "ast.h"
 #include "base/allocator.h"
-#include "base/arena.h"
-#include "base/file.h"
 #include "parser.h"
 #include "typer.h"
 

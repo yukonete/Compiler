@@ -24,21 +24,21 @@
     <ClCompile Include="Code\parser.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Code\type_check.cpp">
+    <ClCompile Include="code\ast.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="code\base\arena.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="code\typer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Code\base.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Code\lexer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Code\parser.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Code\type_check.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Code\types.h">
@@ -47,7 +47,25 @@
     <ClInclude Include="Code\ast.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Code\log.h">
+    <ClInclude Include="code\entity.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="code\typer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="code\base\allocator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="code\base\arena.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="code\base\file.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="code\base\panic.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="code\base\types.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

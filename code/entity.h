@@ -1,6 +1,8 @@
 #ifndef ENTITY_H
 #define ENTITY_H
 
+#include <optional>
+
 #include "ast.h"
 #include "types.h"
 

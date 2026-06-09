@@ -1,11 +1,17 @@
 #pragma once
 
-#include <functional>
 #include <algorithm>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 #include <string>
+#include <optional>
+#include <utility>
+#include <cassert>
+#include <cstdio>
+#include <format>
+#include <iterator>
+#include <print>
 
 #include "base/file.h"
 #include "base/types.h"

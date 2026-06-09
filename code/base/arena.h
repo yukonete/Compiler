@@ -53,7 +53,7 @@ struct Arena : public AllocatorInterface<Arena> {
 
 private:
     std::span<u8> data_;
-    usize offset_;
+    usize offset_ = 0;
 };
 
 template<usize Size>
@@ -102,6 +102,8 @@ private:
         Arena arena;
         MemoryBlock *next = nullptr;
     };
+
+    static constexpr auto MEMORY_BLOCK_HEADER_SIZE = round(sizeof(MemoryBlock), DEFAULT_ALIGNMENT);
 
     Allocator allocator_;
     usize block_size_;

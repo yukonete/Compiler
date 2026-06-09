@@ -2,10 +2,15 @@
 #define TYPER_H
 
 #include <vector>
+#include <concepts>
+#include <span>
+#include <utility>
 
+#include "base/allocator.h"
 #include "base/arena.h"
 #include "parser.h"
 #include "entity.h"
+#include "ast.h"
 
 struct Scope {
     Scope *parent = nullptr;
