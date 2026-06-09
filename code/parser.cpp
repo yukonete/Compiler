@@ -15,7 +15,7 @@ namespace Ast {
 
 bool Parser::parse_program() {
     while (true) {
-        auto token = lexer.next_token();
+        auto token = lexer_.next_token();
 
         if (token.type == TokenType::eof) {
             break;
@@ -25,10 +25,10 @@ bool Parser::parse_program() {
         if (!statement->is<DeclarationStatement>()) {
             syntax_error(statement, "Expected declaration.");
         }
-        ast.push_back(statement);
+        ast_.push_back(statement);
     }
 
-    return !lexer.any_errors();
+    return !lexer_.any_errors();
 }
 
 Identifier *Parser::parse_identifier() {
@@ -36,7 +36,7 @@ Identifier *Parser::parse_identifier() {
 }
 
 Statement *Parser::parse_statement() {
-    auto token = lexer.next_token();
+    auto token = lexer_.next_token();
     switch (token.type) {
         using enum TokenType;
 
@@ -89,8 +89,8 @@ Statement *Parser::parse_statement() {
                 next_token_is(TokenType::divide_assign) ||
                 next_token_is(TokenType::multiply_assign) ||
                 next_token_is(TokenType::modulo_assign)) {
-                auto assign_token = lexer.next_token();
-                lexer.eat_token();
+                auto assign_token = lexer_.next_token();
+                lexer_.eat_token();
                 auto value = parse_expression();
                 expect_token(TokenType::semicolon);
                 return New<AssignmentStatement>(expression, assign_token, value);    
@@ -133,12 +133,12 @@ Statement *Parser::parse_statement() {
                 token_string = token.value;
             }
             syntax_error(token, "Unexpected token {}.", token_string);
-            lexer.eat_token();
+            lexer_.eat_token();
             return New<BadStatement>(token);
         }
 
         case semicolon: {
-            lexer.eat_token();
+            lexer_.eat_token();
             return New<EmptyStatement>(token);
         }
 
@@ -149,7 +149,7 @@ Statement *Parser::parse_statement() {
 }
 
 Declaration *Parser::parse_declaration() {
-    const auto token_type = lexer.next_token().type;
+    const auto token_type = lexer_.next_token().type;
     switch (token_type) {
         using enum TokenType;
 
@@ -170,7 +170,7 @@ ConstDeclaration *Parser::parse_constant_declaration() {
     auto identifier = parse_identifier();
     auto type = std::optional<Type*>{};
     if (next_token_is(TokenType::colon)) {
-        lexer.eat_token();
+        lexer_.eat_token();
         type = parse_type();
     }
     expect_token(TokenType::assign);
@@ -185,13 +185,13 @@ VariableDeclaration *Parser::parse_variable_declaration() {
 
     auto type = std::optional<Type*>{};
     if (next_token_is(TokenType::colon)) {
-        lexer.eat_token();
+        lexer_.eat_token();
         type = parse_type();
     }
 
     auto value = std::optional<Expression*>{};
     if (next_token_is(TokenType::assign)) {
-        lexer.eat_token();
+        lexer_.eat_token();
         value = parse_expression();
     }
 
@@ -217,7 +217,7 @@ TypeDeclaration *Parser::parse_type_declaration() {
 TypeProcedure *Parser::parse_procedure_type(bool skip_identifier) {
     auto fn_token = expect_token(TokenType::keyword_fn);
     if (skip_identifier) {
-        if (!next_token_is(TokenType::identifier) && !lexer.any_errors()) {
+        if (!next_token_is(TokenType::identifier) && !lexer_.any_errors()) {
             panic("parse_procedure_type was called with skip_identifier = true but "
                   "there was no identifier.");
         }
@@ -249,9 +249,9 @@ TypeProcedure *Parser::parse_procedure_type(bool skip_identifier) {
 ProcedureDeclaration *Parser::parse_procedure_declaration() {
     expect_token(TokenType::keyword_fn);
     auto identifier = parse_identifier();
-    lexer.uneat_token(); // Put identifier back (it is going to be skipped in
+    lexer_.uneat_token(); // Put identifier back (it is going to be skipped in
                           // parse_procedure_type)
-    lexer.uneat_token(); // Put fn back
+    lexer_.uneat_token(); // Put fn back
     auto type = parse_procedure_type(true);
     auto body = parse_block_statement();
     return New<ProcedureDeclaration>(identifier, type, body);
@@ -286,19 +286,19 @@ Field *Parser::parse_field() {
 }
 
 Type *Parser::parse_type() {
-    const auto &token = lexer.next_token();
-    lexer.eat_token();
+    const auto &token = lexer_.next_token();
+    lexer_.eat_token();
 
     switch (token.type) {
         using enum TokenType;
 
         case identifier: {
-            lexer.uneat_token();
+            lexer_.uneat_token();
             auto path_temp = std::vector<Identifier*>();
             while (true) {
                 path_temp.push_back(parse_identifier());
                 if (next_token_is(TokenType::dot)) {
-                    lexer.eat_token();
+                    lexer_.eat_token();
                     continue;    
                 }
 
@@ -356,7 +356,7 @@ Type *Parser::parse_type() {
         }
 
         case keyword_fn: {
-            lexer.uneat_token();
+            lexer_.uneat_token();
             return parse_procedure_type();
         }
 
@@ -426,8 +426,8 @@ static Precedence token_type_to_precedense(TokenType type) {
 }
 
 Expression *Parser::parse_unary_expression() {
-    const auto &token = lexer.next_token();
-    lexer.eat_token();
+    const auto &token = lexer_.next_token();
+    lexer_.eat_token();
 
     switch (token.type) {
         using enum TokenType;
@@ -439,7 +439,7 @@ Expression *Parser::parse_unary_expression() {
         }
 
         case identifier: {
-            lexer.uneat_token();
+            lexer_.uneat_token();
             return New<IdentifierExpression>(parse_identifier());
         }
 
@@ -486,8 +486,8 @@ Expression *Parser::parse_unary_expression() {
 }
 
 Expression *Parser::parse_binary_expression(Expression *left) {
-    const auto &token = lexer.next_token();
-    lexer.eat_token();
+    const auto &token = lexer_.next_token();
+    lexer_.eat_token();
 
     if (token.type == TokenType::open_paren) {
         auto open = token;
@@ -522,7 +522,7 @@ Expression *Parser::parse_binary_expression(Expression *left) {
 Expression *Parser::parse_expression(Precedence precedence) {
     auto *left = parse_unary_expression();
 
-    while (precedence < token_type_to_precedense(lexer.next_token().type)) {
+    while (precedence < token_type_to_precedense(lexer_.next_token().type)) {
         left = parse_binary_expression(left);
     }
 
@@ -530,14 +530,19 @@ Expression *Parser::parse_expression(Precedence precedence) {
 }
 
 const Token &Parser::expect_token(TokenType type) {
-    const auto &token = lexer.next_token();
-    lexer.eat_token();
+    const auto &token = lexer_.next_token();
+    lexer_.eat_token();
 
     if (token.type != type) {
         if (type == TokenType::semicolon) {
-            assert(token.start.byte != 0);
-            auto previous_token = lexer.get_token_before(token.start.byte);
-            syntax_error(previous_token, "Expected ';' after {}.", previous_token.type);
+            const auto &previous_token = lexer_.get_token_before(token.start.byte);
+            if (!lexer_.any_errors() || REPORT_ALL_ERRORS) {
+                auto display_location = previous_token.end;
+                display_location.column += 1;
+                lexer_.log_diagnostics(DiagnosticsLevel::Error, display_location,
+                                      previous_token.start, previous_token.end,
+                                      "Expected ';' got {}.", token.type);
+            }
         } else {
             syntax_error(token, "Expected {}, got {}.", type, token.type);
         }
@@ -547,7 +552,7 @@ const Token &Parser::expect_token(TokenType type) {
 }
 
 bool Parser::next_token_is(TokenType type) {
-    return lexer.next_token().type == type;
+    return lexer_.next_token().type == type;
 }
 
 static std::string indent(u64 tabs) {

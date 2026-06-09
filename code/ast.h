@@ -597,8 +597,8 @@ struct TypeStruct : public Type {
 };
 
 template <typename T>
-concept Node = std::same_as<T, Statement> || std::same_as<T, Declaration> ||
-               std::same_as<T, Type> || std::same_as<T, Expression>;
+concept Node = std::derived_from<T, Statement> || std::derived_from<T, Declaration> ||
+               std::derived_from<T, Type> || std::derived_from<T, Expression>;
 
 std::string statement_to_string(const Statement *type, u64 tabs, bool block_indent = true);
 std::string expression_to_string(const Expression *type, u64 tabs);

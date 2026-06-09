@@ -129,21 +129,19 @@ public:
             {"continue", TokenType::keyword_continue},
     };
 
-    // Input should have trailing new line
     constexpr explicit Lexer(std::string &&input, std::string &&file_name,
                              FILE *log)
-        : input_{std::move(input)}, file_name_{file_name}, log{log} {
+        : input_{std::move(input)}, file_name_{std::move(file_name)}, log{log} {
     }
     constexpr Lexer(const Lexer &) = delete;
     constexpr Lexer& operator=(const Lexer &) = delete;
     constexpr Lexer(Lexer&&) = default;
     constexpr Lexer& operator=(Lexer &&) = default;
 
-    static std::optional<Lexer> open(std::string_view path, FILE *log = stderr) {
-        return read_file_to_string(path).transform(
+    static std::optional<Lexer> open(std::string &&path, FILE *log = stderr) {
+        return read_file_to_string(path.c_str()).transform(
             [&](std::string &&file_content) {
-                file_content += '\n';
-                return Lexer{std::move(file_content), std::string{path}, log};
+                return Lexer{std::move(file_content), std::move(path), log};
             });
     }
 
@@ -173,11 +171,12 @@ public:
     void uneat_token();
 
     template <typename... Args>
-    void log_diagnostics(DiagnosticsLevel level, const FileLocation &start,
-                         const FileLocation &end,
+    void log_diagnostics(DiagnosticsLevel level,
+                         const FileLocation &display_location,
+                         const FileLocation &start, const FileLocation &end,
                          std::format_string<Args...> fmt, Args &&...args) {
         assert(start.column != 0);
-        
+
         if (level == DiagnosticsLevel::Error) {
             error_count_ += 1;
         }
@@ -186,7 +185,7 @@ public:
             return;
         }
 
-        std::print(log, "{}({}:{}): {}: ", file_name_, start.line, start.column,
+        std::print(log, "{}({}:{}): {}: ", file_name_, display_location.line, display_location.column,
             diagnostics_level_to_string(level));
         std::println(log, fmt, std::forward<Args>(args)...);
 
@@ -200,13 +199,21 @@ public:
         }
         line.remove_prefix(spaces);
         
-        std::println("    {}", line);
+        std::println(log, "    {}", line);
         assert(start.column > spaces);
-        std::print("    {:>{}}", '^', start.column - spaces);
+        std::print(log, "    {:>{}}", '^', start.column - spaces);
         if (start.line == end.line && start.column < end.column) {
-            std::print("{:~>{}}", '^', end.column - start.column);
+            std::print(log, "{:~>{}}", '^', end.column - start.column);
         }
-        std::println();
+        std::println(log, "");
+    }
+
+    template <typename... Args>
+    void log_diagnostics(DiagnosticsLevel level, const FileLocation &start,
+                         const FileLocation &end,
+                         std::format_string<Args...> fmt, Args &&...args) {
+        log_diagnostics(level, start, start, end, fmt,
+                        std::forward<Args>(args)...);
     }
 
     std::string_view get_line(u64 byte) const;
@@ -221,6 +228,10 @@ public:
 
     u64 error_count() const {
         return error_count_;
+    }
+
+    std::string_view file_name() const {
+        return file_name_;
     }
 
 private:

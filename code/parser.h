@@ -29,19 +29,24 @@ enum class Precedence {
 class Parser {
 public:
     constexpr Parser(Lexer &&lexer, Allocator allocator)
-        : lexer{std::move(lexer)}, nodes_storage_{allocator} {}
+        : lexer_{std::move(lexer)}, nodes_storage_{allocator} {}
 
-    static std::optional<Parser> open(std::string_view path,
+    static std::optional<Parser> open(std::string &&path,
                                       Allocator allocator, FILE *log = stderr) {
-        return Lexer::open(path, log).transform([&](Lexer &&lexer) {
+        return Lexer::open(std::move(path), log).transform([&](Lexer &&lexer) {
             return Parser{std::move(lexer), allocator};
         });
     }
 
     bool parse_program();
 
-    Lexer lexer;
-    std::vector<Statement *> ast;
+    auto&& lexer(this auto&& self) {
+        return std::forward_like<decltype(self)>(self.lexer_);
+    }
+
+    auto&& ast(this auto&& self) {
+        return std::forward_like<decltype(self)>(self.ast_);
+    }
 
 private:
     constexpr static bool REPORT_ALL_ERRORS = false;
@@ -90,10 +95,10 @@ private:
     template <typename... Args>
     void syntax_error(Node auto *node, std::format_string<Args...> fmt,
                       Args &&...args) {
-        if (!lexer.any_errors() || REPORT_ALL_ERRORS) {
+        if (!lexer_.any_errors() || REPORT_ALL_ERRORS) {
             auto start_pos = node->start_token().start;
             auto end_pos = node->end_token().end;
-            lexer.log_diagnostics(DiagnosticsLevel::Error, start_pos, end_pos,
+            lexer_.log_diagnostics(DiagnosticsLevel::Error, start_pos, end_pos,
                                    fmt, std::forward<Args>(args)...);
         }
     }
@@ -101,13 +106,15 @@ private:
     template <typename... Args>
     void syntax_error(const Token &token, std::format_string<Args...> fmt,
                       Args &&...args) {
-        if (!lexer.any_errors() || REPORT_ALL_ERRORS) {
-            lexer.log_diagnostics(DiagnosticsLevel::Error, token.start,
+        if (!lexer_.any_errors() || REPORT_ALL_ERRORS) {
+            lexer_.log_diagnostics(DiagnosticsLevel::Error, token.start,
                                       token.end, fmt,
                                       std::forward<Args>(args)...);
         }
     }
 
+    Lexer lexer_;
+    std::vector<Statement *> ast_;
     DynamicArena nodes_storage_;
 };
 

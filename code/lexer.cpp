@@ -60,7 +60,7 @@ const Token &Lexer::next_token() {
     return peek_token(0);
 }
 
-// peek is how much to look ahead
+// peek is how much to look ahead (or behind)
 const Token &Lexer::peek_token(int peek) {
     auto index = static_cast<isize>(tokens_cursor_) + peek;
     if (index < 0) {
