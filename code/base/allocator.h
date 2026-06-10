@@ -4,6 +4,7 @@
 #include <span>
 #include <utility>
 #include <cassert>
+#include <memory>
 
 #include "base/types.h"
 
@@ -114,6 +115,56 @@ private:
     Func *func_;
     void *data_;
 };
+
+template <typename T, typename A>
+    requires std::derived_from<A, AllocatorInterface<A>>
+struct AllocatorDeleter {
+    A &allocator;
+
+    constexpr AllocatorDeleter(A &allocator) : allocator{allocator} {
+    }
+
+    void operator()(T *pointer) {
+        allocator.destroy(pointer);
+    }
+};
+
+template<typename T>
+struct AllocatorDeleter<T, Allocator> {
+    Allocator allocator;
+
+    constexpr AllocatorDeleter(Allocator allocator) : allocator{allocator} {
+    }
+
+    void operator()(T *pointer) {
+        allocator.destroy(pointer);        
+    }
+};
+
+template<typename T, typename A = Allocator>
+using AllocatorUniquePtr = std::unique_ptr<T, AllocatorDeleter<T, A>>;
+
+template<typename T, typename A>
+AllocatorUniquePtr<T, A> create_allocator_unique_ptr(A &allocator, T *pointer) {
+    return AllocatorUniquePtr{pointer, AllocatorDeleter<T, A>{allocator}};
+}
+
+template<typename T>
+AllocatorUniquePtr<T> create_allocator_unique_ptr(Allocator allocator, T *pointer) {
+    return AllocatorUniquePtr{pointer, AllocatorDeleter<T, Allocator>{allocator}};
+}
+
+template<typename T, typename A, typename ...Args>
+AllocatorUniquePtr<T, A> make_allocator_unique(A &allocator, Args &&...args) {
+    auto object = allocator.template create<T>(std::forward<Args>(args)...);
+    return create_allocator_unique_ptr(allocator, object);
+}
+
+template<typename T, typename ...Args>
+AllocatorUniquePtr<T> make_allocator_unique(Allocator allocator, Args &&...args) {
+    auto object = allocator.create<T>(std::forward<Args>(args)...);
+    return create_allocator_unique_ptr(allocator, object);
+}
 
 constexpr inline auto NEW_ALLOCATOR = Allocator{
     nullptr,

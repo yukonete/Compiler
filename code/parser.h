@@ -9,9 +9,10 @@
 #include <utility>
 
 #include "base/arena.h"
+#include "base/allocator.h"
+#include "base/concepts.h"
 #include "lexer.h"
 #include "ast.h"
-#include "base/allocator.h"
 
 namespace Ast {
 
@@ -74,7 +75,9 @@ private:
     Field *parse_field();
 
     template <typename NodeType, typename... Args>
-    NodeType *New(Args &&...args) {
+    NodeType *New(Args &&...args) 
+        requires TriviallyDestructible<NodeType>
+    {
         return nodes_storage_.create<NodeType>(std::forward<Args>(args)...);
     };
 

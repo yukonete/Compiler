@@ -8,12 +8,16 @@
 
 #include "base/allocator.h"
 #include "base/arena.h"
+#include "base/concepts.h"
 #include "parser.h"
 #include "entity.h"
 #include "ast.h"
 
 struct Scope {
-    Scope *parent = nullptr;
+    constexpr Scope(Scope *parent) : parent{parent} {
+    }
+    
+    Scope *parent;
     std::vector<Entity*> entities;
 };
 
@@ -23,16 +27,16 @@ struct Typer {
           parser_{parser}, file_scope{create_scope(nullptr)} {
     }
 
-    template <std::derived_from<Entity> T, typename... Args>
-    T *create_entity(Args &&...args) {
+    template <typename T, typename... Args>
+    T *create_entity(Args &&...args)
+        requires std::derived_from<T, Entity> && TriviallyDestructible<T>
+    {
         return entities_storage_.create<T>(std::forward<Args>(args)...);
     };
 
     Scope *create_scope(Scope *parent) {
-        // TODO: Scopes desctructors are not executed for now
-        auto new_scope = scopes_storage_.create<Scope>();
-        new_scope->parent = parent;
-        return new_scope;
+        scopes_.push_back(make_allocator_unique<Scope>(scopes_storage_, parent));
+        return scopes_.back().get();
     }
 
     void add_entity(Scope *scope, Entity *entity) {
@@ -52,6 +56,7 @@ private:
     
     Ast::Parser &parser_;
     std::vector<Entity*> entities_;
+    std::vector<AllocatorUniquePtr<Scope, DynamicArena>> scopes_;
     
     Scope *file_scope;
 };

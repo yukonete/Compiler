@@ -7,6 +7,7 @@
 #include <concepts>
 #include <string>
 
+#include "base/down_cast.h"
 #include "base/types.h"
 #include "lexer.h"
 
@@ -49,28 +50,7 @@ struct ArraySubscriptExpression;
 struct FloatLiteralExpression;
 struct StringLiteralExpression;
 
-#define DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(type)                           \
-    template <typename T>                                                      \
-    constexpr bool is() const                                                  \
-        requires std::derived_from<T, type>                                    \
-    {                                                                          \
-        return kind == T::KIND;                                                \
-    }                                                                          \
-    template <typename T>                                                      \
-    const T *as() const                                                        \
-        requires std::derived_from<T, type>                                    \
-    {                                                                          \
-        assert(is<T>());                                                       \
-        return static_cast<const T *>(this);                                   \
-    }                                                                          \
-    template <typename T>                                                      \
-    T *as()                                                                    \
-        requires std::derived_from<T, type>                                    \
-    {                                                                          \
-        assert(is<T>());                                                       \
-                                                                               \
-        return static_cast<T *>(this);                                         \
-    }
+#define DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(type) DEFINE_DOWNCAST_FUNCTIONS_FOR(type, kind, KIND)
 
 // AST conventions:
 // 1) Pointers in AST are not allowed to be nullptr.
@@ -80,10 +60,6 @@ struct StringLiteralExpression;
 // 4) Even though AST has BAD nodes, later stages of compiler should
 // assume those do not exist because they are created only when
 // there is an error in a source code.
-
-// TODOs:
-// 1) Maybe move logic of storing nodes to AstFile
-// 2) Search parser.cpp for more.
 
 struct Identifier {
     constexpr Identifier(const Token &token) : token{token} {

@@ -3,6 +3,7 @@
 
 #include <optional>
 
+#include "base/down_cast.h"
 #include "ast.h"
 #include "types.h"
 
@@ -16,7 +17,7 @@ struct Entity {
         NAMED_TYPE,
     };
 
-    DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Entity);
+    DEFINE_DOWNCAST_FUNCTIONS_FOR(Entity, kind, KIND);
 
     constexpr Entity(Kind kind, Scope *scope) : kind{kind}, scope{scope} {
     }
