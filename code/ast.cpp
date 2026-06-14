@@ -134,11 +134,11 @@ Token Type::start_token() const {
         using enum Type::Kind;
 
         case BAD: return as<BadType>()->token;
-        case IDENTIFIER: return as<TypeIdentifier>()->path[0]->token;
-        case STRUCT: return as<TypeStruct>()->token;
-        case POINTER: return as<TypePointer>()->token;
-        case FUNCTION: return as<TypeProcedure>()->token;
-        case ARRAY: return as<TypeArray>()->open;
+        case IDENTIFIER: return as<IdentifierType>()->path[0]->token;
+        case STRUCT: return as<StructType>()->token;
+        case POINTER: return as<PointerType>()->token;
+        case FUNCTION: return as<ProcedureType>()->token;
+        case ARRAY: return as<ArrayType>()->open;
     }
     panic("type.kind is not Type::Kind")
 }
@@ -149,13 +149,13 @@ Token Type::end_token() const {
 
         case BAD: return as<BadType>()->token;
         case IDENTIFIER: {
-            auto identifier = as<TypeIdentifier>();
+            auto identifier = as<IdentifierType>();
             return identifier->path[identifier->path.size() - 1]->token;
         }
-        case STRUCT: return as<TypeStruct>()->close;
-        case POINTER: return as<TypePointer>()->type->end_token();
-        case FUNCTION: return as<TypeProcedure>()->close;
-        case ARRAY: return as<TypeArray>()->element_type->end_token();
+        case STRUCT: return as<StructType>()->close;
+        case POINTER: return as<PointerType>()->type->end_token();
+        case FUNCTION: return as<ProcedureType>()->close;
+        case ARRAY: return as<ArrayType>()->element_type->end_token();
     }
     panic("type.kind is not Type::Kind")
 }

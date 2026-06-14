@@ -10,12 +10,13 @@
 #include "ast.h"
 #include "lexer.h"
 #include "parser.h"
+#include "error.h"
 
 namespace Ast {
 
 bool Parser::parse_program() {
     while (true) {
-        auto token = lexer_.next_token();
+        auto token = lexer.next_token();
 
         if (token.type == TokenType::eof) {
             break;
@@ -23,12 +24,12 @@ bool Parser::parse_program() {
 
         auto statement = parse_statement();
         if (!statement->is<DeclarationStatement>()) {
-            syntax_error(statement, "Expected declaration.");
+            syntax_error(lexer, statement, "Expected declaration");
         }
-        ast_.push_back(statement);
+        ast.push_back(statement);
     }
 
-    return !lexer_.any_errors();
+    return !lexer.any_errors();
 }
 
 Identifier *Parser::parse_identifier() {
@@ -36,7 +37,7 @@ Identifier *Parser::parse_identifier() {
 }
 
 Statement *Parser::parse_statement() {
-    auto token = lexer_.next_token();
+    auto token = lexer.next_token();
     switch (token.type) {
         using enum TokenType;
 
@@ -89,8 +90,8 @@ Statement *Parser::parse_statement() {
                 next_token_is(TokenType::divide_assign) ||
                 next_token_is(TokenType::multiply_assign) ||
                 next_token_is(TokenType::modulo_assign)) {
-                auto assign_token = lexer_.next_token();
-                lexer_.eat_token();
+                auto assign_token = lexer.next_token();
+                lexer.eat_token();
                 auto value = parse_expression();
                 expect_token(TokenType::semicolon);
                 return New<AssignmentStatement>(expression, assign_token, value);    
@@ -132,13 +133,13 @@ Statement *Parser::parse_statement() {
             if (token.type == TokenType::invalid) {
                 token_string = token.value;
             }
-            syntax_error(token, "Unexpected token {}.", token_string);
-            lexer_.eat_token();
+            syntax_error(lexer, token, "Unexpected token {}", token_string);
+            lexer.eat_token();
             return New<BadStatement>(token);
         }
 
         case semicolon: {
-            lexer_.eat_token();
+            lexer.eat_token();
             return New<EmptyStatement>(token);
         }
 
@@ -149,7 +150,7 @@ Statement *Parser::parse_statement() {
 }
 
 Declaration *Parser::parse_declaration() {
-    const auto token_type = lexer_.next_token().type;
+    const auto token_type = lexer.next_token().type;
     switch (token_type) {
         using enum TokenType;
 
@@ -170,7 +171,7 @@ ConstDeclaration *Parser::parse_constant_declaration() {
     auto identifier = parse_identifier();
     auto type = std::optional<Type*>{};
     if (next_token_is(TokenType::colon)) {
-        lexer_.eat_token();
+        lexer.eat_token();
         type = parse_type();
     }
     expect_token(TokenType::assign);
@@ -185,21 +186,21 @@ VariableDeclaration *Parser::parse_variable_declaration() {
 
     auto type = std::optional<Type*>{};
     if (next_token_is(TokenType::colon)) {
-        lexer_.eat_token();
+        lexer.eat_token();
         type = parse_type();
     }
 
     auto value = std::optional<Expression*>{};
     if (next_token_is(TokenType::assign)) {
-        lexer_.eat_token();
+        lexer.eat_token();
         value = parse_expression();
     }
 
     expect_token(TokenType::semicolon);
 
     if (!type && !value) {
-        syntax_error(var_token, "Variable declaration has no type and value."
-            " At least one should be specified.");
+        syntax_error(lexer, var_token, "Variable declaration has no type and value."
+            " At least one should be specified");
     }
 
     return New<VariableDeclaration>(var_token, identifier, type, value);;
@@ -214,10 +215,10 @@ TypeDeclaration *Parser::parse_type_declaration() {
     return New<TypeDeclaration>(type_token, identifier, type);
 }
 
-TypeProcedure *Parser::parse_procedure_type(bool skip_identifier) {
+ProcedureType *Parser::parse_procedure_type(bool skip_identifier) {
     auto fn_token = expect_token(TokenType::keyword_fn);
     if (skip_identifier) {
-        if (!next_token_is(TokenType::identifier) && !lexer_.any_errors()) {
+        if (!next_token_is(TokenType::identifier) && !lexer.any_errors()) {
             panic("parse_procedure_type was called with skip_identifier = true but "
                   "there was no identifier.");
         }
@@ -243,15 +244,15 @@ TypeProcedure *Parser::parse_procedure_type(bool skip_identifier) {
     expect_token(TokenType::return_arrow);
     auto return_type = parse_type();
 
-    return New<TypeProcedure>(fn_token, open, parameters, close, return_type);
+    return New<ProcedureType>(fn_token, open, parameters, close, return_type);
 }
 
 ProcedureDeclaration *Parser::parse_procedure_declaration() {
     expect_token(TokenType::keyword_fn);
     auto identifier = parse_identifier();
-    lexer_.uneat_token(); // Put identifier back (it is going to be skipped in
+    lexer.uneat_token(); // Put identifier back (it is going to be skipped in
                           // parse_procedure_type)
-    lexer_.uneat_token(); // Put fn back
+    lexer.uneat_token(); // Put fn back
     auto type = parse_procedure_type(true);
     auto body = parse_block_statement();
     return New<ProcedureDeclaration>(identifier, type, body);
@@ -286,32 +287,32 @@ Field *Parser::parse_field() {
 }
 
 Type *Parser::parse_type() {
-    const auto &token = lexer_.next_token();
-    lexer_.eat_token();
+    const auto &token = lexer.next_token();
+    lexer.eat_token();
 
     switch (token.type) {
         using enum TokenType;
 
         case identifier: {
-            lexer_.uneat_token();
+            lexer.uneat_token();
             auto path_temp = std::vector<Identifier*>();
             while (true) {
                 path_temp.push_back(parse_identifier());
                 if (next_token_is(TokenType::dot)) {
-                    lexer_.eat_token();
+                    lexer.eat_token();
                     continue;    
                 }
 
                 break;
             }
             auto path = NewArray(std::span{path_temp});
-            return New<TypeIdentifier>(path);
+            return New<IdentifierType>(path);
         }
 
         case star: {
             auto pointer_token = token;
             auto type = parse_type();
-            return New<TypePointer>(pointer_token, type);
+            return New<PointerType>(pointer_token, type);
         }
 
         case keyword_struct: {
@@ -334,16 +335,16 @@ Type *Parser::parse_type() {
                 // variable declaration
                 auto statement = parse_statement();
                 if (!statement->is<DeclarationStatement>()) {
-                    syntax_error(statement,
-                                 "Expected declaration or struct member.");
+                    syntax_error(lexer, statement,
+                                 "Expected declaration or struct member");
                 } else {
                     declarations_temp.push_back(
                         statement->as<DeclarationStatement>());
                     auto decl = declarations_temp.back()->declaration;
                     if (decl->is<VariableDeclaration>()) {
-                        syntax_error(decl,
+                        syntax_error(lexer, decl,
                                      "Variable declarations are not allowed "
-                                     "inside of a struct.");
+                                     "inside of a struct");
                     }
                 }
             }
@@ -351,12 +352,12 @@ Type *Parser::parse_type() {
             auto declarations = NewArray(std::span{declarations_temp});
             auto close = expect_token(TokenType::close_brace);
 
-            return New<TypeStruct>(struct_token, open, members, declarations,
+            return New<StructType>(struct_token, open, members, declarations,
                                    close);
         }
 
         case keyword_fn: {
-            lexer_.uneat_token();
+            lexer.uneat_token();
             return parse_procedure_type();
         }
 
@@ -365,11 +366,11 @@ Type *Parser::parse_type() {
             auto count = parse_expression();
             auto close = expect_token(TokenType::close_bracket);
             auto element_type = parse_type();
-            return New<TypeArray>(open, count, close, element_type);
+            return New<ArrayType>(open, count, close, element_type);
         }
 
         default: {
-            syntax_error(token, "Token \"{}\" can not be parsed as a type.",
+            syntax_error(lexer, token, "Token \"{}\" can not be parsed as a type",
                          token.type);
             return New<BadType>(token);
         }
@@ -426,8 +427,8 @@ static Precedence token_type_to_precedense(TokenType type) {
 }
 
 Expression *Parser::parse_unary_expression() {
-    const auto &token = lexer_.next_token();
-    lexer_.eat_token();
+    const auto &token = lexer.next_token();
+    lexer.eat_token();
 
     switch (token.type) {
         using enum TokenType;
@@ -439,7 +440,7 @@ Expression *Parser::parse_unary_expression() {
         }
 
         case identifier: {
-            lexer_.uneat_token();
+            lexer.uneat_token();
             return New<IdentifierExpression>(parse_identifier());
         }
 
@@ -476,18 +477,17 @@ Expression *Parser::parse_unary_expression() {
         case string: return New<StringLiteralExpression>(token);
 
         default: {
-            syntax_error(
-                token,
-                "Token \"{}\" can not be parsed as a unary expression.",
-                token.type);
+            syntax_error(lexer, token,
+                         "Token \"{}\" can not be parsed as a unary expression",
+                         token.type);
             return New<BadExpression>(token);
         }
     }
 }
 
 Expression *Parser::parse_binary_expression(Expression *left) {
-    const auto &token = lexer_.next_token();
-    lexer_.eat_token();
+    const auto &token = lexer.next_token();
+    lexer.eat_token();
 
     if (token.type == TokenType::open_paren) {
         auto open = token;
@@ -522,7 +522,7 @@ Expression *Parser::parse_binary_expression(Expression *left) {
 Expression *Parser::parse_expression(Precedence precedence) {
     auto *left = parse_unary_expression();
 
-    while (precedence < token_type_to_precedense(lexer_.next_token().type)) {
+    while (precedence < token_type_to_precedense(lexer.next_token().type)) {
         left = parse_binary_expression(left);
     }
 
@@ -530,21 +530,18 @@ Expression *Parser::parse_expression(Precedence precedence) {
 }
 
 const Token &Parser::expect_token(TokenType type) {
-    const auto &token = lexer_.next_token();
-    lexer_.eat_token();
+    const auto &token = lexer.next_token();
+    lexer.eat_token();
 
     if (token.type != type) {
         if (type == TokenType::semicolon) {
-            const auto &previous_token = lexer_.get_token_before(token.start.byte);
-            if (!lexer_.any_errors() || REPORT_ALL_ERRORS) {
-                auto display_location = previous_token.end;
-                display_location.column += 1;
-                lexer_.log_diagnostics(DiagnosticsLevel::Error, display_location,
-                                      previous_token.start, previous_token.end,
-                                      "Expected ';' got {}.", token.type);
-            }
+            const auto &previous_token = lexer.get_token_before(token.start.byte);
+            auto display_location = previous_token.end;
+            display_location.column += 1;
+            syntax_error_no_line(lexer, display_location, "Expected ';', got {}", token.type);
+            highlight_token_on_line(lexer, token);
         } else {
-            syntax_error(token, "Expected {}, got {}.", type, token.type);
+            syntax_error(lexer, token, "Expected {}, got {}", type, token.type);
         }
     }
 
@@ -552,7 +549,7 @@ const Token &Parser::expect_token(TokenType type) {
 }
 
 bool Parser::next_token_is(TokenType type) {
-    return lexer_.next_token().type == type;
+    return lexer.next_token().type == type;
 }
 
 static std::string indent(u64 tabs) {
@@ -571,13 +568,13 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
         }
 
         case IDENTIFIER: {
-            auto type_ident = type->as<TypeIdentifier>();
+            auto type_ident = type->as<IdentifierType>();
             result += type_ident->get_full_type_name();
             break;
         }
 
         case STRUCT: {
-            auto type_struct = type->as<TypeStruct>();
+            auto type_struct = type->as<StructType>();
             result += "struct {\n";
             for (const auto &member : type_struct->members) {
                 result += std::format("{}{}: {};\n", indent(tabs + 1),
@@ -593,13 +590,13 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
         }
 
         case POINTER: {
-            auto type_pointer = type->as<TypePointer>();
+            auto type_pointer = type->as<PointerType>();
             result += std::format("*{}", type_to_string(type_pointer->type, tabs));
             break;
         }
 
         case ARRAY: {
-            auto type_array = type->as<TypeArray>();
+            auto type_array = type->as<ArrayType>();
             result += std::format("[{}]{}", 
                 expression_to_string(type_array->count, tabs),
                 type_to_string(type_array->element_type, tabs));
@@ -607,7 +604,7 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
         }
 
         case FUNCTION: {
-            auto type_function = type->as<TypeProcedure>();
+            auto type_function = type->as<ProcedureType>();
             if (include_fn) {
                 result += "fn";
             }

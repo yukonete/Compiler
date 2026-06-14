@@ -497,66 +497,14 @@ void Lexer::skip_whitespaces_and_comments() {
     }
 }
 
-std::string_view token_type_to_string(TokenType type) {
-    switch (type) {
-        using enum TokenType;
-        case invalid: return "invalid";
+const Token &Lexer::get_token_before(u64 byte) const {
+    auto token =
+        std::ranges::lower_bound(tokens_, byte, {}, [](const Token &token) {
+            return token.start.byte;
+        });
 
-        case dot: return ".";
-        case plus: return "+";
-        case minus: return "-";
-        case star: return "*";
-        case divide: return "/";
-        case modulo: return "%";
-        case assign: return "=";
-        case bang: return "!";
-        case equals: return "==";
-        case not_equals: return "!=";
-        case less: return "<";
-        case greater: return ">";
-        case plus_assign: return "+=";
-        case minus_assign: return "-=";
-        case multiply_assign: return "*=";
-        case divide_assign: return "/=";
-        case modulo_assign: return "%=";
-        case return_arrow: return "->";
-        case less_equals: return "<=";
-        case greater_equals: return ">=";
+    assert(token != tokens_.end());
+    assert(token != tokens_.begin());
 
-        case open_brace: return "{";
-        case close_brace: return "}";
-        case open_paren: return "(";
-        case close_paren: return ")";
-        case open_bracket: return "[";
-        case close_bracket: return "]";
-
-        case semicolon: return ";";
-        case colon: return ":";
-        case comma: return ",";
-        case ampersand: return "&";
-
-        case float_literal: return "float";
-        case string: return "string";
-        case identifier: return "identifier";
-        case integer: return "integer";
-        case keyword_if: return "if";
-        case keyword_else: return "else";
-        case keyword_while: return "while";
-        case keyword_for: return "for";
-        case keyword_return: return "return";
-        case keyword_fn: return "fn";
-        case keyword_const: return "const";
-        case keyword_struct: return "struct";
-        case keyword_true: return "true";
-        case keyword_false: return "false";
-        case keyword_cast: return "cast";
-        case keyword_transmute: return "transmute";
-        case keyword_type: return "type";
-        case keyword_var: return "var";
-        case keyword_break: return "break";
-        case keyword_continue: return "continue";
-        case eof: return "eof";
-    }
-
-    return "unknown";
+    return *std::prev(token);
 }

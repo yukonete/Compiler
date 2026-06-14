@@ -4,86 +4,95 @@
 #include <optional>
 
 #include "base/down_cast.h"
+#include "base/flags.h"
 #include "ast.h"
 #include "types.h"
 
 struct Scope;
 
 struct Entity {
-    enum class Kind {
+    enum class Kind : u8 {
         VARIABLE,
         CONSTANT,
         PROCEDURE,
         NAMED_TYPE,
     };
 
+    enum class Flags : u8 {
+        NONE,
+        RESOLVED = 1<<0,
+        BUILTIN = 1<<1,
+    };
+
     DEFINE_DOWNCAST_FUNCTIONS_FOR(Entity, kind, KIND);
 
-    constexpr Entity(Kind kind, Scope *scope) : kind{kind}, scope{scope} {
+    constexpr Entity(Kind kind, Scope *scope, Ast::Declaration *declaration,
+                     Ast::Type *ast_type)
+        : kind{kind}, scope{scope}, declaration{declaration}, ast_type{ast_type} {
     }
 
     Kind kind;
+    Flags flags = Flags::NONE;
     Scope *scope;
 
-    Type *type = nullptr;
+    // Those are nullptr for builtin types
+    Ast::Declaration *declaration;
+    Ast::Type *ast_type;
+
+    Type *type = nullptr; // NamedType for NamedTypeEntity
     Entity *aliased_of = nullptr;
 };
 
-struct EntityVariable : public Entity {
+DEFINE_ENUM_FLAG_OPERATORS(Entity::Flags);
+
+struct VariableEntity : public Entity {
     static constexpr auto KIND = Kind::VARIABLE;
 
-    constexpr EntityVariable(Scope *scope,
+    constexpr VariableEntity(Scope *scope,
                              Ast::VariableDeclaration *declaration,
-                             std::optional<Ast::Type *> ast_type,
+                             Ast::Type *ast_type,
                              std::optional<Ast::Expression *> init_expression)
-        : Entity{KIND, scope}, declaration{declaration}, ast_type{ast_type},
+        : Entity{KIND, scope, declaration, ast_type},
           init_expression{init_expression} {
     }
 
-    Ast::VariableDeclaration *declaration;
-    std::optional<Ast::Type *> ast_type;
     std::optional<Ast::Expression *> init_expression;
 };
 
-struct EntityConstant : public Entity {
+struct ConstantEntity : public Entity {
     static constexpr auto KIND = Kind::CONSTANT;
 
-    constexpr EntityConstant(Scope *scope, Ast::ConstDeclaration *declaration,
-                             std::optional<Ast::Type *> ast_type,
+    constexpr ConstantEntity(Scope *scope, Ast::ConstDeclaration *declaration,
+                             Ast::Type *ast_type,
                              Ast::Expression *init_expression)
-        : Entity{KIND, scope}, declaration{declaration}, ast_type{ast_type},
+        : Entity{KIND, scope, declaration, ast_type},
           init_expression{init_expression} {
     }
 
-    Ast::ConstDeclaration *declaration;
-    std::optional<Ast::Type *> ast_type;
     Ast::Expression *init_expression;
 };
 
-struct EntityProcedure : public Entity {
+struct ProcedureEntity : public Entity {
     static constexpr auto KIND = Kind::PROCEDURE;
 
-    constexpr EntityProcedure(Scope *scope,
+    constexpr ProcedureEntity(Scope *scope,
                               Ast::ProcedureDeclaration *declaration,
-                              Ast::TypeProcedure *ast_type)
-        : Entity{KIND, scope}, declaration{declaration}, ast_type{ast_type} {
+                              Ast::ProcedureType *ast_type)
+        : Entity{KIND, scope, declaration, ast_type} {
     }
 
-    Ast::ProcedureDeclaration *declaration;
-    Ast::TypeProcedure *ast_type;
+    Scope *inner_scope = nullptr;
 };
 
-struct EntityNamedType : public Entity {
+struct NamedTypeEntity : public Entity {
     static constexpr auto KIND = Kind::NAMED_TYPE;
 
-    constexpr EntityNamedType(Scope *scope, Ast::TypeDeclaration *declaration,
-                              Ast::Type *ast_type)
-        : Entity{KIND, scope}, declaration{declaration}, ast_type{ast_type} {
+    constexpr NamedTypeEntity(Scope *scope, Ast::TypeDeclaration *declaration,
+                              Ast::Type *ast_type, std::optional<Scope *> inner_scope)
+        : Entity{KIND, scope, declaration, ast_type}, inner_scope{inner_scope} {
     }
 
-    Ast::TypeDeclaration *declaration;
-    Ast::Type *ast_type;
-
+    // Set olny for structs
     std::optional<Scope *> inner_scope;
 };
 

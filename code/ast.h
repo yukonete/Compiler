@@ -7,6 +7,7 @@
 #include <concepts>
 #include <string>
 
+#include "base/flags.h"
 #include "base/down_cast.h"
 #include "base/types.h"
 #include "lexer.h"
@@ -33,11 +34,11 @@ struct ConstDeclaration;
 struct TypeDeclaration;
 
 struct Type;
-struct TypeIdentifier;
-struct TypePointer;
-struct TypeStruct;
-struct TypeProcedure;
-struct TypeArray;
+struct IdentifierType;
+struct PointerType;
+struct StructType;
+struct ProcedureType;
+struct ArrayType;
 
 struct Expression;
 struct IntegerLiteralExpression;
@@ -245,6 +246,11 @@ struct Declaration {
         TYPE,
     };
 
+    enum class Flags : u8 {
+        NONE,
+        HANDLED,
+    };
+
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Declaration);
 
     constexpr Declaration(Kind kind, Identifier *identifier)
@@ -254,8 +260,11 @@ struct Declaration {
     Token end_token() const;
 
     Kind kind;
+    Flags flags = Flags::NONE;
     Identifier *identifier;
 };
+
+DEFINE_ENUM_FLAG_OPERATORS(Declaration::Flags);
 
 struct VariableDeclaration : public Declaration {
     static constexpr auto KIND = Kind::VARIABLE;
@@ -289,12 +298,12 @@ struct ConstDeclaration : public Declaration {
 struct ProcedureDeclaration : public Declaration {
     static constexpr auto KIND = Kind::FUNCTION;
 
-    constexpr ProcedureDeclaration(Identifier *identifier, TypeProcedure *type,
+    constexpr ProcedureDeclaration(Identifier *identifier, ProcedureType *type,
                                    BlockStatement *body)
         : Declaration{KIND, identifier}, type{type}, body{body} {
     }
 
-    TypeProcedure *type;
+    ProcedureType *type;
     BlockStatement *body;
 };
 
@@ -473,6 +482,18 @@ struct Type {
 
 using TypePath = std::span<Identifier *>;
 
+inline std::string type_path_to_string(TypePath path) {
+    auto result = std::string{};
+    for (usize i = 0; i < path.size(); ++i) {
+        result += path[i]->token.value;
+
+        if (i != path.size() - 1) {
+            result += '.';
+        }
+    }
+    return result;
+}
+
 struct BadType : public Type {
     static constexpr auto KIND = Kind::BAD;
 
@@ -483,33 +504,25 @@ struct BadType : public Type {
     Token token;
 };
 
-struct TypeIdentifier : public Type {
+struct IdentifierType : public Type {
     static constexpr auto KIND = Kind::IDENTIFIER;
 
-    constexpr TypeIdentifier(TypePath path) : Type{KIND}, path{path} {
+    constexpr IdentifierType(TypePath path) : Type{KIND}, path{path} {
     }
 
     // temporary
     std::string get_full_type_name() const {
-        auto result = std::string{};
-        for (usize i = 0; i < path.size(); ++i) {
-            result += path[i]->token.value;
-
-            if (i != path.size() - 1) {
-                result += '.';
-            }
-        }
-        return result;
+        return type_path_to_string(path);
     }
 
     // Path should always have at least one identifier
     TypePath path;
 };
 
-struct TypePointer : public Type {
+struct PointerType : public Type {
     static constexpr auto KIND = Kind::POINTER;
 
-    constexpr TypePointer(const Token &token, Type *type)
+    constexpr PointerType(const Token &token, Type *type)
         : Type{KIND}, token{token}, type{type} {
     }
 
@@ -517,10 +530,10 @@ struct TypePointer : public Type {
     Type *type;
 };
 
-struct TypeArray : public Type {
+struct ArrayType : public Type {
     static constexpr auto KIND = Kind::ARRAY;
 
-    constexpr TypeArray(const Token &open, Expression *count,
+    constexpr ArrayType(const Token &open, Expression *count,
                         const Token &close, Type *element_type)
         : Type{KIND}, open{open}, close{close}, element_type{element_type}, 
         count{count} {
@@ -533,10 +546,10 @@ struct TypeArray : public Type {
     Expression *count;
 };
 
-struct TypeProcedure : public Type {
+struct ProcedureType : public Type {
     static constexpr auto KIND = Kind::FUNCTION;
 
-    constexpr TypeProcedure(const Token &token, const Token &open,
+    constexpr ProcedureType(const Token &token, const Token &open,
                             std::span<Field *> parameters, const Token &close,
                             Type *return_type)
         : Type{KIND}, token{token}, open{open}, close{close},
@@ -551,10 +564,10 @@ struct TypeProcedure : public Type {
     Type *return_type;
 };
 
-struct TypeStruct : public Type {
+struct StructType : public Type {
     static constexpr auto KIND = Kind::STRUCT;
 
-    constexpr TypeStruct(const Token &token, const Token &open,
+    constexpr StructType(const Token &token, const Token &open,
                          std::span<Field *> members,
                          std::span<DeclarationStatement *> declarations,
                          const Token &close)

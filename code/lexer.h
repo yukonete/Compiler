@@ -100,17 +100,68 @@ struct Token {
     std::string_view value;
 };
 
-std::string_view token_type_to_string(TokenType type);
+constexpr std::string_view token_type_to_string(TokenType type) {
+    switch (type) {
+        using enum TokenType;
+        case invalid: return "invalid";
 
-enum class DiagnosticsLevel { Warning, Error };
+        case dot: return ".";
+        case plus: return "+";
+        case minus: return "-";
+        case star: return "*";
+        case divide: return "/";
+        case modulo: return "%";
+        case assign: return "=";
+        case bang: return "!";
+        case equals: return "==";
+        case not_equals: return "!=";
+        case less: return "<";
+        case greater: return ">";
+        case plus_assign: return "+=";
+        case minus_assign: return "-=";
+        case multiply_assign: return "*=";
+        case divide_assign: return "/=";
+        case modulo_assign: return "%=";
+        case return_arrow: return "->";
+        case less_equals: return "<=";
+        case greater_equals: return ">=";
 
-constexpr std::string_view diagnostics_level_to_string(DiagnosticsLevel level) {
-    switch (level) {
-        using enum DiagnosticsLevel;
-        case Warning: return "Warning";
-        case Error: return "Error";
+        case open_brace: return "{";
+        case close_brace: return "}";
+        case open_paren: return "(";
+        case close_paren: return ")";
+        case open_bracket: return "[";
+        case close_bracket: return "]";
+
+        case semicolon: return ";";
+        case colon: return ":";
+        case comma: return ",";
+        case ampersand: return "&";
+
+        case float_literal: return "float";
+        case string: return "string";
+        case identifier: return "identifier";
+        case integer: return "integer";
+        case keyword_if: return "if";
+        case keyword_else: return "else";
+        case keyword_while: return "while";
+        case keyword_for: return "for";
+        case keyword_return: return "return";
+        case keyword_fn: return "fn";
+        case keyword_const: return "const";
+        case keyword_struct: return "struct";
+        case keyword_true: return "true";
+        case keyword_false: return "false";
+        case keyword_cast: return "cast";
+        case keyword_transmute: return "transmute";
+        case keyword_type: return "type";
+        case keyword_var: return "var";
+        case keyword_break: return "break";
+        case keyword_continue: return "continue";
+        case eof: return "eof";
     }
-    return "Invalid DiagnosticsLevel";
+
+    return "unknown";
 }
 
 class Lexer {
@@ -135,9 +186,9 @@ public:
             {"continue", TokenType::keyword_continue},
     };
 
-    constexpr explicit Lexer(std::string &&input, std::string &&file_name,
+    constexpr Lexer(std::string &&input, std::string &&file_name,
                              FILE *log)
-        : input_{std::move(input)}, file_name_{std::move(file_name)}, log{log} {
+        : file_name_{std::move(file_name)}, input_{std::move(input)}, log{log} {
     }
     constexpr Lexer(const Lexer &) = delete;
     constexpr Lexer& operator=(const Lexer &) = delete;
@@ -161,66 +212,10 @@ public:
     // Finds first token that starts on byte or after
     // and returs token that comes before it
     // There has to be token before, otherwise crash
-    const Token &get_token_before(u64 byte) const {
-        auto token =
-            std::ranges::lower_bound(tokens_, byte, {}, [](const Token &token) {
-                return token.start.byte;
-            });
-
-        assert(token != tokens_.end());
-        assert(token != tokens_.begin());
-
-        return *std::prev(token);
-    }
+    const Token &get_token_before(u64 byte) const;
 
     void eat_token();
     void uneat_token();
-
-    template <typename... Args>
-    void log_diagnostics(DiagnosticsLevel level,
-                         const FileLocation &display_location,
-                         const FileLocation &start, const FileLocation &end,
-                         std::format_string<Args...> fmt, Args &&...args) {
-        assert(start.column != 0);
-
-        if (level == DiagnosticsLevel::Error) {
-            error_count_ += 1;
-        }
-
-        if (log == nullptr) {
-            return;
-        }
-
-        std::print(log, "{}({}:{}): {}: ", file_name_, display_location.line, display_location.column,
-            diagnostics_level_to_string(level));
-        std::println(log, fmt, std::forward<Args>(args)...);
-
-        auto line = get_line(start.byte);
-        u64 spaces = 0;
-        for (auto ch : line) {
-            if (ch != ' ' && ch != '\t') {
-                break;
-            }
-            spaces += 1;
-        }
-        line.remove_prefix(spaces);
-        
-        std::println(log, "    {}", line);
-        assert(start.column > spaces);
-        std::print(log, "    {:>{}}", '^', start.column - spaces);
-        if (start.line == end.line && start.column < end.column) {
-            std::print(log, "{:~>{}}", '^', end.column - start.column);
-        }
-        std::println(log, "");
-    }
-
-    template <typename... Args>
-    void log_diagnostics(DiagnosticsLevel level, const FileLocation &start,
-                         const FileLocation &end,
-                         std::format_string<Args...> fmt, Args &&...args) {
-        log_diagnostics(level, start, start, end, fmt,
-                        std::forward<Args>(args)...);
-    }
 
     std::string_view get_line(u64 byte) const;
 
@@ -229,11 +224,7 @@ public:
     }
 
     bool any_errors() const {
-        return error_count_ != 0;
-    }
-
-    u64 error_count() const {
-        return error_count_;
+        return error_count != 0;
     }
 
     std::string_view file_name() const {
@@ -255,18 +246,19 @@ private:
     std::optional<std::string_view> parse_string();
     void skip_whitespaces_and_comments();
     bool is_new_line(int ch) const;
-
-    std::string input_;
+    
     std::string file_name_;
+    
+    std::string input_;
     usize input_cursor_ = 0;
 
     std::vector<Token> tokens_;
     usize tokens_cursor_ = 0;
     
     FileLocation current_location_ = {.line = 1, .column = 1, .byte = 0};
-
-    FILE *log;
-    u64 error_count_ = 0;
+public:
+    FILE *log = nullptr;
+    u64 error_count = 0;
 };
 
 template <> struct std::formatter<TokenType> {
