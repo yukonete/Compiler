@@ -17,9 +17,14 @@ template <typename... Args>
 void error_no_line(Lexer &lexer, const FileLocation &location,
                    std::format_string<Args...> fmt, Args &&...args) {
     lexer.error_count += 1;
+    if (lexer.report_only_first_error && lexer.error_count > 1) {
+        return;
+    }
+
     if (lexer.log == nullptr) {
         return;
     }
+
     std::print(lexer.log, "{}({}:{}) Error: ", lexer.file_name(), location.line,
                location.column);
     std::println(lexer.log, fmt, std::forward<Args>(args)...);
@@ -29,7 +34,9 @@ template <typename... Args>
 void error(Lexer &lexer, const FileLocation &start, const FileLocation &end,
            std::format_string<Args...> fmt, Args &&...args) {
     error_no_line(lexer, start, fmt, std::forward<Args>(args)...);
-    highlight_token_on_line(lexer, start, end);
+    if (!lexer.report_only_first_error || lexer.error_count == 1) {
+        highlight_token_on_line(lexer, start, end);
+    }
 }
 
 template <typename... Args>
@@ -67,6 +74,10 @@ template <typename... Args>
 void syntax_error_no_line(Lexer &lexer, const FileLocation &location,
                           std::format_string<Args...> fmt, Args &&...args) {
     lexer.error_count += 1;
+    if (lexer.report_only_first_syntax_error && lexer.error_count > 1) {
+        return;
+    }
+
     if (lexer.log == nullptr) {
         return;
     }
@@ -80,7 +91,9 @@ void syntax_error(Lexer &lexer, const FileLocation &start,
                   const FileLocation &end, std::format_string<Args...> fmt,
                   Args &&...args) {
     syntax_error_no_line(lexer, start, fmt, std::forward<Args>(args)...);
-    highlight_token_on_line(lexer, start, end);
+    if (!lexer.report_only_first_syntax_error || lexer.error_count == 1) {
+        highlight_token_on_line(lexer, start, end);
+    }
 }
 
 template <typename... Args>

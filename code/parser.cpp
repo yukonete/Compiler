@@ -534,15 +534,7 @@ const Token &Parser::expect_token(TokenType type) {
     lexer.eat_token();
 
     if (token.type != type) {
-        if (type == TokenType::semicolon) {
-            const auto &previous_token = lexer.get_token_before(token.start.byte);
-            auto display_location = previous_token.end;
-            display_location.column += 1;
-            syntax_error_no_line(lexer, display_location, "Expected ';', got {}", token.type);
-            highlight_token_on_line(lexer, token);
-        } else {
-            syntax_error(lexer, token, "Expected {}, got {}", type, token.type);
-        }
+        syntax_error(lexer, token, "Expected {}, got {}", type, token.type);
     }
 
     return token;

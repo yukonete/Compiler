@@ -1,15 +1,33 @@
+#include <ranges>
+#include <string_view>
+#include <unordered_set>
+
 #include "base/panic.h"
 #include "typer.h"
 #include "ast.h"
 #include "error.h"
+
+std::string Scope::full_name() const {
+    if (!entity || !(*entity)->is<NamedTypeEntity>()) {
+        return "";
+    }
+
+    auto named_type = (*entity)->type->as<NamedType>();
+    auto parent_scope_name = parent.value()->full_name();
+    if (parent_scope_name == "") {
+        return std::string{named_type->name};
+    }
+
+    return std::format("{}.{}", parent_scope_name, named_type->name);
+}
 
 std::optional<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
     auto search = entities.find(identifier->token.value);
     if (search != entities.end()) {
         return search->second;
     }
-    if (parent != nullptr) {
-        return parent->look_up(identifier);
+    if (parent) {
+        return (*parent)->look_up(identifier);
     }
     return {};
 }
@@ -18,10 +36,10 @@ std::optional<Entity*> Scope::look_up(Ast::TypePath path) const {
     assert(path.size() > 0);
 
     const Scope *lookup_scope = this;
-    Entity *entity = nullptr;
+    Entity *looked_up_entity = nullptr;
     usize path_index = 0;
     for (; path_index < path.size(); ++path_index) {
-        entity = nullptr;
+        looked_up_entity = nullptr;
         auto identifier = path[path_index];
         
         auto search = lookup_scope->look_up(identifier);
@@ -29,12 +47,12 @@ std::optional<Entity*> Scope::look_up(Ast::TypePath path) const {
             break;
         }
 
-        entity = *search;
-        if (!entity->is<NamedTypeEntity>()) {
+        looked_up_entity = *search;
+        if (!looked_up_entity->is<NamedTypeEntity>()) {
             break;
         }
 
-        auto type_entity = entity->as<NamedTypeEntity>();
+        auto type_entity = looked_up_entity->as<NamedTypeEntity>();
         bool is_struct = false;
         if (type_entity->type->as<NamedType>()->type != nullptr) {
             is_struct = type_entity->type->as<NamedType>()->type->is<StructType>();
@@ -51,15 +69,15 @@ std::optional<Entity*> Scope::look_up(Ast::TypePath path) const {
     }
 
     // If looked up type is struct than index is going to be bigger by one
-    if (entity != nullptr && path_index == path.size()) {
+    if (looked_up_entity != nullptr && path_index == path.size()) {
         path_index -= 1;
     }
 
-    if (entity == nullptr || path_index != path.size() - 1) {
+    if (looked_up_entity == nullptr || path_index != path.size() - 1) {
         return {};
     }
 
-    return entity;
+    return looked_up_entity;
 }
 
 bool Typer::add_entity(Scope *scope, Entity *entity) {
@@ -81,7 +99,9 @@ bool Typer::add_entity(Scope *scope, Entity *entity, std::string_view name) {
 Scope *Typer::create_scope(Scope *parent) {
     scopes_.push_back(make_allocator_unique<Scope>(scopes_storage_));
     auto new_scope = scopes_.back().get();
-    new_scope->parent = parent;
+    if (parent != nullptr) {
+        new_scope->parent = parent;
+    }
     return scopes_.back().get();
 }
 
@@ -125,6 +145,9 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration) {
             auto ast_type = declaration->as<Ast::TypeDeclaration>();
             auto entity = create_entity<NamedTypeEntity>(
                 scope, ast_type, ast_type->type, create_scope(scope));
+            entity->inner_scope.value()->entity = entity;
+            
+            add_entity(scope, entity);
 
             if (ast_type->type->is<Ast::StructType>()) {
                 auto ast_struct = ast_type->type->as<Ast::StructType>();
@@ -132,8 +155,6 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration) {
             }
 
             entity->type = create_type<NamedType>(ast_type->identifier->token.value, entity);
-
-            add_entity(scope, entity);
             break;
         }
     }
@@ -273,6 +294,54 @@ void Typer::resolve_alias(NamedTypeEntity *entity) {
     }
 }
 
+void Typer::check_for_recursive_type(const Type *type,
+                                     std::vector<const NamedType *> &path) const {
+    switch (type->kind) {
+        using enum Type::Kind;
+
+        case BAD: panic("BAD type");
+        case INT: 
+        case BOOL:
+        case FLOAT:
+        case STRING:
+        case POINTER:
+        case PROCEDURE:
+            return;
+        case NAMED: {
+            auto named_type = type->as<NamedType>();
+            if (std::ranges::contains(path, type)) {
+                path.push_back(named_type);
+                return;
+            }
+
+            path.push_back(named_type);
+            check_for_recursive_type(named_type->type, path);
+            return;
+        } 
+        case STRUCT: {
+            auto struct_type = type->as<StructType>();
+            for (const auto &member : struct_type->members) {
+                check_for_recursive_type(member.type, path);
+            }
+            return;
+        }
+        case ARRAY: {
+            auto array_type = type->as<ArrayType>();
+            check_for_recursive_type(array_type->type, path);
+            return;
+        }
+    }
+    assert(false && "Should not trigger");
+}
+
+static std::string full_type_name(const NamedType *type) {
+    auto scope_name = type->entity->scope->full_name();
+    if (scope_name == "") {
+        return std::string{type->name};
+    }
+    return std::format("{}.{}", type->entity->scope->full_name(), type->name);
+}
+
 bool Typer::do_typing() {
     auto add_builtin_type = [this](Scope *scope, Type *type,
                                    std::string_view name) -> bool {
@@ -302,7 +371,6 @@ bool Typer::do_typing() {
     collect_entities(file_scope, parser_.ast);
 
     if (parser_.lexer.any_errors()) {
-        std::println("Errors after collecting entities.");
         return false;
     }
 
@@ -315,17 +383,51 @@ bool Typer::do_typing() {
     }
 
     if (parser_.lexer.any_errors()) {
-        std::println("Errors after fixing aliases.");
         return false;
     }
 
-    for (auto entity : entities_) {
+    // Have to use index based loop here because resolve_entity might add new
+    // entites
+    for (usize i = 0; i < entities_.size(); ++i) {
+        auto entity = entities_[i];
         resolve_entity(entity);
     }
 
     if (parser_.lexer.any_errors()) {
-        std::println("Errors after resolving entities.");
         return false;
+    }
+
+    std::unordered_set<const NamedType *> reported_types;
+    std::vector<const NamedType *> path;
+    for (auto entity : entities_) {
+        if (!entity->is<NamedTypeEntity>()) {
+            continue;
+        }
+
+        auto type = entity->as<NamedTypeEntity>()->type->as<NamedType>();
+
+        check_for_recursive_type(type, path);
+        bool is_recursive_type = path.size() > 1 && path.front() == path.back(); 
+        if (is_recursive_type && !reported_types.contains(type)) {
+            reported_types.insert(type);
+            if (path.size() == 2) {
+                auto type_name = full_type_name(path[0]);
+                error(parser_.lexer, path[0]->entity->declaration,
+                    "Invalid recursive type '{}': '{}' refers to itself",
+                    type_name, type_name);
+            } else {
+                error(parser_.lexer, path[0]->entity->declaration,
+                        "Invalid recursive type '{}'", full_type_name(path[0]));
+                for (usize i = 0; i < path.size() - 1; ++i) {
+                    reported_types.insert(path[i + 1]);
+                    error(parser_.lexer, path[i]->entity->declaration,
+                            "'{}' refers to '{}'", full_type_name(path[i]),
+                            full_type_name(path[i + 1]));
+                }
+            }
+        }
+
+        path.clear();
     }
 
     return true;

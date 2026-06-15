@@ -7,6 +7,7 @@
 #include <utility>
 #include <algorithm>
 #include <cassert>
+#include <string_view>
 
 #include "base/panic.h"
 #include "base/allocator.h"
@@ -17,11 +18,14 @@
 #include "ast.h"
 
 struct Scope {
-    Scope *parent = nullptr;
+    std::optional<Scope *> parent;
+    std::optional<Entity *> entity;
     std::unordered_map<std::string_view, Entity*> entities;
 
     std::optional<Entity*> look_up(Ast::Identifier *identifier) const;
     std::optional<Entity*> look_up(Ast::TypePath path) const;
+    
+    std::string full_name() const;
 };
 
 struct Typer {
@@ -66,6 +70,7 @@ struct Typer {
     bool collect_entities(Scope *scope, std::span<Ast::DeclarationStatement *> declarations);
     bool collect_entities(Scope *scope, std::span<Ast::Statement *> statements);
     bool collect_entity(Scope *scope, Ast::Declaration *declaration);
+    void check_for_recursive_type(const Type *type, std::vector<const NamedType *> &path) const;
 
     bool do_typing();
 

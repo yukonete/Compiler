@@ -259,6 +259,8 @@ private:
 public:
     FILE *log = nullptr;
     u64 error_count = 0;
+    bool report_only_first_error = false;
+    bool report_only_first_syntax_error = true;
 };
 
 template <> struct std::formatter<TokenType> {
