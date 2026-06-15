@@ -74,11 +74,16 @@ struct Typer {
 
     bool do_typing();
 
+    s64 const_evaluate_integer(Scope *scope, Ast::Expression *expression);
+    void calculate_size_and_alignment(Type *type);
+
     std::optional<Entity*> get_entity_by_ast_type(Ast::Type *ast_type) const;
     std::optional<NamedTypeEntity *> look_up_type(Scope *scope, Ast::TypePath path);
     std::optional<Entity*> look_up(Scope *scope, Ast::TypePath path);
+    std::optional<Entity*> look_up(Scope *scope, Ast::Identifier *identifier);
 
     void not_declared_error(Ast::TypePath path);
+    void not_declared_error(Ast::Identifier *identifier);
     void redeclaration_error(Entity *old_entity, Entity *new_entity);
 
 private:

@@ -358,7 +358,7 @@ Type *Parser::parse_type() {
 
         case keyword_fn: {
             lexer.uneat_token();
-            return parse_procedure_type();
+            return New<PointerType>(token, parse_procedure_type());
         }
 
         case open_bracket: {

@@ -90,6 +90,9 @@ struct PointerType : public Type {
     static constexpr auto KIND = Kind::POINTER;
 
     constexpr PointerType(Type *type) : Type{KIND}, type{type} {
+        flags = Flags::SIZED;
+        size = 8;
+        align = 8;
     }
     
     Type *type = nullptr;
@@ -99,13 +102,14 @@ struct ArrayType : public Type {
     static constexpr auto KIND = Kind::ARRAY;
 
     constexpr ArrayType(Type *type, u64 count,
-                        Ast::Expression *count_expression)
-        : Type{KIND}, type{type}, count{count}, count_expression{count_expression} {
+                        Ast::Expression *count_expression, Scope *scope)
+        : Type{KIND}, type{type}, count{count}, count_expression{count_expression}, scope{scope} {
     }
 
     Type *type;
     u64 count;
     Ast::Expression *count_expression;
+    Scope *scope;
 };
 
 struct StructMember {
@@ -138,6 +142,7 @@ struct ProcedureType : public Type {
 
     constexpr ProcedureType(std::span<ProcedureParameter> parameters, Type *return_type) 
         : Type{KIND}, parameters{parameters}, return_type{return_type} {
+        flags = Flags::SIZED;
     }
 
     std::span<ProcedureParameter> parameters;
@@ -157,5 +162,28 @@ struct NamedType : public Type {
 
     Type *type = nullptr;
 };
+
+constexpr bool is_integer(const Type *type) {
+    switch (type->kind) {
+        using enum Type::Kind;
+
+        case BAD: 
+        case BOOL:
+        case FLOAT:
+        case STRING:
+        case POINTER:
+        case ARRAY:
+        case STRUCT:
+        case PROCEDURE: return false;
+
+        case INT: return true;
+        case NAMED: {
+            auto named_type = type->as<NamedType>();
+            return is_integer(named_type->type);
+        }
+    }
+    assert(false && "Should not trigger");
+    return false;
+}
 
 #endif
