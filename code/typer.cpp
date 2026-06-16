@@ -7,6 +7,31 @@
 #include "ast.h"
 #include "error.h"
 
+namespace Typing {
+
+static std::string full_type_name(const NamedType *type) {
+    auto scope_name = type->entity->scope->full_name();
+    if (scope_name == "") {
+        return std::string{type->name};
+    }
+    return std::format("{}.{}", type->entity->scope->full_name(), type->name);
+}
+
+static std::string full_entity_name(const Entity *entity) {
+    std::string_view entity_name;
+    if (has_flag(entity->flags, Entity::Flags::BUILTIN)) {
+        entity_name = entity->type->as<NamedType>()->name;
+    } else {
+        entity_name = entity->declaration->identifier->token.value;
+    }
+
+    auto scope_name = entity->scope->full_name();
+    if (scope_name == "") {
+        return std::string{entity_name};
+    }
+    return std::format("{}.{}", entity->scope->full_name(), entity_name);
+}
+
 std::string Scope::full_name() const {
     if (!entity || !(*entity)->is<NamedTypeEntity>()) {
         return "";
@@ -135,8 +160,8 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration) {
 
         case FUNCTION: {
             auto ast_proc = declaration->as<Ast::ProcedureDeclaration>();
-            auto entity = create_entity<ProcedureEntity>(scope, ast_proc,
-                                                         ast_proc->type);
+            auto entity = create_entity<ProcedureEntity>(
+                scope, ast_proc, ast_proc->type, create_scope(scope));
             add_entity(scope, entity);
             break;
         }
@@ -222,7 +247,10 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
                 parameters_temp.push_back(parameter);
             }
             auto parameters = create_array(std::span{parameters_temp});
-            auto return_type = ast_type_to_type(scope, ast_proc->return_type);
+            auto return_type = std::optional<Type*>();
+            if (ast_proc->return_type) {
+                return_type = ast_type_to_type(scope, *ast_proc->return_type);
+            }
             return create_type<ProcedureType>(parameters, return_type);
         }
 
@@ -294,67 +322,245 @@ void Typer::resolve_alias(NamedTypeEntity *entity) {
     }
 }
 
-void Typer::check_for_recursive_type(const Type *type,
-                                     std::vector<const NamedType *> &path) const {
-    switch (type->kind) {
-        using enum Type::Kind;
+bool Typer::check_for_recursive_expression(Scope *scope,
+                                           Ast::Expression *expression,
+                                           std::vector<const Entity *> &path,
+                                           bool types_only) {
+    switch (expression->kind) {
+        using enum Ast::Expression::Kind;
 
         case BAD: panic("BAD type");
-        case INT: 
-        case BOOL:
-        case FLOAT:
-        case STRING:
-        case POINTER:
-        case PROCEDURE:
-            return;
-        case NAMED: {
-            auto named_type = type->as<NamedType>();
-            if (std::ranges::contains(path, type)) {
-                path.push_back(named_type);
-                return;
-            }
-
-            path.push_back(named_type);
-            check_for_recursive_type(named_type->type, path);
-            return;
-        } 
-        case STRUCT: {
-            auto struct_type = type->as<StructType>();
-            for (const auto &member : struct_type->members) {
-                check_for_recursive_type(member.type, path);
-            }
-            return;
+        case INTEGER_LITERAL:
+        case BOOL_LITERAL:
+        case STRING_LITERAL:
+        case FLOAT_LITERAL: return false;
+        case UNARY_OPERATOR: {
+            auto unary = expression->as<Ast::UnaryOperatorExpression>();
+            return check_for_recursive_expression(scope, unary->right, path,
+                                                  types_only);
         }
-        case ARRAY: {
-            auto array_type = type->as<ArrayType>();
-            check_for_recursive_type(array_type->type, path);
-            return;
+        case BINARY_OPERATOR: {
+            auto binary = expression->as<Ast::BinaryOperatorExpression>();
+            if (binary->op.type == TokenType::dot) {
+                panic("Not implemented");
+            }
+            if (check_for_recursive_expression(scope, binary->left, path,
+                                               types_only)) {
+                return true;
+            }
+            return check_for_recursive_expression(scope, binary->right, path,
+                                                  types_only);
+        }
+        case INDEX: {
+            auto index = expression->as<Ast::IndexExpression>();
+            if (check_for_recursive_expression(scope, index->expression, path,
+                                               types_only)) {
+                return true;
+            }
+            return check_for_recursive_expression(scope, index->index, path,
+                                                  types_only);
+        }
+        case CALL_OPERATOR: {
+            auto call = expression->as<Ast::CallOperatorExpression>();
+            bool size_of = /*is_size_of(call->expression)*/ false;
+            if (size_of && call->arguments.size() != 1) {
+                error(parser_.lexer, call,
+                      "Expected one argument for size_of(), got {}.",
+                      call->arguments.size());
+                return false;
+            }
+            for (auto arg : call->arguments) {
+                if (check_for_recursive_expression(scope, arg, path, size_of)) {
+                    return true;
+                }
+            }
+            if (!size_of) {
+                if (check_for_recursive_expression(scope, call->expression, path, false)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        case IDENTIFIER: {
+            auto identifier =
+                expression->as<Ast::IdentifierExpression>()->identifier;
+            auto entity = look_up(scope, identifier);
+            if (!entity) {
+                return false;
+            }
+            if (types_only && !(*entity)->is<NamedTypeEntity>()) {
+                return false;
+            }
+            return check_for_recursive_declaration(*entity, path);
         }
     }
     assert(false && "Should not trigger");
 }
 
-static std::string full_type_name(const NamedType *type) {
-    auto scope_name = type->entity->scope->full_name();
-    if (scope_name == "") {
-        return std::string{type->name};
+bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
+                                     std::vector<const Entity *> &path) {
+    switch (type->kind) {
+        using enum Type::Kind;
+
+        case BAD: panic("BAD type");
+        case INT:
+        case BOOL:
+        case FLOAT:
+        case STRING:
+        case POINTER:
+        case PROCEDURE: return false;
+        case NAMED: {
+            auto named_type = type->as<NamedType>();
+            auto entity = named_type->entity;
+            if (std::ranges::contains(path, entity)) {
+                path.push_back(entity);
+                return false;
+            }
+
+            path.push_back(entity);
+            bool found = check_for_recursive_type(entity->scope, named_type->type, path);
+            if (!found) {
+                path.pop_back();
+            }
+            return found;
+        }
+        case STRUCT: {
+            auto struct_type = type->as<StructType>();
+            for (const auto &member : struct_type->members) {
+                if (check_for_recursive_type(struct_type->inner_scope,
+                                             member.type, path)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        case ARRAY: {
+            auto array_type = type->as<ArrayType>();
+            if (check_for_recursive_type(scope, array_type->type, path)) {
+                return true;
+            }
+            return check_for_recursive_expression(
+                scope, array_type->count_expression, path, false);
+        }
     }
-    return std::format("{}.{}", type->entity->scope->full_name(), type->name);
+    assert(false && "Should not trigger");
+    return false;
 }
 
-static std::string full_entity_name(const Entity *entity) {
-    std::string_view entity_name;
-    if (has_flag(entity->flags, Entity::Flags::BUILTIN)) {
-        entity_name = entity->type->as<NamedType>()->name;
-    } else {
-        entity_name = entity->declaration->identifier->token.value;
+bool Typer::check_for_recursive_statement(Scope *scope,
+                                          Ast::Statement *statement,
+                                          std::vector<const Entity *> &path) {
+    switch (statement->kind) {
+        using enum Ast::Statement::Kind;
+
+        case BAD: panic("BAD type");
+        case EMPTY: return false;
+        case IF: {
+            auto if_statement = statement->as<Ast::IfStatement>();
+            if (check_for_recursive_expression(scope, if_statement->condition, path, false)) {
+                return true;
+            }
+            if (check_for_recursive_statement(scope, if_statement->body, path)) {
+                return true;
+            }
+            if (!if_statement->else_branch) {
+                return false;
+            } 
+            return check_for_recursive_statement(scope, if_statement->else_branch->body, path);
+        }
+        case WHILE: {
+            auto while_statement = statement->as<Ast::WhileStatement>();
+            if (check_for_recursive_expression(
+                    scope, while_statement->condition, path, false)) {
+                return true;
+            }
+            return check_for_recursive_statement(scope, while_statement->body,
+                                                 path);
+        }
+        case ASSIGNMENT: {
+            auto assignment = statement->as<Ast::AssignmentStatement>();
+            if (check_for_recursive_expression(scope, assignment->expression, path, false)) {
+                return true;
+            }
+            return check_for_recursive_expression(scope, assignment->value, path, false);
+        }
+        case BLOCK: {
+            auto block = statement->as<Ast::BlockStatement>();
+            for (auto stmt : block->body) {
+                if (check_for_recursive_statement(scope, stmt, path)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        case RETURN: {
+            auto return_statement = statement->as<Ast::ReturnStatement>();
+            if (return_statement->value) {
+                return check_for_recursive_expression(
+                    scope, *return_statement->value, path, false);
+            }
+            return false;
+        }
+        case DECLARATION:
+        case CONTINUE:
+        case BREAK: return false;
+        case EXPRESSION: {
+            auto expression_statement =
+                statement->as<Ast::ExpressionStatement>();
+            return check_for_recursive_expression(
+                scope, expression_statement->expression, path, false);
+        }
+    }
+    assert(false && "Should not trigger");
+    return false;
+}
+
+bool Typer::check_for_recursive_declaration(const Entity *entity,
+                                            std::vector<const Entity *> &path) {
+    if (std::ranges::contains(path, entity)) {
+        if (entity->is<ProcedureEntity>()) {
+            return false;
+        }
+        path.push_back(entity);
+        return true;
+    }
+    path.push_back(entity);
+
+    bool found = false;
+    switch (entity->kind) {
+        using enum Entity::Kind;
+
+        case VARIABLE: {
+            auto variable = entity->as<VariableEntity>();
+            if (variable->init_expression) {
+                found = check_for_recursive_expression(
+                    variable->scope, *variable->init_expression, path, false);
+            }
+            break;
+        }
+        case CONSTANT: {
+            auto constant = entity->as<ConstantEntity>();
+            found = check_for_recursive_expression(
+                constant->scope, constant->init_expression, path, false);
+            break;
+        }
+        case NAMED_TYPE: {
+            auto named_type = entity->type->as<NamedType>();
+            found = check_for_recursive_type(entity->scope, named_type->type, path);
+            break;
+        }
+        case PROCEDURE: {
+            auto procedure = entity->as<ProcedureEntity>();
+            auto declaration = procedure->declaration->as<Ast::ProcedureDeclaration>();
+            found = check_for_recursive_statement(procedure->inner_scope, declaration->body, path);
+            break;
+        }
     }
 
-    auto scope_name = entity->scope->full_name();
-    if (scope_name == "") {
-        return std::string{entity_name};
+    if (!found) {
+        path.pop_back();
     }
-    return std::format("{}.{}", entity->scope->full_name(), entity_name);
+    return found;
 }
 
 bool Typer::do_typing() {
@@ -413,37 +619,37 @@ bool Typer::do_typing() {
         return false;
     }
 
-    std::unordered_set<const NamedType *> reported_types;
-    std::vector<const NamedType *> path;
-    for (auto entity : entities_) {
-        if (!entity->is<NamedTypeEntity>()) {
-            continue;
-        }
-
-        auto type = entity->as<NamedTypeEntity>()->type->as<NamedType>();
-
-        check_for_recursive_type(type, path);
-        bool is_recursive_type = path.size() > 1 && path.front() == path.back(); 
-        if (is_recursive_type && !reported_types.contains(type)) {
-            reported_types.insert(type);
-            if (path.size() == 2) {
-                auto type_name = full_type_name(path[0]);
-                error(parser_.lexer, path[0]->entity->declaration,
-                    "Invalid recursive type '{}': '{}' refers to itself",
-                    type_name, type_name);
-            } else {
-                error(parser_.lexer, path[0]->entity->declaration,
-                        "Invalid recursive type '{}'", full_type_name(path[0]));
-                for (usize i = 0; i < path.size() - 1; ++i) {
-                    reported_types.insert(path[i + 1]);
-                    error(parser_.lexer, path[i]->entity->declaration,
-                            "'{}' refers to '{}'", full_type_name(path[i]),
-                            full_type_name(path[i + 1]));
+    {
+        std::unordered_set<const Entity *> reported_entities;
+        std::vector<const Entity *> path;
+        for (auto entity : entities_) {
+            bool is_recursive_entity = check_for_recursive_declaration(entity, path);
+            if (is_recursive_entity && !reported_entities.contains(entity)) {
+                assert(!path.empty());
+                if (path.front() != path.back()) {
+                    // This entity will be reported later
+                    continue;
+                }
+                reported_entities.insert(entity);
+                if (path.size() == 2) {
+                    auto entity_name = full_entity_name(path[0]);
+                    error(parser_.lexer, path[0]->declaration,
+                        "Invalid recursive declaration '{}': '{}' refers to itself",
+                        entity_name, entity_name);
+                } else {
+                    error(parser_.lexer, path[0]->declaration,
+                            "Invalid recursive declaration '{}'", full_entity_name(path[0]));
+                    for (usize i = 0; i < path.size() - 1; ++i) {
+                        reported_entities.insert(path[i + 1]);
+                        error(parser_.lexer, path[i]->declaration,
+                                "'{}' refers to '{}'", full_entity_name(path[i]),
+                                full_entity_name(path[i + 1]));
+                    }
                 }
             }
-        }
 
-        path.clear();
+            path.clear();
+        }
     }
 
     if (parser_.lexer.any_errors()) {
@@ -689,4 +895,6 @@ void Typer::redeclaration_error(Entity *old_entity, Entity *new_entity) {
             parser_.lexer.file_name(),
             old_declaration->start_token().start.line,
             old_declaration->start_token().start.column);
+}
+
 }

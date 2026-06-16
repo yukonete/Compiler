@@ -241,8 +241,11 @@ ProcedureType *Parser::parse_procedure_type(bool skip_identifier) {
     auto parameters = NewArray(std::span{parameters_temp});
     auto close = expect_token(TokenType::close_paren);
 
-    expect_token(TokenType::return_arrow);
-    auto return_type = parse_type();
+    auto return_type = std::optional<Type *>{};
+    if (next_token_is(TokenType::return_arrow)) {
+        lexer.eat_token();
+        return_type = parse_type();
+    }
 
     return New<ProcedureType>(fn_token, open, parameters, close, return_type);
 }
@@ -337,16 +340,8 @@ Type *Parser::parse_type() {
                 if (!statement->is<DeclarationStatement>()) {
                     syntax_error(lexer, statement,
                                  "Expected declaration or struct member");
-                } else {
-                    declarations_temp.push_back(
-                        statement->as<DeclarationStatement>());
-                    auto decl = declarations_temp.back()->declaration;
-                    if (decl->is<VariableDeclaration>()) {
-                        syntax_error(lexer, decl,
-                                     "Variable declarations are not allowed "
-                                     "inside of a struct");
-                    }
                 }
+                declarations_temp.push_back(statement->as<DeclarationStatement>());
             }
             auto members = NewArray(std::span{members_temp});
             auto declarations = NewArray(std::span{declarations_temp});
@@ -358,7 +353,7 @@ Type *Parser::parse_type() {
 
         case keyword_fn: {
             lexer.uneat_token();
-            return New<PointerType>(token, parse_procedure_type());
+            return parse_procedure_type();
         }
 
         case open_bracket: {
@@ -609,8 +604,11 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
                     result += ", ";
                 }
             }
-            result += std::format(") -> {}", 
-                type_to_string(type_function->return_type, tabs));
+            result += ')';
+            if (type_function->return_type) {
+                result += std::format(" -> {}", 
+                    type_to_string(*type_function->return_type, tabs));
+            }
             break;
         }
     }

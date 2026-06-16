@@ -31,7 +31,7 @@ int main(int argc, char **argv) {
         std::println("{}", node_string);
     }
 
-    auto typer = Typer{parser, NEW_ALLOCATOR};
+    auto typer = Typing::Typer{parser, NEW_ALLOCATOR};
 	typer.do_typing();
 
     return 0;

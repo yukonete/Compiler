@@ -47,7 +47,6 @@ struct BinaryOperatorExpression;
 struct BoolLiteralExpression;
 struct IdentifierExpression;
 struct CallOperatorExpression;
-struct ArraySubscriptExpression;
 struct FloatLiteralExpression;
 struct StringLiteralExpression;
 
@@ -551,7 +550,7 @@ struct ProcedureType : public Type {
 
     constexpr ProcedureType(const Token &token, const Token &open,
                             std::span<Field *> parameters, const Token &close,
-                            Type *return_type)
+                            std::optional<Type *> return_type)
         : Type{KIND}, token{token}, open{open}, close{close},
           parameters{parameters}, return_type{return_type} {
     }
@@ -561,7 +560,7 @@ struct ProcedureType : public Type {
     Token close;
 
     std::span<Field *> parameters;
-    Type *return_type;
+    std::optional<Type *> return_type;
 };
 
 struct StructType : public Type {

@@ -17,6 +17,13 @@
 #include "entity.h"
 #include "ast.h"
 
+// TODO:
+// 1) Replace StructMember and ProcedureParameter with VariableEntity
+//    for this to happen i need Ast::Field to be a declaration
+// 2) Collect local variables and implement lookup for them
+
+namespace Typing {
+
 struct Scope {
     std::optional<Scope *> parent;
     std::optional<Entity *> entity;
@@ -70,11 +77,20 @@ struct Typer {
     bool collect_entities(Scope *scope, std::span<Ast::DeclarationStatement *> declarations);
     bool collect_entities(Scope *scope, std::span<Ast::Statement *> statements);
     bool collect_entity(Scope *scope, Ast::Declaration *declaration);
-    void check_for_recursive_type(const Type *type, std::vector<const NamedType *> &path) const;
+
+    bool check_for_recursive_type(Scope *scope, const Type *type, std::vector<const Entity *> &path);
+    bool check_for_recursive_declaration(const Entity *entity, std::vector<const Entity*> &path);
+    bool check_for_recursive_expression(Scope *scope,
+                                        Ast::Expression *expression,
+                                        std::vector<const Entity *> &path,
+                                        bool types_only);
+    bool check_for_recursive_statement(Scope *scope, Ast::Statement *statement,
+                                       std::vector<const Entity *> &path);
 
     bool do_typing();
 
     s64 const_evaluate_integer(Scope *scope, Ast::Expression *expression);
+
     void calculate_size_and_alignment(Type *type);
 
     std::optional<Entity*> get_entity_by_ast_type(Ast::Type *ast_type) const;
@@ -97,5 +113,7 @@ private:
     
     Scope *file_scope;
 };
+
+}
 
 #endif

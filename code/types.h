@@ -9,6 +9,8 @@
 #include "base/flags.h"
 #include "ast.h"
 
+namespace Typing {
+
 struct NamedTypeEntity;
 struct Scope;
 
@@ -140,13 +142,13 @@ struct ProcedureParameter {
 struct ProcedureType : public Type {
     static constexpr auto KIND = Kind::PROCEDURE;
 
-    constexpr ProcedureType(std::span<ProcedureParameter> parameters, Type *return_type) 
+    constexpr ProcedureType(std::span<ProcedureParameter> parameters, std::optional<Type *> return_type) 
         : Type{KIND}, parameters{parameters}, return_type{return_type} {
         flags = Flags::SIZED;
     }
 
     std::span<ProcedureParameter> parameters;
-    Type *return_type = nullptr;
+    std::optional<Type *> return_type = nullptr;
 };
 
 struct NamedType : public Type {
@@ -184,6 +186,8 @@ constexpr bool is_integer(const Type *type) {
     }
     assert(false && "Should not trigger");
     return false;
+}
+
 }
 
 #endif

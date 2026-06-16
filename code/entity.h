@@ -8,6 +8,8 @@
 #include "ast.h"
 #include "types.h"
 
+namespace Typing {
+
 struct Scope;
 
 struct Entity {
@@ -57,6 +59,8 @@ struct VariableEntity : public Entity {
     }
 
     std::optional<Ast::Expression *> init_expression;
+    bool local = false;
+    bool parameter = false;
 };
 
 struct ConstantEntity : public Entity {
@@ -77,11 +81,11 @@ struct ProcedureEntity : public Entity {
 
     constexpr ProcedureEntity(Scope *scope,
                               Ast::ProcedureDeclaration *declaration,
-                              Ast::ProcedureType *ast_type)
-        : Entity{KIND, scope, declaration, ast_type} {
+                              Ast::ProcedureType *ast_type, Scope *inner_scope)
+        : Entity{KIND, scope, declaration, ast_type}, inner_scope{inner_scope} {
     }
 
-    Scope *inner_scope = nullptr;
+    Scope *inner_scope;
 };
 
 struct NamedTypeEntity : public Entity {
@@ -95,5 +99,7 @@ struct NamedTypeEntity : public Entity {
     // Set olny for structs
     std::optional<Scope *> inner_scope;
 };
+
+} // namespace Typing
 
 #endif
