@@ -18,9 +18,7 @@
 #include "ast.h"
 
 // TODO:
-// 1) Replace StructMember and ProcedureParameter with VariableEntity
-//    for this to happen i need Ast::Field to be a declaration
-// 2) Collect local variables and implement lookup for them
+// 1) Collect local variables and implement lookup for them
 
 namespace Typing {
 

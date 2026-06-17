@@ -386,7 +386,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
         case IDENTIFIER: {
             auto identifier =
                 expression->as<Ast::IdentifierExpression>()->identifier;
-            auto entity = look_up(scope, identifier);
+            auto entity = scope->look_up(identifier);
             if (!entity) {
                 return false;
             }
@@ -434,7 +434,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
                 return false;
             }
 
-            auto entity = look_up(scope, std::span{type_path});
+            auto entity = scope->look_up(std::span{type_path});
             if (!entity) {
                 return false;
             }
