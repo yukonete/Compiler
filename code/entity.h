@@ -50,17 +50,23 @@ DEFINE_ENUM_FLAG_OPERATORS(Entity::Flags);
 struct VariableEntity : public Entity {
     static constexpr auto KIND = Kind::VARIABLE;
 
+    enum class VariableKind {
+        GLOBAL,
+        LOCAL,
+        PARAMETER,
+        STRUCT_MEMBER,
+    };
+
     constexpr VariableEntity(Scope *scope,
-                             Ast::VariableDeclaration *declaration,
+                             Ast::Declaration *declaration,
                              Ast::Type *ast_type,
                              std::optional<Ast::Expression *> init_expression)
         : Entity{KIND, scope, declaration, ast_type},
           init_expression{init_expression} {
     }
 
+    VariableKind variable_kind = VariableKind::GLOBAL;
     std::optional<Ast::Expression *> init_expression;
-    bool local = false;
-    bool parameter = false;
 };
 
 struct ConstantEntity : public Entity {

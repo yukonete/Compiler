@@ -182,6 +182,8 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration) {
             entity->type = create_type<NamedType>(ast_type->identifier->token.value, entity);
             break;
         }
+
+        case FIELD: panic("Should be caught in parser");
     }
     return true;
 }
@@ -237,14 +239,15 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
 
         case FUNCTION: {
             auto ast_proc = ast_type->as<Ast::ProcedureType>();
-            std::vector<ProcedureParameter> parameters_temp;
+            std::vector<VariableEntity*> parameters_temp;
             for (auto ast_parameter : ast_proc->parameters) {
-                auto type = ast_type_to_type(scope, ast_parameter->type);
-                auto parameter = ProcedureParameter{
-                    .field = ast_parameter,
-                    .name = ast_parameter->identifier->token.value,
-                    .type = type};
-                parameters_temp.push_back(parameter);
+                auto parameter_entity = create_entity<VariableEntity>(
+                    scope, ast_parameter, ast_parameter->type,
+                    std::optional<Ast::Expression *>{});
+                parameter_entity->variable_kind = VariableEntity::VariableKind::PARAMETER;
+                parameter_entity->flags |= Entity::Flags::RESOLVED;
+                parameter_entity->type = ast_type_to_type(scope, ast_parameter->type);
+                parameters_temp.push_back(parameter_entity);
             }
             auto parameters = create_array(std::span{parameters_temp});
             auto return_type = std::optional<Type*>();
@@ -267,14 +270,15 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
                 scope = (*entity)->as<NamedTypeEntity>()->inner_scope.value(); 
             }
 
-            std::vector<StructMember> members_temp;
+            std::vector<VariableEntity*> members_temp;
             for (auto ast_member : ast_struct->members) {
-                auto type = ast_type_to_type(scope, ast_member->type);
-                auto member = StructMember{
-                    .field = ast_member,
-                    .name = ast_member->identifier->token.value,
-                    .type = type};
-                members_temp.push_back(member);
+                auto member_entity = create_entity<VariableEntity>(
+                    scope, ast_member, ast_member->type,
+                    std::optional<Ast::Expression *>{});
+                member_entity->variable_kind = VariableEntity::VariableKind::STRUCT_MEMBER;
+                member_entity->flags |= Entity::Flags::RESOLVED;
+                member_entity->type = ast_type_to_type(scope, ast_member->type);
+                members_temp.push_back(member_entity);
             }
             auto members = create_array(std::span{members_temp});
             return create_type<StructType>(members, scope);
@@ -341,9 +345,6 @@ bool Typer::check_for_recursive_expression(Scope *scope,
         }
         case BINARY_OPERATOR: {
             auto binary = expression->as<Ast::BinaryOperatorExpression>();
-            if (binary->op.type == TokenType::dot) {
-                panic("Not implemented");
-            }
             if (check_for_recursive_expression(scope, binary->left, path,
                                                types_only)) {
                 return true;
@@ -375,7 +376,8 @@ bool Typer::check_for_recursive_expression(Scope *scope,
                 }
             }
             if (!size_of) {
-                if (check_for_recursive_expression(scope, call->expression, path, false)) {
+                if (check_for_recursive_expression(scope, call->expression,
+                                                   path, false)) {
                     return true;
                 }
             }
@@ -385,6 +387,54 @@ bool Typer::check_for_recursive_expression(Scope *scope,
             auto identifier =
                 expression->as<Ast::IdentifierExpression>()->identifier;
             auto entity = look_up(scope, identifier);
+            if (!entity) {
+                return false;
+            }
+            if (types_only && !(*entity)->is<NamedTypeEntity>()) {
+                return false;
+            }
+            return check_for_recursive_declaration(*entity, path);
+        }
+        case SELECTOR: {
+            std::vector<Ast::Identifier *> type_path;
+            auto type_path_from_expression =
+                [&type_path](this auto &&self, Scope *scope,
+                             Ast::Expression *expression) -> bool {
+                switch (expression->kind) {
+                    case IDENTIFIER: {
+                        auto identifier =
+                            expression->as<Ast::IdentifierExpression>()
+                                ->identifier;
+                        type_path.push_back(identifier);
+                        return true;
+                    }
+
+                    case SELECTOR: {
+                        auto selector =
+                            expression->as<Ast::SelectorExpression>();
+                        if (!self(scope, selector->expression)) {
+                            return false;
+                        }
+                        type_path.push_back(selector->identifier);
+                        return true;
+                    }
+
+                    default: return false;
+                }
+            };
+
+            auto selector = expression->as<Ast::SelectorExpression>();
+            if (check_for_recursive_expression(scope, selector->expression,
+                                               path, types_only)) {
+                return true;
+            }
+            
+            auto type_path_valid = type_path_from_expression(scope, selector);
+            if (!type_path_valid) {
+                return false;
+            }
+
+            auto entity = look_up(scope, std::span{type_path});
             if (!entity) {
                 return false;
             }
@@ -414,7 +464,7 @@ bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
             auto entity = named_type->entity;
             if (std::ranges::contains(path, entity)) {
                 path.push_back(entity);
-                return false;
+                return true;
             }
 
             path.push_back(entity);
@@ -426,9 +476,10 @@ bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
         }
         case STRUCT: {
             auto struct_type = type->as<StructType>();
-            for (const auto &member : struct_type->members) {
+            for (auto member : struct_type->members) {
+                // TODO: check_for_recursive_delcaration(struct_type->inner_scope, member, path) should do
                 if (check_for_recursive_type(struct_type->inner_scope,
-                                             member.type, path)) {
+                                             member->type, path)) {
                     return true;
                 }
             }
@@ -693,7 +744,7 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
                 }
                 case bang: {
                     error(parser_.lexer, unary, "Expression does not evaluate to integer");
-                    return 0; 
+                    return 0;
                 }
                 case plus: return const_evaluate_integer(scope, unary->right);
                 case minus: return -const_evaluate_integer(scope, unary->right);
@@ -731,9 +782,6 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
                 case modulo:
                     return const_evaluate_integer(scope, binary->left) %
                            const_evaluate_integer(scope, binary->right);
-                case dot: {
-                    panic("Not implemented");
-                }
                 default: panic("Binary operator not handeled");
             }
         }
@@ -770,6 +818,9 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
             return 0;
         }
         case INDEX: {
+            panic("Not implemented");
+        }
+        case SELECTOR: {
             panic("Not implemented");
         }
     }
@@ -809,12 +860,12 @@ void Typer::calculate_size_and_alignment(Type *type) {
             u64 alignment = 0;
             u64 size = 0;
             for (auto member : struct_type->members) {
-                calculate_size_and_alignment(member.type);
-                if (member.type->align > alignment) {
-                    alignment = member.type->align;
+                calculate_size_and_alignment(member->type);
+                if (member->type->align > alignment) {
+                    alignment = member->type->align;
                 } 
-                size = round(size, member.type->align);
-                size += member.type->size;
+                size = round(size, member->type->align);
+                size += member->type->size;
             }
             if (size == 0) {
                 size = 1;

@@ -72,6 +72,7 @@ Token Expression::start_token() const {
         case STRING_LITERAL: return as<StringLiteralExpression>()->token;
         case FLOAT_LITERAL: return as<FloatLiteralExpression>()->token;
         case INDEX: return as<IndexExpression>()->expression->start_token();
+        case SELECTOR: return as<SelectorExpression>()->expression->start_token();
     }
     panic("expression.kind is not Expression::Kind")
 }
@@ -92,6 +93,7 @@ Token Expression::end_token() const {
         case STRING_LITERAL: return as<StringLiteralExpression>()->token;
         case FLOAT_LITERAL: return as<FloatLiteralExpression>()->token;
         case INDEX: return as<IndexExpression>()->close;
+        case SELECTOR: return as<SelectorExpression>()->identifier->token;
     }
     panic("expression.kind is not Expression::Kind")
 }
@@ -104,6 +106,7 @@ Token Declaration::start_token() const {
         case FUNCTION: return as<ProcedureDeclaration>()->type->token;
         case CONSTANT: return as<ConstDeclaration>()->token;
         case TYPE: return as<TypeDeclaration>()->token;
+        case FIELD: return as<Field>()->identifier->token;
     }
     panic("delcaration.kind is not Declaration::Kind")
 }
@@ -125,6 +128,7 @@ Token Declaration::end_token() const {
         case FUNCTION: return as<ProcedureDeclaration>()->type->close;
         case CONSTANT: return as<ConstDeclaration>()->value->end_token();
         case TYPE: return as<TypeDeclaration>()->type->end_token();
+        case FIELD: return as<Field>()->type->end_token();
     }
     panic("delcaration.kind is not Declaration::Kind")
 }

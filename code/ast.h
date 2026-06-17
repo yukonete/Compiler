@@ -68,15 +68,6 @@ struct Identifier {
     Token token;
 };
 
-struct Field {
-    constexpr Field(Identifier *identifier, Type *type)
-        : identifier{identifier}, type{type} {
-    }
-
-    Identifier *identifier;
-    Type *type;
-};
-
 struct Statement {
     enum class Kind : u8 {
         BAD,
@@ -243,6 +234,7 @@ struct Declaration {
         FUNCTION,
         CONSTANT,
         TYPE,
+        FIELD,
     };
 
     enum class Flags : u8 {
@@ -264,6 +256,16 @@ struct Declaration {
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(Declaration::Flags);
+
+struct Field : public Declaration {
+    static constexpr auto KIND = Kind::FIELD;
+
+    constexpr Field(Identifier *identifier, Type *type)
+        : Declaration{KIND, identifier}, type{type} {
+    }
+
+    Type *type;
+};
 
 struct VariableDeclaration : public Declaration {
     static constexpr auto KIND = Kind::VARIABLE;
@@ -329,6 +331,7 @@ struct Expression {
         CALL_OPERATOR,
         STRING_LITERAL,
         FLOAT_LITERAL,
+        SELECTOR,
         INDEX,
     };
 
@@ -422,6 +425,20 @@ struct CallOperatorExpression : public Expression {
     Token close;
     Expression *expression;
     std::span<Expression *> arguments;
+};
+
+struct SelectorExpression : public Expression {
+    static constexpr auto KIND = Kind::SELECTOR;
+
+    constexpr SelectorExpression(Expression *expression, const Token &dot,
+                                 Identifier *identifier)
+        : Expression{KIND}, expression{expression}, dot{dot},
+          identifier{identifier} {
+    }
+
+    Expression *expression;
+    Token dot;
+    Identifier *identifier;
 };
 
 struct StringLiteralExpression : public Expression {

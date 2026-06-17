@@ -509,6 +509,12 @@ Expression *Parser::parse_binary_expression(Expression *left) {
         return New<IndexExpression>(left, open, index, close);
     }
 
+    if (token.type == TokenType::dot) {
+        auto dot = token;
+        auto identifier = parse_identifier();
+        return New<SelectorExpression>(left, dot, identifier);
+    }
+
     auto op = token;
     auto right = parse_expression(token_type_to_precedense(token.type));
     return New<BinaryOperatorExpression>(left, op, right);
@@ -563,10 +569,9 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
         case STRUCT: {
             auto type_struct = type->as<StructType>();
             result += "struct {\n";
-            for (const auto &member : type_struct->members) {
-                result += std::format("{}{}: {};\n", indent(tabs + 1),
-                    member->identifier->token.value,
-                    type_to_string(member->type, tabs + 1));
+            for (auto member : type_struct->members) {
+                result += std::format("{}{};\n", indent(tabs + 1),
+                    declaration_to_string(member, tabs));
             }
             for (auto declaration : type_struct->declarations) {
                 result += std::format("{}\n", statement_to_string(declaration, tabs+1));
@@ -597,9 +602,8 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
             }
             result += "(";
             for (usize i = 0; i < type_function->parameters.size(); ++i) {
-                const auto &parameter = type_function->parameters[i];
-                result += std::format("{}: {}", parameter->identifier->token.value,
-                                type_to_string(parameter->type, tabs));
+                auto parameter = type_function->parameters[i];
+                result += declaration_to_string(parameter, tabs);
                 if (i != type_function->parameters.size() - 1) {
                     result += ", ";
                 }
@@ -748,14 +752,18 @@ std::string expression_to_string(const Expression *expression, u64 tabs) {
 
         case BINARY_OPERATOR: {
             auto binary_operator = expression->as<BinaryOperatorExpression>();
-            result += std::format("({} {} {}",
+            result += std::format("({} {} {})",
                 expression_to_string(binary_operator->left, tabs),
                 binary_operator->op.type,
                 expression_to_string(binary_operator->right, tabs));
-            if (binary_operator->op.type == TokenType::open_bracket) {
-                result += ']';
-            }
-            result += ')';
+            break;
+        }
+
+        case SELECTOR : {
+            auto selector = expression->as<SelectorExpression>();
+            result +=
+                std::format("{}.{}", expression_to_string(selector->expression, tabs),
+                            selector->identifier->token.value);
             break;
         }
 
@@ -801,6 +809,13 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
     auto result = std::string{};
     switch (decl->kind) {
         using enum Declaration::Kind;
+
+        case FIELD: {
+            auto field = decl->as<Field>();
+            result += std::format("{}: {}", field->identifier->token.value,
+                                  type_to_string(field->type));
+            break;
+        }
 
         case VARIABLE: {
             auto variable = decl->as<VariableDeclaration>();

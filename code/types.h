@@ -13,6 +13,7 @@ namespace Typing {
 
 struct NamedTypeEntity;
 struct Scope;
+struct VariableEntity;
 
 struct Type {
     enum class Kind : u8 {
@@ -114,41 +115,29 @@ struct ArrayType : public Type {
     Scope *scope;
 };
 
-struct StructMember {
-    Ast::Field *field = nullptr;
-
-    std::string_view name;
-    Type *type = nullptr;
-};
-
 struct StructType : public Type {
     static constexpr auto KIND = Kind::STRUCT;
 
-    constexpr StructType(std::span<StructMember> members,  Scope *inner_scope) 
+    constexpr StructType(std::span<VariableEntity *> members,
+                         Scope *inner_scope)
         : Type{KIND}, members{members}, inner_scope{inner_scope} {
     }
 
-    std::span<StructMember> members;
+    std::span<VariableEntity*> members;
     Scope *inner_scope;
-};
-
-struct ProcedureParameter {
-    Ast::Field *field = nullptr;
-    
-    std::string_view name;
-    Type *type = nullptr;   
 };
 
 struct ProcedureType : public Type {
     static constexpr auto KIND = Kind::PROCEDURE;
 
-    constexpr ProcedureType(std::span<ProcedureParameter> parameters, std::optional<Type *> return_type) 
+    constexpr ProcedureType(std::span<VariableEntity*> parameters,
+                            std::optional<Type *> return_type)
         : Type{KIND}, parameters{parameters}, return_type{return_type} {
         flags = Flags::SIZED;
     }
 
-    std::span<ProcedureParameter> parameters;
-    std::optional<Type *> return_type = nullptr;
+    std::span<VariableEntity*> parameters;
+    std::optional<Type *> return_type;
 };
 
 struct NamedType : public Type {
