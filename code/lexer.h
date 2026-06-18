@@ -67,6 +67,7 @@ enum class TokenType {
     keyword_struct,
     keyword_break,
     keyword_continue,
+    keyword_size_of,
 
     open_brace,
     close_brace,
@@ -158,6 +159,7 @@ constexpr std::string_view token_type_to_string(TokenType type) {
         case keyword_var: return "var";
         case keyword_break: return "break";
         case keyword_continue: return "continue";
+        case keyword_size_of: return "size_of";
         case eof: return "eof";
     }
 
@@ -184,6 +186,7 @@ public:
             {"var", TokenType::keyword_var},
             {"break", TokenType::keyword_break},
             {"continue", TokenType::keyword_continue},
+            {"size_of", TokenType::keyword_size_of},
     };
 
     constexpr Lexer(std::string &&input, std::string &&file_name,

@@ -68,6 +68,8 @@ struct Identifier {
     Token token;
 };
 
+using TypePath = std::span<Identifier *>;
+
 struct Statement {
     enum class Kind : u8 {
         BAD,
@@ -495,8 +497,6 @@ struct Type {
 
     Kind kind;
 };
-
-using TypePath = std::span<Identifier *>;
 
 inline std::string type_path_to_string(TypePath path) {
     auto result = std::string{};

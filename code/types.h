@@ -18,6 +18,7 @@ struct VariableEntity;
 struct Type {
     enum class Kind : u8 {
         BAD,
+        ANY, // Pointer to anything
         INT,
         BOOL,
         FLOAT,
@@ -47,6 +48,15 @@ struct Type {
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(Type::Flags);
+
+struct AnyType : public Type {
+    static constexpr auto KIND = Kind::ANY;
+
+    constexpr AnyType() : Type{KIND} {
+        size = 8;
+        align = 8;
+    }
+};
 
 struct BadType : public Type {
     static constexpr auto KIND = Kind::BAD;
@@ -155,25 +165,13 @@ struct NamedType : public Type {
 };
 
 constexpr bool is_integer(const Type *type) {
-    switch (type->kind) {
-        using enum Type::Kind;
-
-        case BAD: 
-        case BOOL:
-        case FLOAT:
-        case STRING:
-        case POINTER:
-        case ARRAY:
-        case STRUCT:
-        case PROCEDURE: return false;
-
-        case INT: return true;
-        case NAMED: {
-            auto named_type = type->as<NamedType>();
-            return is_integer(named_type->type);
-        }
+    if (type->is<IntType>()) {
+        return true;
     }
-    assert(false && "Should not trigger");
+    if (type->is<NamedType>()) {
+        auto named_type = type->as<NamedType>();
+        return is_integer(named_type->type);
+    }
     return false;
 }
 

@@ -62,13 +62,13 @@ const Token &Lexer::next_token() {
 
 // peek is how much to look ahead (or behind)
 const Token &Lexer::peek_token(int peek) {
-    auto index = static_cast<isize>(tokens_cursor_) + peek;
-    if (index < 0) {
+    if (static_cast<isize>(tokens_cursor_) + peek < 0) {
         panic("No previous token");
     }
 
-    if (static_cast<usize>(index) < tokens_.size()) {
-        return tokens_.at(tokens_cursor_ + peek);
+    auto index = tokens_cursor_ + static_cast<usize>(peek);
+    if (index < tokens_.size()) {
+        return tokens_.at(index);
     }
 
     tokenize();
@@ -391,7 +391,7 @@ std::optional<Lexer::ParseNumberResult> Lexer::parse_number() {
     auto token_type = TokenType::integer;
     
     auto integer_start = input_cursor_;
-    auto count = 0;
+    usize count = 0;
     while (true) {
         auto ch = peek_next_char();
         
@@ -421,7 +421,7 @@ std::optional<std::string_view> Lexer::parse_string() {
     assert(ch == '\"');
     eat_char();
     auto string_start = input_cursor_;
-    auto count = 0;
+    usize count = 0;
     while (true) {
         ch = peek_next_char();
         

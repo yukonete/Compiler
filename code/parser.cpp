@@ -75,6 +75,7 @@ Statement *Parser::parse_statement() {
         case string:
         case float_literal:
         // Unary operators
+        case keyword_size_of:
         case open_paren:
         case ampersand:
         case star:
@@ -340,8 +341,9 @@ Type *Parser::parse_type() {
                 if (!statement->is<DeclarationStatement>()) {
                     syntax_error(lexer, statement,
                                  "Expected declaration or struct member");
+                } else {
+                    declarations_temp.push_back(statement->as<DeclarationStatement>());
                 }
-                declarations_temp.push_back(statement->as<DeclarationStatement>());
             }
             auto members = NewArray(std::span{members_temp});
             auto declarations = NewArray(std::span{declarations_temp});
@@ -470,6 +472,14 @@ Expression *Parser::parse_unary_expression() {
         }
 
         case string: return New<StringLiteralExpression>(token);
+
+        case keyword_size_of: {
+            auto size_of_token = token;
+            expect_token(TokenType::open_paren);
+            auto expression = parse_expression();
+            expect_token(TokenType::close_paren);
+            return New<UnaryOperatorExpression>(size_of_token, expression);
+        }
 
         default: {
             syntax_error(lexer, token,
@@ -745,8 +755,13 @@ std::string expression_to_string(const Expression *expression, u64 tabs) {
 
         case UNARY_OPERATOR: {
             auto unary_operator = expression->as<UnaryOperatorExpression>();
-            result += std::format("({}{})", unary_operator->op.type,
-                expression_to_string(unary_operator->right, tabs));
+            if (unary_operator->op.type == TokenType::keyword_size_of) {
+                result += std::format("size_of({})",
+                    expression_to_string(unary_operator->right, tabs));
+            } else {
+                result += std::format("({}{})", unary_operator->op.type,
+                    expression_to_string(unary_operator->right, tabs));
+            }
             break;
         }
 

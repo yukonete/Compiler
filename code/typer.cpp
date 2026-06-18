@@ -46,8 +46,8 @@ std::string Scope::full_name() const {
     return std::format("{}.{}", parent_scope_name, named_type->name);
 }
 
-std::optional<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
-    auto search = entities.find(identifier->token.value);
+std::optional<Entity*> Scope::look_up(std::string_view identifier) const {
+    auto search = entities.find(identifier);
     if (search != entities.end()) {
         return search->second;
     }
@@ -55,6 +55,10 @@ std::optional<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
         return (*parent)->look_up(identifier);
     }
     return {};
+}
+
+std::optional<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
+    return look_up(identifier->token.value);
 }
 
 std::optional<Entity*> Scope::look_up(Ast::TypePath path) const {
@@ -110,14 +114,14 @@ bool Typer::add_entity(Scope *scope, Entity *entity) {
 }
 
 bool Typer::add_entity(Scope *scope, Entity *entity, std::string_view name) {
-    if (auto search = scope->entities.find(name);
-        search != scope->entities.end()) {
-        redeclaration_error(search->second, entity);
+    auto old_entity = scope->look_up(name);
+    if (old_entity) {
+        redeclaration_error(*old_entity, entity);
         return false;
     }
 
     entities_.push_back(entity);
-    scope->entities.insert(std::pair{name, entity});
+    scope->entities[name] = entity;
     return true;
 }
 
@@ -163,6 +167,10 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration) {
             auto entity = create_entity<ProcedureEntity>(
                 scope, ast_proc, ast_proc->type, create_scope(scope));
             add_entity(scope, entity);
+
+            // TODO: Now local variables do not have LOCAL kind, fix that
+            collect_entities(entity->inner_scope, ast_proc->body->body);
+
             break;
         }
 
@@ -328,8 +336,7 @@ void Typer::resolve_alias(NamedTypeEntity *entity) {
 
 bool Typer::check_for_recursive_expression(Scope *scope,
                                            Ast::Expression *expression,
-                                           std::vector<const Entity *> &path,
-                                           bool types_only) {
+                                           std::vector<const Entity *> &path) {
     switch (expression->kind) {
         using enum Ast::Expression::Kind;
 
@@ -340,46 +347,31 @@ bool Typer::check_for_recursive_expression(Scope *scope,
         case FLOAT_LITERAL: return false;
         case UNARY_OPERATOR: {
             auto unary = expression->as<Ast::UnaryOperatorExpression>();
-            return check_for_recursive_expression(scope, unary->right, path,
-                                                  types_only);
+            return check_for_recursive_expression(scope, unary->right, path);
         }
         case BINARY_OPERATOR: {
             auto binary = expression->as<Ast::BinaryOperatorExpression>();
-            if (check_for_recursive_expression(scope, binary->left, path,
-                                               types_only)) {
+            if (check_for_recursive_expression(scope, binary->left, path)) {
                 return true;
             }
-            return check_for_recursive_expression(scope, binary->right, path,
-                                                  types_only);
+            return check_for_recursive_expression(scope, binary->right, path);
         }
         case INDEX: {
             auto index = expression->as<Ast::IndexExpression>();
-            if (check_for_recursive_expression(scope, index->expression, path,
-                                               types_only)) {
+            if (check_for_recursive_expression(scope, index->expression, path)) {
                 return true;
             }
-            return check_for_recursive_expression(scope, index->index, path,
-                                                  types_only);
+            return check_for_recursive_expression(scope, index->index, path);
         }
         case CALL_OPERATOR: {
             auto call = expression->as<Ast::CallOperatorExpression>();
-            bool size_of = /*is_size_of(call->expression)*/ false;
-            if (size_of && call->arguments.size() != 1) {
-                error(parser_.lexer, call,
-                      "Expected one argument for size_of(), got {}.",
-                      call->arguments.size());
-                return false;
-            }
             for (auto arg : call->arguments) {
-                if (check_for_recursive_expression(scope, arg, path, size_of)) {
+                if (check_for_recursive_expression(scope, arg, path)) {
                     return true;
                 }
             }
-            if (!size_of) {
-                if (check_for_recursive_expression(scope, call->expression,
-                                                   path, false)) {
-                    return true;
-                }
+            if (check_for_recursive_expression(scope, call->expression, path)) {
+                return true;
             }
             return false;
         }
@@ -388,9 +380,6 @@ bool Typer::check_for_recursive_expression(Scope *scope,
                 expression->as<Ast::IdentifierExpression>()->identifier;
             auto entity = scope->look_up(identifier);
             if (!entity) {
-                return false;
-            }
-            if (types_only && !(*entity)->is<NamedTypeEntity>()) {
                 return false;
             }
             return check_for_recursive_declaration(*entity, path);
@@ -424,8 +413,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
             };
 
             auto selector = expression->as<Ast::SelectorExpression>();
-            if (check_for_recursive_expression(scope, selector->expression,
-                                               path, types_only)) {
+            if (check_for_recursive_expression(scope, selector->expression, path)) {
                 return true;
             }
             
@@ -436,9 +424,6 @@ bool Typer::check_for_recursive_expression(Scope *scope,
 
             auto entity = scope->look_up(std::span{type_path});
             if (!entity) {
-                return false;
-            }
-            if (types_only && !(*entity)->is<NamedTypeEntity>()) {
                 return false;
             }
             return check_for_recursive_declaration(*entity, path);
@@ -454,6 +439,7 @@ bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
 
         case BAD: panic("BAD type");
         case INT:
+        case ANY:
         case BOOL:
         case FLOAT:
         case STRING:
@@ -483,15 +469,20 @@ bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
                     return true;
                 }
             }
+            for (auto [name, entity] : struct_type->inner_scope->entities) {
+                if (check_for_recursive_declaration(entity, path)) {
+                    return true;
+                }
+            }
             return false;
         }
         case ARRAY: {
             auto array_type = type->as<ArrayType>();
-            if (check_for_recursive_type(scope, array_type->type, path)) {
+            if (check_for_recursive_expression(
+                    scope, array_type->count_expression, path)) {
                 return true;
             }
-            return check_for_recursive_expression(
-                scope, array_type->count_expression, path, false);
+            return check_for_recursive_type(scope, array_type->type, path);
         }
     }
     assert(false && "Should not trigger");
@@ -508,7 +499,7 @@ bool Typer::check_for_recursive_statement(Scope *scope,
         case EMPTY: return false;
         case IF: {
             auto if_statement = statement->as<Ast::IfStatement>();
-            if (check_for_recursive_expression(scope, if_statement->condition, path, false)) {
+            if (check_for_recursive_expression(scope, if_statement->condition, path)) {
                 return true;
             }
             if (check_for_recursive_statement(scope, if_statement->body, path)) {
@@ -522,7 +513,7 @@ bool Typer::check_for_recursive_statement(Scope *scope,
         case WHILE: {
             auto while_statement = statement->as<Ast::WhileStatement>();
             if (check_for_recursive_expression(
-                    scope, while_statement->condition, path, false)) {
+                    scope, while_statement->condition, path)) {
                 return true;
             }
             return check_for_recursive_statement(scope, while_statement->body,
@@ -530,10 +521,10 @@ bool Typer::check_for_recursive_statement(Scope *scope,
         }
         case ASSIGNMENT: {
             auto assignment = statement->as<Ast::AssignmentStatement>();
-            if (check_for_recursive_expression(scope, assignment->expression, path, false)) {
+            if (check_for_recursive_expression(scope, assignment->expression, path)) {
                 return true;
             }
-            return check_for_recursive_expression(scope, assignment->value, path, false);
+            return check_for_recursive_expression(scope, assignment->value, path);
         }
         case BLOCK: {
             auto block = statement->as<Ast::BlockStatement>();
@@ -548,18 +539,22 @@ bool Typer::check_for_recursive_statement(Scope *scope,
             auto return_statement = statement->as<Ast::ReturnStatement>();
             if (return_statement->value) {
                 return check_for_recursive_expression(
-                    scope, *return_statement->value, path, false);
+                    scope, *return_statement->value, path);
             }
             return false;
         }
-        case DECLARATION:
+        case DECLARATION: {
+            auto declaration = statement->as<Ast::DeclarationStatement>()->declaration;
+            auto entity = scope->look_up(declaration->identifier);
+            return check_for_recursive_declaration(entity.value(), path);
+        }
         case CONTINUE:
         case BREAK: return false;
         case EXPRESSION: {
             auto expression_statement =
                 statement->as<Ast::ExpressionStatement>();
             return check_for_recursive_expression(
-                scope, expression_statement->expression, path, false);
+                scope, expression_statement->expression, path);
         }
     }
     assert(false && "Should not trigger");
@@ -585,14 +580,14 @@ bool Typer::check_for_recursive_declaration(const Entity *entity,
             auto variable = entity->as<VariableEntity>();
             if (variable->init_expression) {
                 found = check_for_recursive_expression(
-                    variable->scope, *variable->init_expression, path, false);
+                    variable->scope, *variable->init_expression, path);
             }
             break;
         }
         case CONSTANT: {
             auto constant = entity->as<ConstantEntity>();
             found = check_for_recursive_expression(
-                constant->scope, constant->init_expression, path, false);
+                constant->scope, constant->init_expression, path);
             break;
         }
         case NAMED_TYPE: {
@@ -629,12 +624,14 @@ bool Typer::do_typing() {
 
     bool added = true;
     added &= add_builtin_type(file_scope, create_type<IntType>(u64(8), u64(8)), "int");
+    added &= add_builtin_type(file_scope, create_type<IntType>(u64(1), u64(1)), "s8");
     added &= add_builtin_type(file_scope, create_type<IntType>(u64(4), u64(4)), "s32");
     added &= add_builtin_type(file_scope, create_type<IntType>(u64(8), u64(8)), "s64");
     added &= add_builtin_type(file_scope, create_type<FloatType>(u64(4), u64(4)), "f32");
     added &= add_builtin_type(file_scope, create_type<FloatType>(u64(8), u64(8)), "f64");
+    added &= add_builtin_type(file_scope, create_type<AnyType>(), "any");
     added &= add_builtin_type(file_scope, create_type<BoolType>(), "bool");
-    added &= add_builtin_type(file_scope, create_type<StringType>(), "string");
+    // added &= add_builtin_type(file_scope, create_type<StringType>(), "string");
     if (!added) {
         panic("Could not add builtin type to file scope");
     }
@@ -679,6 +676,7 @@ bool Typer::do_typing() {
                 assert(!path.empty());
                 if (path.front() != path.back()) {
                     // This entity will be reported later
+                    path.clear();
                     continue;
                 }
                 reported_entities.insert(entity);
@@ -722,6 +720,7 @@ bool Typer::do_typing() {
     return parser_.lexer.any_errors();
 }
 
+// TODO: Replace this with proper evaluator that will evaluate expression of any type
 s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
     switch (expression->kind) {
         using enum Ast::Expression::Kind;
@@ -748,6 +747,10 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
                 }
                 case plus: return const_evaluate_integer(scope, unary->right);
                 case minus: return -const_evaluate_integer(scope, unary->right);
+                case keyword_size_of: {
+                    panic("Not implemented");
+                    // get_scope_from_expression(scope, unary->right);
+                }
                 default: panic("Unary operator not handeled");
             }
         }
@@ -843,13 +846,24 @@ void Typer::calculate_size_and_alignment(Type *type) {
         }
         case POINTER:
         case INT:
+        case ANY:
         case BOOL:
         case FLOAT: {
             panic("Size should be known");
         }
         case ARRAY: {
             auto array_type = type->as<ArrayType>();
-            array_type->count = const_evaluate_integer(array_type->scope, array_type->count_expression);
+            {
+                auto count = const_evaluate_integer(
+                    array_type->scope, array_type->count_expression);
+                if (count <= 0) {
+                    error(parser_.lexer, array_type->count_expression,
+                        "Size of the array has to be greater than 0, got {}",
+                        count);
+                    count = 1;
+                }
+                array_type->count = static_cast<usize>(count);
+            }
             calculate_size_and_alignment(array_type->type);
             array_type->size = array_type->count * array_type->type->size;
             array_type->align = array_type->type->align;

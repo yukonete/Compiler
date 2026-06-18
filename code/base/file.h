@@ -23,7 +23,7 @@ inline std::optional<std::string> read_file_to_string(const char *path) {
     }
  
     auto result = std::string(file_size, '\0');
-    if (!file.read(&result[0], file_size)) {
+    if (!file.read(&result[0], static_cast<std::streamsize>(file_size))) {
         return {};
     }
     

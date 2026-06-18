@@ -27,6 +27,7 @@ struct Scope {
     std::optional<Entity *> entity;
     std::unordered_map<std::string_view, Entity*> entities;
 
+    std::optional<Entity*> look_up(std::string_view identifier) const;
     std::optional<Entity*> look_up(Ast::Identifier *identifier) const;
     std::optional<Entity*> look_up(Ast::TypePath path) const;
     
@@ -80,8 +81,7 @@ struct Typer {
     bool check_for_recursive_declaration(const Entity *entity, std::vector<const Entity*> &path);
     bool check_for_recursive_expression(Scope *scope,
                                         Ast::Expression *expression,
-                                        std::vector<const Entity *> &path,
-                                        bool types_only);
+                                        std::vector<const Entity *> &path);
     bool check_for_recursive_statement(Scope *scope, Ast::Statement *statement,
                                        std::vector<const Entity *> &path);
 
