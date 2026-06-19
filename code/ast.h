@@ -10,7 +10,8 @@
 #include "base/flags.h"
 #include "base/down_cast.h"
 #include "base/types.h"
-#include "lexer.h"
+#include "token.h"
+#include "error.h"
 
 namespace Ast {
 
@@ -60,6 +61,12 @@ struct StringLiteralExpression;
 // 4) Even though AST has BAD nodes, later stages of compiler should
 // assume those do not exist because they are created only when
 // there is an error in a source code.
+
+// TODO:
+// The way procedures and procedures types are represented is incorrect
+// because:
+// 1) Nameless parameters are not allowed
+// 2) Procedure type requires parameter names
 
 struct Identifier {
     constexpr Identifier(const Token &token) : token{token} {
@@ -233,7 +240,7 @@ struct ContinueStatement : public Statement {
 struct Declaration {
     enum class Kind : u8 {
         VARIABLE,
-        FUNCTION,
+        PROCEDURE,
         CONSTANT,
         TYPE,
         FIELD,
@@ -299,7 +306,7 @@ struct ConstDeclaration : public Declaration {
 };
 
 struct ProcedureDeclaration : public Declaration {
-    static constexpr auto KIND = Kind::FUNCTION;
+    static constexpr auto KIND = Kind::PROCEDURE;
 
     constexpr ProcedureDeclaration(Identifier *identifier, ProcedureType *type,
                                    BlockStatement *body)
@@ -335,6 +342,7 @@ struct Expression {
         FLOAT_LITERAL,
         SELECTOR,
         INDEX,
+        CAST_OPERATOR,
     };
 
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Expression);
@@ -387,6 +395,19 @@ struct UnaryOperatorExpression : public Expression {
 
     Token op;
     Expression *right;
+};
+
+struct CastOperatorExpression : public Expression {
+    static constexpr auto KIND = Kind::CAST_OPERATOR;
+
+    constexpr CastOperatorExpression(const Token &cast, Type *type,
+                                     Expression *expression)
+        : Expression{KIND}, cast{cast}, type{type}, expression{expression} {
+    }
+
+    Token cast;
+    Type *type;
+    Expression *expression;
 };
 
 struct BinaryOperatorExpression : public Expression {
@@ -608,6 +629,38 @@ std::string expression_to_string(const Expression *type, u64 tabs);
 std::string type_to_string(const Type *type, u64 tabs = 0,
                            bool include_fn = true);
 std::string declaration_to_string(const Declaration *decl, u64 tabs);
+
+template <typename... Args>
+void error(Lexer &lexer, Ast::Node auto *node, std::format_string<Args...> fmt,
+           Args &&...args) {
+    auto start_pos = node->start_token().start;
+    auto end_pos = node->end_token().end;
+    error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
+}
+
+template <typename... Args>
+void warning(Lexer &lexer, Ast::Node auto *node,
+             std::format_string<Args...> fmt, Args &&...args) {
+    auto start_pos = node->start_token().start;
+    auto end_pos = node->end_token().end;
+    warning(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
+}
+
+template <typename... Args>
+void syntax_error(Lexer &lexer, Ast::Node auto *node,
+                  std::format_string<Args...> fmt, Args &&...args) {
+    auto start_pos = node->start_token().start;
+    auto end_pos = node->end_token().end;
+    syntax_error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
+}
+
+template <typename... Args>
+void error(Lexer &lexer, Ast::TypePath path, std::format_string<Args...> fmt,
+           Args &&...args) {
+    assert(path.size() > 0);
+    error(lexer, path.front()->token.start, path.back()->token.end, fmt,
+          std::forward<Args>(args)...);
+}
 
 }; // namespace Ast
 #endif // #ifndef AST_H

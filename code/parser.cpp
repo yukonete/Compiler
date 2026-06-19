@@ -75,6 +75,7 @@ Statement *Parser::parse_statement() {
         case string:
         case float_literal:
         // Unary operators
+        case keyword_cast:
         case keyword_size_of:
         case open_paren:
         case ampersand:
@@ -128,7 +129,6 @@ Statement *Parser::parse_statement() {
         case comma:
         case keyword_else:
         case keyword_for:
-        case keyword_cast:
         case keyword_transmute: {
             auto token_string = token_type_to_string(token.type);
             if (token.type == TokenType::invalid) {
@@ -474,11 +474,20 @@ Expression *Parser::parse_unary_expression() {
         case string: return New<StringLiteralExpression>(token);
 
         case keyword_size_of: {
-            auto size_of_token = token;
+            auto size_of = token;
             expect_token(TokenType::open_paren);
             auto expression = parse_expression();
             expect_token(TokenType::close_paren);
-            return New<UnaryOperatorExpression>(size_of_token, expression);
+            return New<UnaryOperatorExpression>(size_of, expression);
+        }
+
+        case keyword_cast: {
+            auto cast = token;
+            expect_token(TokenType::open_paren);
+            auto type = parse_type();
+            expect_token(TokenType::close_paren);
+            auto expression = parse_expression(Precedence::prefix);
+            return New<CastOperatorExpression>(cast, type, expression);
         }
 
         default: {
@@ -816,6 +825,13 @@ std::string expression_to_string(const Expression *expression, u64 tabs) {
             result += std::format("{}", float_literal->value);
             break;
         }
+
+        case CAST_OPERATOR: {
+            auto cast = expression->as<CastOperatorExpression>();
+            result += std::format("cast({}){}", type_to_string(cast->type),
+                                  expression_to_string(cast->expression, tabs));
+            break;
+        }
     }
     return result;
 }
@@ -860,7 +876,7 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
             break;
         }
 
-        case FUNCTION: {
+        case PROCEDURE: {
             auto function = decl->as<ProcedureDeclaration>();
             result += std::format("fn {}{} {}", 
                 function->identifier->token.value, 

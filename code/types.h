@@ -68,10 +68,12 @@ struct BadType : public Type {
 struct IntType : public Type {
     static constexpr auto KIND = Kind::INT;
 
-    constexpr IntType(u64 size_in, u64 align_in) : Type{KIND} {
+    constexpr IntType(u64 size_in, u64 align_in, bool no_sign = false) : Type{KIND}, no_sign{no_sign} {
         size = size_in;
         align = align_in;
     }
+
+    bool no_sign;
 };
 
 struct BoolType : public Type {

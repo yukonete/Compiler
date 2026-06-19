@@ -13,7 +13,6 @@ Token Statement::start_token() const {
         case WHILE:
             return as<WhileStatement>()->token;
         case ASSIGNMENT:
-            // Should return assign token here?
             return as<AssignmentStatement>()->expression->start_token();
         case BLOCK: return as<BlockStatement>()->open;
         case RETURN: return as<ReturnStatement>()->token;
@@ -73,6 +72,7 @@ Token Expression::start_token() const {
         case FLOAT_LITERAL: return as<FloatLiteralExpression>()->token;
         case INDEX: return as<IndexExpression>()->expression->start_token();
         case SELECTOR: return as<SelectorExpression>()->expression->start_token();
+        case CAST_OPERATOR: return as<CastOperatorExpression>()->cast;
     }
     panic("expression.kind is not Expression::Kind")
 }
@@ -94,6 +94,7 @@ Token Expression::end_token() const {
         case FLOAT_LITERAL: return as<FloatLiteralExpression>()->token;
         case INDEX: return as<IndexExpression>()->close;
         case SELECTOR: return as<SelectorExpression>()->identifier->token;
+        case CAST_OPERATOR: return as<CastOperatorExpression>()->expression->end_token();
     }
     panic("expression.kind is not Expression::Kind")
 }
@@ -103,7 +104,7 @@ Token Declaration::start_token() const {
         using enum Declaration::Kind;
 
         case VARIABLE: return as<VariableDeclaration>()->token;
-        case FUNCTION: return as<ProcedureDeclaration>()->type->token;
+        case PROCEDURE: return as<ProcedureDeclaration>()->type->token;
         case CONSTANT: return as<ConstDeclaration>()->token;
         case TYPE: return as<TypeDeclaration>()->token;
         case FIELD: return as<Field>()->identifier->token;
@@ -125,7 +126,7 @@ Token Declaration::end_token() const {
             }
             return variable->identifier->token;
         }
-        case FUNCTION: return as<ProcedureDeclaration>()->type->close;
+        case PROCEDURE: return as<ProcedureDeclaration>()->type->close;
         case CONSTANT: return as<ConstDeclaration>()->value->end_token();
         case TYPE: return as<TypeDeclaration>()->type->end_token();
         case FIELD: return as<Field>()->type->end_token();

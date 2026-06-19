@@ -5,7 +5,6 @@
 #include <format>
 
 #include "base/types.h"
-#include "ast.h"
 #include "lexer.h"
 
 void highlight_token_on_line(Lexer &lexer, const FileLocation &start,
@@ -103,36 +102,5 @@ void syntax_error(Lexer &lexer, const Token &token,
                  std::forward<Args>(args)...);
 }
 
-template <typename... Args>
-void error(Lexer &lexer, Ast::Node auto *node, std::format_string<Args...> fmt,
-           Args &&...args) {
-    auto start_pos = node->start_token().start;
-    auto end_pos = node->end_token().end;
-    error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void warning(Lexer &lexer, Ast::Node auto *node,
-             std::format_string<Args...> fmt, Args &&...args) {
-    auto start_pos = node->start_token().start;
-    auto end_pos = node->end_token().end;
-    warning(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void syntax_error(Lexer &lexer, Ast::Node auto *node,
-                  std::format_string<Args...> fmt, Args &&...args) {
-    auto start_pos = node->start_token().start;
-    auto end_pos = node->end_token().end;
-    syntax_error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void error(Lexer &lexer, Ast::TypePath path, std::format_string<Args...> fmt,
-           Args &&...args) {
-    assert(path.size() > 0);
-    error(lexer, path.front()->token.start, path.back()->token.end, fmt,
-          std::forward<Args>(args)...);
-}
 
 #endif

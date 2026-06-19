@@ -17,9 +17,6 @@
 #include "entity.h"
 #include "ast.h"
 
-// TODO:
-// 1) Collect local variables and implement lookup for them
-
 namespace Typing {
 
 struct Scope {
@@ -27,7 +24,6 @@ struct Scope {
     std::optional<Entity *> entity;
     std::unordered_map<std::string_view, Entity*> entities;
 
-    std::optional<Entity*> look_up(std::string_view identifier) const;
     std::optional<Entity*> look_up(Ast::Identifier *identifier) const;
     std::optional<Entity*> look_up(Ast::TypePath path) const;
     
@@ -75,10 +71,15 @@ struct Typer {
 
     bool collect_entities(Scope *scope, std::span<Ast::DeclarationStatement *> declarations);
     bool collect_entities(Scope *scope, std::span<Ast::Statement *> statements);
-    bool collect_entity(Scope *scope, Ast::Declaration *declaration);
+    bool collect_entity(Scope *scope, Ast::Declaration *declaration,
+                        bool local);
+    void collect_entities_from_statement(Scope *scope,
+                                         Ast::Statement *statement);
 
-    bool check_for_recursive_type(Scope *scope, const Type *type, std::vector<const Entity *> &path);
-    bool check_for_recursive_declaration(const Entity *entity, std::vector<const Entity*> &path);
+    bool check_for_recursive_type(Scope *scope, const Type *type,
+                                  std::vector<const Entity *> &path);
+    bool check_for_recursive_declaration(const Entity *entity,
+                                         std::vector<const Entity *> &path);
     bool check_for_recursive_expression(Scope *scope,
                                         Ast::Expression *expression,
                                         std::vector<const Entity *> &path);
@@ -103,12 +104,15 @@ struct Typer {
 private:
     DynamicArena entities_storage_;
     DynamicArena scopes_storage_;
+    std::vector<AllocatorUniquePtr<Scope, DynamicArena>> scopes_;
     
     Ast::Parser &parser_;
     std::vector<Entity*> entities_;
-    std::vector<AllocatorUniquePtr<Scope, DynamicArena>> scopes_;
     std::vector<ArrayType*> arrays_without_size_;
-    
+
+    // Maybe it is better just store scopes directly in Ast::BlockStatements instead?
+    std::unordered_map<Ast::BlockStatement *, Scope *> block_scopes_;
+
     Scope *file_scope;
 };
 
