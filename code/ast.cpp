@@ -73,6 +73,7 @@ Token Expression::start_token() const {
         case INDEX: return as<IndexExpression>()->expression->start_token();
         case SELECTOR: return as<SelectorExpression>()->expression->start_token();
         case CAST_OPERATOR: return as<CastOperatorExpression>()->cast;
+        case STRUCT_LITERAL: return as<StructLiteralExpression>()->type->start_token();
     }
     panic("expression.kind is not Expression::Kind")
 }
@@ -95,6 +96,7 @@ Token Expression::end_token() const {
         case INDEX: return as<IndexExpression>()->close;
         case SELECTOR: return as<SelectorExpression>()->identifier->token;
         case CAST_OPERATOR: return as<CastOperatorExpression>()->expression->end_token();
+        case STRUCT_LITERAL: return as<StructLiteralExpression>()->close;
     }
     panic("expression.kind is not Expression::Kind")
 }
@@ -142,7 +144,7 @@ Token Type::start_token() const {
         case IDENTIFIER: return as<IdentifierType>()->path[0]->token;
         case STRUCT: return as<StructType>()->token;
         case POINTER: return as<PointerType>()->token;
-        case FUNCTION: return as<ProcedureType>()->token;
+        case PROCEDURE: return as<ProcedureType>()->token;
         case ARRAY: return as<ArrayType>()->open;
     }
     panic("type.kind is not Type::Kind")
@@ -159,10 +161,47 @@ Token Type::end_token() const {
         }
         case STRUCT: return as<StructType>()->close;
         case POINTER: return as<PointerType>()->type->end_token();
-        case FUNCTION: return as<ProcedureType>()->close;
+        case PROCEDURE: return as<ProcedureType>()->close;
         case ARRAY: return as<ArrayType>()->element_type->end_token();
     }
     panic("type.kind is not Type::Kind")
+}
+
+std::optional<TypePath>
+expression_to_type_path(const Expression *expression,
+                        std::vector<Identifier *> &out) {
+    auto type_path_from_expression =
+        [&out](this auto &&self,
+                     const Ast::Expression *expression) -> bool {
+        switch (expression->kind) {
+            using enum Expression::Kind;
+
+            case IDENTIFIER: {
+                auto identifier =
+                    expression->as<Ast::IdentifierExpression>()
+                        ->identifier;
+                out.push_back(identifier);
+                return true;
+            }
+
+            case SELECTOR: {
+                auto selector =
+                    expression->as<Ast::SelectorExpression>();
+                if (!self(selector->expression)) {
+                    return false;
+                }
+                out.push_back(selector->identifier);
+                return true;
+            }
+
+            default: return false;
+        }
+    };
+
+    if (type_path_from_expression(expression)) {
+        return out;
+    }
+    return {};
 }
 
 } // namespace Ast

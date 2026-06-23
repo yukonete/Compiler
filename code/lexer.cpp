@@ -6,12 +6,6 @@
 #include "base/panic.h"
 #include "lexer.h"
 
-const FileLocation FileLocation::no_location = FileLocation{
-    static_cast<u64>(-1), 
-    static_cast<u64>(-1), 
-    static_cast<u64>(-1)
-};
-
 static TokenType check_identifier_for_keyword(std::string_view identifier) {
     if (Lexer::keywords.contains(identifier)) {
         return Lexer::keywords.at(identifier);

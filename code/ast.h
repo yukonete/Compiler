@@ -55,18 +55,14 @@ struct StringLiteralExpression;
 
 // AST conventions:
 // 1) Pointers in AST are not allowed to be nullptr.
+// Only exception is Field, for which identifier can be nullptr,
+// but only when it is used to represent procedure parameter without name
 // 2) If a field of a node is optional, it is represented as std::optional<Node*>
 // field.
 // 3) Nodes can not have non-trival destructors.
 // 4) Even though AST has BAD nodes, later stages of compiler should
 // assume those do not exist because they are created only when
 // there is an error in a source code.
-
-// TODO:
-// The way procedures and procedures types are represented is incorrect
-// because:
-// 1) Nameless parameters are not allowed
-// 2) Procedure type requires parameter names
 
 struct Identifier {
     constexpr Identifier(const Token &token) : token{token} {
@@ -343,6 +339,7 @@ struct Expression {
         SELECTOR,
         INDEX,
         CAST_OPERATOR,
+        STRUCT_LITERAL,
     };
 
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Expression);
@@ -499,13 +496,30 @@ struct IndexExpression : public Expression {
     Expression *index;
 };
 
+struct StructLiteralExpression : public Expression {
+    static constexpr auto KIND = Kind::STRUCT_LITERAL;
+
+    constexpr StructLiteralExpression(Type *type, const Token &open,
+                                      std::span<Expression *> values,
+                                      const Token &close)
+        : Expression{KIND}, open{open}, close{close}, type{type},
+          values{values} {
+    }
+
+    Token open;
+    Token close;
+
+    Type *type;
+    std::span<Expression*> values;
+};
+
 struct Type {
     enum class Kind : u8 {
         BAD,
         IDENTIFIER,
         STRUCT,
         POINTER,
-        FUNCTION,
+        PROCEDURE,
         ARRAY,
     };
 
@@ -584,7 +598,7 @@ struct ArrayType : public Type {
 };
 
 struct ProcedureType : public Type {
-    static constexpr auto KIND = Kind::FUNCTION;
+    static constexpr auto KIND = Kind::PROCEDURE;
 
     constexpr ProcedureType(const Token &token, const Token &open,
                             std::span<Field *> parameters, const Token &close,
@@ -661,6 +675,10 @@ void error(Lexer &lexer, Ast::TypePath path, std::format_string<Args...> fmt,
     error(lexer, path.front()->token.start, path.back()->token.end, fmt,
           std::forward<Args>(args)...);
 }
+
+std::optional<TypePath>
+expression_to_type_path(const Expression *expression,
+                        std::vector<Identifier *> &out);
 
 }; // namespace Ast
 #endif // #ifndef AST_H

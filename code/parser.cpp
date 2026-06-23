@@ -237,7 +237,18 @@ ProcedureType *Parser::parse_procedure_type(bool skip_identifier) {
             first_parameter = false;
         }
 
-        parameters_temp.push_back(parse_field());
+        auto identifier = parse_identifier();
+        if (next_token_is(TokenType::colon)) {
+            expect_token(TokenType::colon);
+            auto type = parse_type();
+            auto field = New<Field>(identifier, type);
+            parameters_temp.push_back(field);
+        } else {
+            auto type_path = NewArray<Ast::Identifier>(std::span{&identifier, 1});
+            auto type = New<IdentifierType>(type_path);
+            auto field = New<Field>(nullptr, type);
+            parameters_temp.push_back(field);
+        }
     }
     auto parameters = NewArray(std::span{parameters_temp});
     auto close = expect_token(TokenType::close_paren);
@@ -417,6 +428,7 @@ static Precedence token_type_to_precedense(TokenType type) {
 
         case dot:
         case open_bracket:
+        case open_brace:
         case open_paren: return Precedence::call;
 
         default: return Precedence::lowest;
@@ -439,6 +451,26 @@ Expression *Parser::parse_unary_expression() {
         case identifier: {
             lexer.uneat_token();
             return New<IdentifierExpression>(parse_identifier());
+        }
+
+        case keyword_struct: {
+            lexer.uneat_token();
+            auto struct_type = parse_type();
+            auto open = expect_token(TokenType::open_brace);
+            std::vector<Expression *> values_temp;
+            bool first = true;
+            while (!(next_token_is(TokenType::close_brace) ||
+                     next_token_is(TokenType::eof))) {
+                if (!first) {
+                    expect_token(TokenType::comma);
+                } else {
+                    first = false;
+                }
+                values_temp.push_back(parse_expression());
+            }
+            auto values = NewArray(std::span{values_temp});
+            auto close = expect_token(TokenType::close_brace);
+            return New<StructLiteralExpression>(struct_type, open, values, close);
         }
 
         case integer: {
@@ -499,6 +531,16 @@ Expression *Parser::parse_unary_expression() {
     }
 }
 
+static std::optional<TypePath>
+expression_to_type_path(Parser &parser, const Expression *expression) {
+    std::vector<Identifier *> type_path_storage;
+    auto type_path = expression_to_type_path(expression, type_path_storage);
+    if (type_path) {
+        return parser.NewArray(*type_path);
+    }
+    return {};
+}
+
 Expression *Parser::parse_binary_expression(Expression *left) {
     const auto &token = lexer.next_token();
     lexer.eat_token();
@@ -532,6 +574,34 @@ Expression *Parser::parse_binary_expression(Expression *left) {
         auto dot = token;
         auto identifier = parse_identifier();
         return New<SelectorExpression>(left, dot, identifier);
+    }
+
+    if (token.type == TokenType::open_brace) {
+        // struct type is handled in parse_unary_expression()
+        auto type_path_optional = expression_to_type_path(*this, left);
+        if (!type_path_optional) {
+            error(lexer, left, "Not a type");
+            return New<BadExpression>(token);
+        }
+        auto type_path = *type_path_optional;
+        assert(!type_path.empty());
+
+        auto type = New<IdentifierType>(type_path);
+        auto open = token;
+        std::vector<Expression *> values_temp;
+        bool first = true;
+        while (!(next_token_is(TokenType::close_brace) ||
+                    next_token_is(TokenType::eof))) {
+            if (!first) {
+                expect_token(TokenType::comma);
+            } else {
+                first = false;
+            }
+            values_temp.push_back(parse_expression());
+        }
+        auto values = NewArray(std::span{values_temp});
+        auto close = expect_token(TokenType::close_brace);
+        return New<StructLiteralExpression>(type, open, values, close);
     }
 
     auto op = token;
@@ -614,7 +684,7 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
             break;
         }
 
-        case FUNCTION: {
+        case PROCEDURE: {
             auto type_function = type->as<ProcedureType>();
             if (include_fn) {
                 result += "fn";
@@ -774,6 +844,20 @@ std::string expression_to_string(const Expression *expression, u64 tabs) {
             break;
         }
 
+        case STRUCT_LITERAL: {
+            auto struct_literal = expression->as<StructLiteralExpression>();
+            result += std::format("{}{{", type_to_string(struct_literal->type, tabs));
+            for (usize i = 0; i < struct_literal->values.size(); ++i) {
+                auto value = struct_literal->values[i];
+                result += expression_to_string(value, tabs);
+                if (i != struct_literal->values.size() - 1) {
+                    result += ", ";
+                }
+            }
+            result += "}";
+            break;
+        }
+
         case BINARY_OPERATOR: {
             auto binary_operator = expression->as<BinaryOperatorExpression>();
             result += std::format("({} {} {})",
@@ -843,8 +927,12 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
 
         case FIELD: {
             auto field = decl->as<Field>();
-            result += std::format("{}: {}", field->identifier->token.value,
-                                  type_to_string(field->type));
+            if (field->identifier != nullptr) {
+                result += std::format("{}: {}", field->identifier->token.value,
+                                      type_to_string(field->type));
+            } else {
+                result += std::format("{}", type_to_string(field->type));
+            }
             break;
         }
 

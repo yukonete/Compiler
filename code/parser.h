@@ -40,6 +40,22 @@ public:
 
     bool parse_program();
 
+    template <typename NodeType, typename... Args>
+    NodeType *New(Args &&...args) 
+        requires TriviallyDestructible<NodeType>
+    {
+        return nodes_storage_.create<NodeType>(std::forward<Args>(args)...);
+    };
+
+    template<typename NodeType>
+    std::span<NodeType*> NewArray(std::span<NodeType*> nodes) {
+        auto array = nodes_storage_.allocate<NodeType*>(nodes.size());
+        for (usize i = 0; i < nodes.size(); ++i) {
+            array[i] = nodes[i];
+        }
+        return std::span{array, nodes.size()};
+    }
+
 private:
     Statement *parse_statement();
 
@@ -64,26 +80,9 @@ private:
     Identifier *parse_identifier();
     Field *parse_field();
 
-    template <typename NodeType, typename... Args>
-    NodeType *New(Args &&...args) 
-        requires TriviallyDestructible<NodeType>
-    {
-        return nodes_storage_.create<NodeType>(std::forward<Args>(args)...);
-    };
-
-    template<typename NodeType>
-    std::span<NodeType*> NewArray(std::span<NodeType*> nodes) {
-        auto array = nodes_storage_.allocate<NodeType*>(nodes.size());
-        for (usize i = 0; i < nodes.size(); ++i) {
-            array[i] = nodes[i];
-        }
-        return std::span{array, nodes.size()};
-    }
-
     const Token &expect_token(TokenType type);
 
     bool next_token_is(TokenType type);
-
 public:
     Lexer lexer;
     std::vector<Statement *> ast;

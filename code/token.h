@@ -75,8 +75,6 @@ struct FileLocation {
     u64 line = 0;
     u64 column = 0;
     u64 byte = 0;
-
-    static const FileLocation no_location;
 };
 
 struct Token {
