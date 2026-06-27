@@ -1,7 +1,6 @@
 #include <print>
 #include <string>
 #include <cstdlib>
-#include <optional>
 #include <string_view>
 
 #include "ast.h"
@@ -16,10 +15,10 @@ int main(int argc, char **argv) {
     }
 
     auto parser = Ast::Parser::open(std::string{input}, NEW_ALLOCATOR)
-                      .or_else([input]() -> std::optional<Ast::Parser> {
+                      .value_or_else([input]() -> Ast::Parser {
                           std::println("Could not open/read file {}.", input);
                           std::exit(1);
-                      }).value();
+                      });
 
     if (!parser.parse_program()) {
         return 1;

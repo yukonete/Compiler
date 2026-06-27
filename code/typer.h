@@ -20,12 +20,12 @@
 namespace Typing {
 
 struct Scope {
-    std::optional<Scope *> parent;
-    std::optional<Entity *> entity;
+    Maybe<Scope *> parent;
+    Maybe<Entity *> entity;
     std::unordered_map<std::string_view, Entity*> entities;
 
-    std::optional<Entity*> look_up(Ast::Identifier *identifier) const;
-    std::optional<Entity*> look_up(Ast::TypePath path) const;
+    Maybe<Entity*> look_up(Ast::Identifier *identifier) const;
+    Maybe<Entity*> look_up(Ast::TypePath path) const;
     
     std::string full_name() const;
 };
@@ -92,10 +92,10 @@ struct Typer {
 
     void calculate_size_and_alignment(Type *type);
 
-    std::optional<Entity*> get_entity_by_ast_type(Ast::Type *ast_type) const;
-    std::optional<NamedTypeEntity *> look_up_type(Scope *scope, Ast::TypePath path);
-    std::optional<Entity*> look_up(Scope *scope, Ast::TypePath path);
-    std::optional<Entity*> look_up(Scope *scope, Ast::Identifier *identifier);
+    Maybe<Entity*> get_entity_by_ast_type(Ast::Type *ast_type) const;
+    Maybe<NamedTypeEntity *> look_up_type(Scope *scope, Ast::TypePath path);
+    Maybe<Entity*> look_up(Scope *scope, Ast::TypePath path);
+    Maybe<Entity*> look_up(Scope *scope, Ast::Identifier *identifier);
 
     void not_declared_error(Ast::TypePath path);
     void not_declared_error(Ast::Identifier *identifier);

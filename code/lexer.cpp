@@ -381,7 +381,7 @@ void Lexer::eat_char() {
     input_cursor_ += 1;
 }
 
-std::optional<Lexer::ParseNumberResult> Lexer::parse_number() {
+Maybe<Lexer::ParseNumberResult> Lexer::parse_number() {
     auto token_type = TokenType::integer;
     
     auto integer_start = input_cursor_;
@@ -410,7 +410,7 @@ std::optional<Lexer::ParseNumberResult> Lexer::parse_number() {
     };
 }
 
-std::optional<std::string_view> Lexer::parse_string() {    
+Maybe<std::string_view> Lexer::parse_string() {    
     auto ch = peek_next_char();
     assert(ch == '\"');
     eat_char();

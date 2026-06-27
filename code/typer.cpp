@@ -25,12 +25,12 @@ static std::string full_entity_name(const Entity *entity) {
 }
 
 std::string Scope::full_name() const {
-    if (!entity || !(*entity)->is<NamedTypeEntity>()) {
+    if (!entity || !entity->is<NamedTypeEntity>()) {
         return "";
     }
 
-    auto named_type = (*entity)->type->as<NamedType>();
-    auto parent_scope_name = parent.value()->full_name();
+    auto named_type = entity->type->as<NamedType>();
+    auto parent_scope_name = parent.value().full_name(); // TODO: Is parent always there?
     if (parent_scope_name == "") {
         return std::string{named_type->name};
     }
@@ -38,7 +38,7 @@ std::string Scope::full_name() const {
     return std::format("{}.{}", parent_scope_name, named_type->name);
 }
 
-std::optional<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
+Maybe<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
     auto search = entities.find(identifier->token.value);
     if (search != entities.end()) {
         auto entity = search->second;
@@ -64,12 +64,12 @@ std::optional<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
         return {};
     }
     if (parent) {
-        return (*parent)->look_up(identifier);
+        return parent->look_up(identifier);
     }
     return {};
 }
 
-std::optional<Entity*> Scope::look_up(Ast::TypePath path) const {
+Maybe<Entity*> Scope::look_up(Ast::TypePath path) const {
     assert(path.size() > 0);
 
     const Scope *lookup_scope = this;
@@ -84,7 +84,7 @@ std::optional<Entity*> Scope::look_up(Ast::TypePath path) const {
             break;
         }
 
-        looked_up_entity = *search;
+        looked_up_entity = search.value_as_ptr();
         if (!looked_up_entity->is<NamedTypeEntity>()) {
             break;
         }
@@ -102,7 +102,7 @@ std::optional<Entity*> Scope::look_up(Ast::TypePath path) const {
             break;
         }
 
-        lookup_scope = type_entity->inner_scope.value();
+        lookup_scope = type_entity->inner_scope.value_as_ptr();
     }
 
     // If looked up type is struct than index is going to be bigger by one
@@ -195,7 +195,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
             auto ast_variable = declaration->as<Ast::VariableDeclaration>();
             assert(ast_variable->type);
             auto entity = create_entity<VariableEntity>(
-                scope, ast_variable, ast_variable->type.value(), ast_variable->value);
+                scope, ast_variable, ast_variable->type.value_as_ptr(), ast_variable->value);
             add_entity(scope, entity);
             if (local) {
                 entity->variable_kind = VariableEntity::VariableKind::LOCAL;
@@ -207,7 +207,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
             auto ast_constant = declaration->as<Ast::ConstDeclaration>();
             assert(ast_constant->type);
             auto entity = create_entity<ConstantEntity>(
-                scope, ast_constant, ast_constant->type.value(), ast_constant->value);
+                scope, ast_constant, ast_constant->type.value_as_ptr(), ast_constant->value);
             add_entity(scope, entity);
             break;
         }
@@ -224,7 +224,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
                 }
                 auto parameter_entity = create_entity<VariableEntity>(
                     entity->inner_scope, ast_parameter, ast_parameter->type,
-                    std::optional<Ast::Expression *>{});
+                    Maybe<Ast::Expression *>{});
                 parameter_entity->variable_kind = VariableEntity::VariableKind::PARAMETER;
                 add_entity(entity->inner_scope, parameter_entity);
             }
@@ -237,13 +237,13 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
             auto ast_type = declaration->as<Ast::TypeDeclaration>();
             auto entity = create_entity<NamedTypeEntity>(
                 scope, ast_type, ast_type->type, create_scope(scope));
-            entity->inner_scope.value()->entity = entity;
+            entity->inner_scope.value().entity = entity;
             
             add_entity(scope, entity);
 
             if (ast_type->type->is<Ast::StructType>()) {
                 auto ast_struct = ast_type->type->as<Ast::StructType>();
-                collect_entities(entity->inner_scope.value(), ast_struct->declarations);
+                collect_entities(&entity->inner_scope.value(), ast_struct->declarations);
             }
 
             entity->type = create_type<NamedType>(ast_type->identifier->token.value, entity);
@@ -287,7 +287,7 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
             if (!entity) {
                 return create_type<BadType>();
             }
-            return (*entity)->type;
+            return entity->type;
         }
         
         case POINTER: {
@@ -312,9 +312,9 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
                 parameters_temp.push_back(type);
             }
             auto parameters = create_array(std::span{parameters_temp});
-            auto return_type = std::optional<Type*>();
+            auto return_type = Maybe<Type*>();
             if (ast_proc->return_type) {
-                return_type = ast_type_to_type(scope, *ast_proc->return_type);
+                return_type = ast_type_to_type(scope, ast_proc->return_type.value_as_ptr());
             }
             return create_type<PointerType>(create_type<ProcedureType>(parameters, return_type));
         }
@@ -324,17 +324,17 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
             auto entity = get_entity_by_ast_type(ast_struct);
             // If there is no entity for a struct or entity is not
             // NamedTypeEntity, that means that struct is anonymous
-            if (!entity || !(*entity)->is<NamedTypeEntity>()) {
+            if (!entity || !entity->is<NamedTypeEntity>()) {
                 scope = create_scope(scope);
             } else {
-                scope = (*entity)->as<NamedTypeEntity>()->inner_scope.value(); 
+                scope = entity->as<NamedTypeEntity>()->inner_scope.value_as_ptr(); 
             }
 
             std::vector<VariableEntity*> members_temp;
             for (auto ast_member : ast_struct->members) {
                 auto member_entity = create_entity<VariableEntity>(
                     scope, ast_member, ast_member->type,
-                    std::optional<Ast::Expression *>{});
+                    Maybe<Ast::Expression *>{});
                 member_entity->variable_kind = VariableEntity::VariableKind::STRUCT_MEMBER;
                 member_entity->flags |= Entity::Flags::RESOLVED;
                 member_entity->type = ast_type_to_type(scope, ast_member->type);
@@ -373,13 +373,13 @@ void Typer::resolve_alias(NamedTypeEntity *entity) {
     for (usize i = 0; i < path.size(); ++i) {
         auto looked_up_entity = look_up_type(entity->scope, path.subspan(0, i + 1));
         if (looked_up_entity) {
-            resolve_alias(*looked_up_entity);
+            resolve_alias(looked_up_entity.value_as_ptr());
         }
     }
 
     auto aliased_of = look_up_type(entity->scope, path);
     if (aliased_of) {
-        entity->aliased_of = *aliased_of;
+        entity->aliased_of = aliased_of.value_as_ptr();
         type->type = entity->aliased_of->type;
     } else {
         type->type = create_type<BadType>();
@@ -457,7 +457,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
             if (!entity) {
                 return false;
             }
-            return check_for_recursive_declaration(*entity, path);
+            return check_for_recursive_declaration(entity.value_as_ptr(), path);
         }
         case SELECTOR: {
             auto selector = expression->as<Ast::SelectorExpression>();
@@ -475,7 +475,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
             if (!entity) {
                 return false;
             }
-            return check_for_recursive_declaration(*entity, path);
+            return check_for_recursive_declaration(entity.value_as_ptr(), path);
         }
     }
     assert(false && "Should not trigger");
@@ -585,14 +585,14 @@ bool Typer::check_for_recursive_statement(Scope *scope,
             auto return_statement = statement->as<Ast::ReturnStatement>();
             if (return_statement->value) {
                 return check_for_recursive_expression(
-                    scope, *return_statement->value, path);
+                    scope, return_statement->value.value_as_ptr(), path);
             }
             return false;
         }
         case DECLARATION: {
             auto declaration = statement->as<Ast::DeclarationStatement>()->declaration;
             auto entity = scope->look_up(declaration->identifier);
-            return check_for_recursive_declaration(entity.value(), path);
+            return check_for_recursive_declaration(entity.value_as_ptr(), path);
         }
         case CONTINUE:
         case BREAK: return false;
@@ -640,7 +640,7 @@ bool Typer::check_for_recursive_declaration(const Entity *entity,
             }
             if (variable->init_expression) {
                 found = check_for_recursive_expression(
-                    variable->scope, *variable->init_expression, path);
+                    variable->scope, variable->init_expression.value_as_ptr(), path);
             }
             break;
         }
@@ -680,7 +680,7 @@ bool Typer::do_typing() {
                                    std::string_view name) -> bool {
         type->flags |= Type::Flags::SIZED;
         auto entity =
-            create_entity<NamedTypeEntity>(scope, nullptr, nullptr, std::optional<Scope *>{});
+            create_entity<NamedTypeEntity>(scope, nullptr, nullptr, Maybe<Scope *>{});
         auto type_named = create_type<NamedType>(name, entity);
         type_named->type = type;
         entity->type = type_named;
@@ -879,12 +879,12 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
             if (!entity) {
                 return 0;
             }
-            if (!(*entity)->is<ConstantEntity>()) {
+            if (!entity->is<ConstantEntity>()) {
                 error(parser_.lexer, identifier, "{} is not a constant",
                       identifier->identifier->token.value);
                 return 0;
             }
-            auto constant = (*entity)->as<ConstantEntity>();
+            auto constant = entity->as<ConstantEntity>();
             if (!is_integer(constant->type)) {
                 error(parser_.lexer, identifier, "Type of {} is not integer",
                       identifier->identifier->token.value);
@@ -978,7 +978,7 @@ void Typer::calculate_size_and_alignment(Type *type) {
     }
 }
 
-std::optional<Entity*> Typer::get_entity_by_ast_type(Ast::Type *ast_type) const {
+Maybe<Entity*> Typer::get_entity_by_ast_type(Ast::Type *ast_type) const {
     auto search = std::ranges::find_if(entities_, [ast_type](Entity *entity) {
         return entity->ast_type == ast_type;
     });
@@ -988,19 +988,19 @@ std::optional<Entity*> Typer::get_entity_by_ast_type(Ast::Type *ast_type) const 
     return {};
 }
 
-std::optional<NamedTypeEntity *> Typer::look_up_type(Scope *scope, Ast::TypePath path) {
+Maybe<NamedTypeEntity *> Typer::look_up_type(Scope *scope, Ast::TypePath path) {
     auto entity = look_up(scope, path);
     if (!entity) {
         return {};
     }
-    if ((*entity)->is<NamedTypeEntity>()) {
-        return (*entity)->as<NamedTypeEntity>();
+    if (entity->is<NamedTypeEntity>()) {
+        return entity->as<NamedTypeEntity>();
     }
     error(parser_.lexer, path, "{} is not a type", type_path_to_string(path));
     return {};
 }
 
-std::optional<Entity*> Typer::look_up(Scope *scope, Ast::Identifier *identifier) {
+Maybe<Entity*> Typer::look_up(Scope *scope, Ast::Identifier *identifier) {
     auto entity = scope->look_up(identifier);
     if (entity) {
         return entity;
@@ -1009,7 +1009,7 @@ std::optional<Entity*> Typer::look_up(Scope *scope, Ast::Identifier *identifier)
     return {};
 }
 
-std::optional<Entity*> Typer::look_up(Scope *scope, Ast::TypePath path) {
+Maybe<Entity*> Typer::look_up(Scope *scope, Ast::TypePath path) {
     auto entity = scope->look_up(path);
     if (entity) {
         return entity;

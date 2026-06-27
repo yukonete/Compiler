@@ -143,13 +143,13 @@ struct ProcedureType : public Type {
     static constexpr auto KIND = Kind::PROCEDURE;
 
     constexpr ProcedureType(std::span<Type*> parameters,
-                            std::optional<Type *> return_type)
+                            Maybe<Type *> return_type)
         : Type{KIND}, parameters{parameters}, return_type{return_type} {
         flags = Flags::SIZED;
     }
 
     std::span<Type*> parameters;
-    std::optional<Type *> return_type;
+    Maybe<Type *> return_type;
 };
 
 struct NamedType : public Type {

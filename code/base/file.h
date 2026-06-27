@@ -4,13 +4,13 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
-#include <optional>
 #include <system_error>
 #include <string_view>
 
 #include "base/types.h"
+#include "base/maybe.h"
 
-inline std::optional<std::string> read_file_to_string(const char *path) {
+inline Maybe<std::string> read_file_to_string(const char *path) {
     auto err = std::error_code{};
     const auto file_size = std::filesystem::file_size(path, err);
     if (err) {
@@ -30,7 +30,7 @@ inline std::optional<std::string> read_file_to_string(const char *path) {
     return result;
 }
 
-inline std::optional<std::string> read_file_to_string(std::string_view path) {
+inline Maybe<std::string> read_file_to_string(std::string_view path) {
     auto zero_terminated_path = std::string{path};
     return read_file_to_string(zero_terminated_path.c_str());
 }

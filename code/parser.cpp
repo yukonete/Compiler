@@ -170,7 +170,7 @@ Declaration *Parser::parse_declaration() {
 ConstDeclaration *Parser::parse_constant_declaration() {
     auto const_token = expect_token(TokenType::keyword_const);
     auto identifier = parse_identifier();
-    auto type = std::optional<Type*>{};
+    auto type = Maybe<Type*>{};
     if (next_token_is(TokenType::colon)) {
         lexer.eat_token();
         type = parse_type();
@@ -185,13 +185,13 @@ VariableDeclaration *Parser::parse_variable_declaration() {
     auto var_token = expect_token(TokenType::keyword_var);
     auto identifier = parse_identifier();
 
-    auto type = std::optional<Type*>{};
+    auto type = Maybe<Type*>{};
     if (next_token_is(TokenType::colon)) {
         lexer.eat_token();
         type = parse_type();
     }
 
-    auto value = std::optional<Expression*>{};
+    auto value = Maybe<Expression*>{};
     if (next_token_is(TokenType::assign)) {
         lexer.eat_token();
         value = parse_expression();
@@ -253,7 +253,7 @@ ProcedureType *Parser::parse_procedure_type(bool skip_identifier) {
     auto parameters = NewArray(std::span{parameters_temp});
     auto close = expect_token(TokenType::close_paren);
 
-    auto return_type = std::optional<Type *>{};
+    auto return_type = Maybe<Type *>{};
     if (next_token_is(TokenType::return_arrow)) {
         lexer.eat_token();
         return_type = parse_type();
@@ -277,7 +277,7 @@ IfStatement *Parser::parse_if_statement() {
     auto if_token = expect_token(TokenType::keyword_if);
     auto condition = parse_expression();
     auto body = parse_block_statement();
-    auto else_branch = std::optional<IfStatement::ElseBranch>{};
+    auto else_branch = Maybe<IfStatement::ElseBranch>{};
     if (next_token_is(TokenType::keyword_else)) {
         else_branch = IfStatement::ElseBranch{
             expect_token(TokenType::keyword_else),
@@ -387,7 +387,7 @@ Type *Parser::parse_type() {
 
 ReturnStatement *Parser::parse_return_statement() {
     auto return_token = expect_token(TokenType::keyword_return);
-    auto value = std::optional<Expression*>{};
+    auto value = Maybe<Expression*>{};
     if (!next_token_is(TokenType::semicolon)) {
         value = parse_expression();
     }
@@ -531,7 +531,7 @@ Expression *Parser::parse_unary_expression() {
     }
 }
 
-static std::optional<TypePath>
+static Maybe<TypePath>
 expression_to_type_path(Parser &parser, const Expression *expression) {
     std::vector<Identifier *> type_path_storage;
     auto type_path = expression_to_type_path(expression, type_path_storage);
@@ -700,7 +700,7 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
             result += ')';
             if (type_function->return_type) {
                 result += std::format(" -> {}", 
-                    type_to_string(*type_function->return_type, tabs));
+                    type_to_string(type_function->return_type.value_as_ptr(), tabs));
             }
             break;
         }
@@ -730,7 +730,7 @@ std::string statement_to_string(const Statement *type, u64 tabs, bool block_inde
             auto return_statement = type->as<ReturnStatement>();
             result += "return";
             if (return_statement->value) {
-                result += std::format(" {}", expression_to_string(return_statement->value.value(), tabs));
+                result += std::format(" {}", expression_to_string(return_statement->value.value_as_ptr(), tabs));
             } 
             result += ';';
             break;
@@ -940,12 +940,12 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
             auto variable = decl->as<VariableDeclaration>();
             result += std::format("var {}", variable->identifier->token.value);
             if (variable->type) {
-                result += std::format(": {}", type_to_string(variable->type.value(), tabs));
+                result += std::format(": {}", type_to_string(variable->type.value_as_ptr(), tabs));
             }
         
             if (variable->value) {
                 result += std::format(" = {}", 
-                    expression_to_string(variable->value.value(), tabs));
+                    expression_to_string(variable->value.value_as_ptr(), tabs));
             }
             result += ";";
             break;
@@ -955,7 +955,7 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
             auto constant = decl->as<ConstDeclaration>();
             result += std::format("const {}", constant->identifier->token.value);
             if (constant->type) {
-                result += std::format(": {}", type_to_string(constant->type.value(), tabs));
+                result += std::format(": {}", type_to_string(constant->type.value_as_ptr(), tabs));
             }
 
             result += std::format(" = {}",

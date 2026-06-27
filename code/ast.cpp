@@ -34,7 +34,7 @@ Token Statement::end_token() const {
         case EMPTY: return as<EmptyStatement>()->token;
         case IF: {
             auto if_statement = as<IfStatement>();
-            if (if_statement->else_branch.has_value()) {
+            if (if_statement->else_branch) {
                 return if_statement->else_branch->body->end_token();
             }
             return if_statement->body->end_token();
@@ -120,11 +120,11 @@ Token Declaration::end_token() const {
 
         case VARIABLE: {
             auto variable = as<VariableDeclaration>();
-            if (variable->value.has_value()) {
-                return variable->value.value()->end_token();
+            if (variable->value) {
+                return variable->value->end_token();
             }
-            if (variable->type.has_value()) {
-                return variable->type.value()->end_token();
+            if (variable->type) {
+                return variable->type->end_token();
             }
             return variable->identifier->token;
         }
@@ -167,7 +167,7 @@ Token Type::end_token() const {
     panic("type.kind is not Type::Kind")
 }
 
-std::optional<TypePath>
+Maybe<TypePath>
 expression_to_type_path(const Expression *expression,
                         std::vector<Identifier *> &out) {
     auto type_path_from_expression =
@@ -199,7 +199,7 @@ expression_to_type_path(const Expression *expression,
     };
 
     if (type_path_from_expression(expression)) {
-        return out;
+        return std::span{out};
     }
     return {};
 }

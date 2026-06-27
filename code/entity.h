@@ -1,8 +1,6 @@
 #ifndef ENTITY_H
 #define ENTITY_H
 
-#include <optional>
-
 #include "base/down_cast.h"
 #include "base/flags.h"
 #include "ast.h"
@@ -60,13 +58,13 @@ struct VariableEntity : public Entity {
     constexpr VariableEntity(Scope *scope,
                              Ast::Declaration *declaration,
                              Ast::Type *ast_type,
-                             std::optional<Ast::Expression *> init_expression)
+                             Maybe<Ast::Expression *> init_expression)
         : Entity{KIND, scope, declaration, ast_type},
           init_expression{init_expression} {
     }
 
     VariableKind variable_kind = VariableKind::GLOBAL;
-    std::optional<Ast::Expression *> init_expression;
+    Maybe<Ast::Expression *> init_expression;
 };
 
 struct ConstantEntity : public Entity {
@@ -98,12 +96,12 @@ struct NamedTypeEntity : public Entity {
     static constexpr auto KIND = Kind::NAMED_TYPE;
 
     constexpr NamedTypeEntity(Scope *scope, Ast::TypeDeclaration *declaration,
-                              Ast::Type *ast_type, std::optional<Scope *> inner_scope)
+                              Ast::Type *ast_type, Maybe<Scope *> inner_scope)
         : Entity{KIND, scope, declaration, ast_type}, inner_scope{inner_scope} {
     }
 
     // Set olny for structs
-    std::optional<Scope *> inner_scope;
+    Maybe<Scope *> inner_scope;
 };
 
 } // namespace Typing

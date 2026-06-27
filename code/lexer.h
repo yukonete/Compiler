@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
-#include <optional>
 #include <utility>
 #include <cassert>
 #include <cstdio>
@@ -50,7 +49,7 @@ public:
     constexpr Lexer(Lexer&&) = default;
     constexpr Lexer& operator=(Lexer &&) = default;
 
-    static std::optional<Lexer> open(std::string &&path, FILE *log = stderr) {
+    static Maybe<Lexer> open(std::string &&path, FILE *log = stderr) {
         return read_file_to_string(path.c_str()).transform(
             [&](std::string &&file_content) {
                 return Lexer{std::move(file_content), std::move(path), log};
@@ -96,9 +95,9 @@ private:
     int peek_next_char() const;
     int peek_char(usize peek) const;
     void eat_char();
-    std::optional<ParseNumberResult> parse_number();
+    Maybe<ParseNumberResult> parse_number();
     std::string_view parse_identifier();
-    std::optional<std::string_view> parse_string();
+    Maybe<std::string_view> parse_string();
     void skip_whitespaces_and_comments();
     bool is_new_line(int ch) const;
     
@@ -118,15 +117,12 @@ public:
     bool report_only_first_syntax_error = true;
 };
 
-template <> struct std::formatter<TokenType> {
-    template <class ParseContext>
-    constexpr ParseContext::iterator parse(ParseContext &ctx) {
-        return ctx.begin();
-    }
-
+template <>
+struct std::formatter<TokenType> : std::formatter<std::string_view> {
     template <class FmtContext>
     FmtContext::iterator format(TokenType type, FmtContext &ctx) const {
-        return std::ranges::copy(token_type_to_string(type), ctx.out()).out;
+        return std::formatter<std::string_view>::format(
+            token_type_to_string(type), ctx);
     }
 };
 

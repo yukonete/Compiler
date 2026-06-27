@@ -1,5 +1,5 @@
-#ifndef TYPES_H_
-#define TYPES_H_
+#ifndef BASE_TYPES_H
+#define BASE_TYPES_H
 
 #include <cstdint>
 #include <cstdarg>

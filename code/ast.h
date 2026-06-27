@@ -2,11 +2,11 @@
 #define AST_H
 
 #include <cassert>
-#include <optional>
 #include <span>
 #include <concepts>
 #include <string>
 
+#include "base/maybe.h"
 #include "base/flags.h"
 #include "base/down_cast.h"
 #include "base/types.h"
@@ -57,7 +57,7 @@ struct StringLiteralExpression;
 // 1) Pointers in AST are not allowed to be nullptr.
 // Only exception is Field, for which identifier can be nullptr,
 // but only when it is used to represent procedure parameter without name
-// 2) If a field of a node is optional, it is represented as std::optional<Node*>
+// 2) If a field of a node is optional, it is represented as Maybe<Node*>
 // field.
 // 3) Nodes can not have non-trival destructors.
 // 4) Even though AST has BAD nodes, later stages of compiler should
@@ -131,7 +131,7 @@ struct IfStatement : public Statement {
 
     constexpr IfStatement(const Token &token, Expression *condition,
                           Statement *body,
-                          const std::optional<ElseBranch> &else_branch)
+                          const Maybe<ElseBranch> &else_branch)
         : Statement{KIND}, token{token}, condition{condition}, body{body},
           else_branch{else_branch} {
     }
@@ -139,7 +139,7 @@ struct IfStatement : public Statement {
     Token token;
     Expression *condition;
     Statement *body;
-    std::optional<ElseBranch> else_branch;
+    Maybe<ElseBranch> else_branch;
 };
 
 struct WhileStatement : public Statement {
@@ -172,12 +172,12 @@ struct ReturnStatement : public Statement {
     static constexpr auto KIND = Kind::RETURN;
 
     constexpr ReturnStatement(const Token &token,
-                              std::optional<Expression *> value)
+                              Maybe<Expression *> value)
         : Statement{KIND}, token{token}, value{value} {
     }
 
     Token token;
-    std::optional<Expression *> value;
+    Maybe<Expression *> value;
 };
 
 struct AssignmentStatement : public Statement {
@@ -276,28 +276,28 @@ struct VariableDeclaration : public Declaration {
     static constexpr auto KIND = Kind::VARIABLE;
 
     constexpr VariableDeclaration(const Token &token, Identifier *identifier,
-                                  std::optional<Type *> type,
-                                  std::optional<Expression *> value)
+                                  Maybe<Type *> type,
+                                  Maybe<Expression *> value)
         : Declaration{KIND, identifier}, token{token}, type{type},
           value{value} {
     }
 
     Token token;
-    std::optional<Type *> type;
-    std::optional<Expression *> value;
+    Maybe<Type *> type;
+    Maybe<Expression *> value;
 };
 
 struct ConstDeclaration : public Declaration {
     static constexpr auto KIND = Kind::CONSTANT;
 
     constexpr ConstDeclaration(const Token &token, Identifier *identifier,
-                               std::optional<Type *> type, Expression *value)
+                               Maybe<Type *> type, Expression *value)
         : Declaration{KIND, identifier}, token{token}, type{type},
           value{value} {
     }
 
     Token token;
-    std::optional<Type *> type;
+    Maybe<Type *> type;
     Expression *value;
 };
 
@@ -602,7 +602,7 @@ struct ProcedureType : public Type {
 
     constexpr ProcedureType(const Token &token, const Token &open,
                             std::span<Field *> parameters, const Token &close,
-                            std::optional<Type *> return_type)
+                            Maybe<Type *> return_type)
         : Type{KIND}, token{token}, open{open}, close{close},
           parameters{parameters}, return_type{return_type} {
     }
@@ -612,7 +612,7 @@ struct ProcedureType : public Type {
     Token close;
 
     std::span<Field *> parameters;
-    std::optional<Type *> return_type;
+    Maybe<Type *> return_type;
 };
 
 struct StructType : public Type {
@@ -676,7 +676,7 @@ void error(Lexer &lexer, Ast::TypePath path, std::format_string<Args...> fmt,
           std::forward<Args>(args)...);
 }
 
-std::optional<TypePath>
+Maybe<TypePath>
 expression_to_type_path(const Expression *expression,
                         std::vector<Identifier *> &out);
 

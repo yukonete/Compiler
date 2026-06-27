@@ -109,7 +109,7 @@ struct Allocator : public AllocatorInterface<Allocator> {
 
     void free_all() const {
         func_(data_, Mode::FREE_ALL, 0, nullptr);
-    }
+    } 
 
 private:
     Func *func_;
