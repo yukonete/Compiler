@@ -228,7 +228,7 @@ ProcedureType *Parser::parse_procedure_type(bool skip_identifier) {
 
     auto open = expect_token(TokenType::open_paren);
     bool first_parameter = true;
-    auto parameters_temp = std::vector<Field*>();
+    auto parameters_temp = make_temp_vector<Field*>();
     while (!(next_token_is(TokenType::close_paren) ||
                 next_token_is(TokenType::eof))) {
         if (!first_parameter) {
@@ -310,7 +310,7 @@ Type *Parser::parse_type() {
 
         case identifier: {
             lexer.uneat_token();
-            auto path_temp = std::vector<Identifier*>();
+            auto path_temp = make_temp_vector<Identifier*>();
             while (true) {
                 path_temp.push_back(parse_identifier());
                 if (next_token_is(TokenType::dot)) {
@@ -334,8 +334,8 @@ Type *Parser::parse_type() {
             auto struct_token = token;
 
             auto open = expect_token(TokenType::open_brace);
-            auto members_temp = std::vector<Field*>();
-            auto declarations_temp = std::vector<DeclarationStatement *>();
+            auto members_temp = make_temp_vector<Field*>();
+            auto declarations_temp = make_temp_vector<DeclarationStatement *>();
             while (!(next_token_is(TokenType::close_brace) ||
                      next_token_is(TokenType::eof))) {
                 if (next_token_is(TokenType::identifier)) {
@@ -397,7 +397,7 @@ ReturnStatement *Parser::parse_return_statement() {
 
 BlockStatement *Parser::parse_block_statement() {
     auto open = expect_token(TokenType::open_brace);
-    auto statements_temp = std::vector<Statement *>();
+    auto statements_temp = make_temp_vector<Statement *>();
     while (!(next_token_is(TokenType::close_brace) ||
              next_token_is(TokenType::eof))) {
         statements_temp.push_back(parse_statement());
@@ -457,7 +457,7 @@ Expression *Parser::parse_unary_expression() {
             lexer.uneat_token();
             auto struct_type = parse_type();
             auto open = expect_token(TokenType::open_brace);
-            std::vector<Expression *> values_temp;
+            auto values_temp = make_temp_vector<Expression *>();
             bool first = true;
             while (!(next_token_is(TokenType::close_brace) ||
                      next_token_is(TokenType::eof))) {
@@ -533,7 +533,7 @@ Expression *Parser::parse_unary_expression() {
 
 static Maybe<TypePath>
 expression_to_type_path(Parser &parser, const Expression *expression) {
-    std::vector<Identifier *> type_path_storage;
+    auto type_path_storage = make_temp_vector<Identifier *>();
     auto type_path = expression_to_type_path(expression, type_path_storage);
     if (type_path) {
         return parser.NewArray(*type_path);
@@ -547,7 +547,7 @@ Expression *Parser::parse_binary_expression(Expression *left) {
 
     if (token.type == TokenType::open_paren) {
         auto open = token;
-        auto arguments_temp = std::vector<Expression*>();
+        auto arguments_temp = make_temp_vector<Expression*>();
         bool first_argument = true;
         while (!(next_token_is(TokenType::close_paren) ||
                  next_token_is(TokenType::eof))) {
@@ -588,7 +588,7 @@ Expression *Parser::parse_binary_expression(Expression *left) {
 
         auto type = New<IdentifierType>(type_path);
         auto open = token;
-        std::vector<Expression *> values_temp;
+        auto values_temp = make_temp_vector<Expression *>();
         bool first = true;
         while (!(next_token_is(TokenType::close_brace) ||
                     next_token_is(TokenType::eof))) {

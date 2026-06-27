@@ -6,6 +6,7 @@
 #include <concepts>
 #include <string>
 
+#include "base/arena.h"
 #include "base/maybe.h"
 #include "base/flags.h"
 #include "base/down_cast.h"
@@ -678,7 +679,7 @@ void error(Lexer &lexer, Ast::TypePath path, std::format_string<Args...> fmt,
 
 Maybe<TypePath>
 expression_to_type_path(const Expression *expression,
-                        std::vector<Identifier *> &out);
+                        DynamicArenaVector<Identifier *> &out);
 
 }; // namespace Ast
 #endif // #ifndef AST_H

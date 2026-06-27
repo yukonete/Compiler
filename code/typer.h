@@ -27,7 +27,7 @@ struct Scope {
     Maybe<Entity*> look_up(Ast::Identifier *identifier) const;
     Maybe<Entity*> look_up(Ast::TypePath path) const;
     
-    std::string full_name() const;
+    std::string_view full_name() const;
 };
 
 struct Typer {
@@ -77,14 +77,14 @@ struct Typer {
                                          Ast::Statement *statement);
 
     bool check_for_recursive_type(Scope *scope, const Type *type,
-                                  std::vector<const Entity *> &path);
+                                  DynamicArenaVector<const Entity *> &path);
     bool check_for_recursive_declaration(const Entity *entity,
-                                         std::vector<const Entity *> &path);
+                                         DynamicArenaVector<const Entity *> &path);
     bool check_for_recursive_expression(Scope *scope,
                                         Ast::Expression *expression,
-                                        std::vector<const Entity *> &path);
+                                        DynamicArenaVector<const Entity *> &path);
     bool check_for_recursive_statement(Scope *scope, Ast::Statement *statement,
-                                       std::vector<const Entity *> &path);
+                                       DynamicArenaVector<const Entity *> &path);
 
     bool do_typing();
 

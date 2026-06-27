@@ -1,6 +1,6 @@
 CONFIG ?= debug
 
-CXXFLAGS = -std=c++23 -Wall -Wextra -fhardened -pedantic -MMD -MP -fno-rtti -fno-exceptions -Wsign-conversion
+CXXFLAGS = -std=c++23 -Wall -Wextra -fhardened -pedantic -MMD -MP -fno-exceptions -Wsign-conversion
 INCLUDE = -Icode/
 LINK=-lstdc++exp
 

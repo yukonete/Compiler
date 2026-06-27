@@ -1,4 +1,5 @@
 #include "base/panic.h"
+#include "base/arena.h"
 #include "ast.h"
 
 namespace Ast {
@@ -169,7 +170,7 @@ Token Type::end_token() const {
 
 Maybe<TypePath>
 expression_to_type_path(const Expression *expression,
-                        std::vector<Identifier *> &out) {
+                        DynamicArenaVector<Identifier*> &out) {
     auto type_path_from_expression =
         [&out](this auto &&self,
                      const Ast::Expression *expression) -> bool {

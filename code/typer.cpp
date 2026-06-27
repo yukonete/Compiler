@@ -2,6 +2,8 @@
 #include <string_view>
 #include <unordered_set>
 
+#include "base/arena.h"
+#include "base/tformat.h"
 #include "base/panic.h"
 #include "typer.h"
 #include "ast.h"
@@ -9,7 +11,8 @@
 
 namespace Typing {
 
-static std::string full_entity_name(const Entity *entity) {
+// resulting string is stored in temp_allocator
+static std::string_view full_entity_name(const Entity *entity) {
     std::string_view entity_name;
     if (has_flag(entity->flags, Entity::Flags::BUILTIN)) {
         entity_name = entity->type->as<NamedType>()->name;
@@ -19,23 +22,28 @@ static std::string full_entity_name(const Entity *entity) {
 
     auto scope_name = entity->scope->full_name();
     if (scope_name == "") {
-        return std::string{entity_name};
+        return entity_name;
     }
-    return std::format("{}.{}", entity->scope->full_name(), entity_name);
+    return tformat("{}.{}", entity->scope->full_name(), entity_name);
 }
 
-std::string Scope::full_name() const {
+// resulting string is stored in temp_allocator
+std::string_view Scope::full_name() const {
     if (!entity || !entity->is<NamedTypeEntity>()) {
         return "";
     }
 
     auto named_type = entity->type->as<NamedType>();
-    auto parent_scope_name = parent.value().full_name(); // TODO: Is parent always there?
+    auto parent_scope_name =
+        parent
+            .expect("Since entity is set and it is NamedType, there should be "
+                    "parent scope.")
+            .full_name();
     if (parent_scope_name == "") {
-        return std::string{named_type->name};
+        return named_type->name;
     }
 
-    return std::format("{}.{}", parent_scope_name, named_type->name);
+    return tformat("{}.{}", parent_scope_name, named_type->name);
 }
 
 Maybe<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
@@ -306,7 +314,7 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
 
         case PROCEDURE: {
             auto ast_proc = ast_type->as<Ast::ProcedureType>();
-            std::vector<Type*> parameters_temp;
+            auto parameters_temp = make_temp_vector<Type*>();
             for (auto ast_parameter : ast_proc->parameters) {
                 auto type = ast_type_to_type(scope, ast_parameter->type);
                 parameters_temp.push_back(type);
@@ -330,7 +338,7 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
                 scope = entity->as<NamedTypeEntity>()->inner_scope.value_as_ptr(); 
             }
 
-            std::vector<VariableEntity*> members_temp;
+            auto members_temp = make_temp_vector<VariableEntity*>();
             for (auto ast_member : ast_struct->members) {
                 auto member_entity = create_entity<VariableEntity>(
                     scope, ast_member, ast_member->type,
@@ -388,7 +396,7 @@ void Typer::resolve_alias(NamedTypeEntity *entity) {
 
 bool Typer::check_for_recursive_expression(Scope *scope,
                                            Ast::Expression *expression,
-                                           std::vector<const Entity *> &path) {
+                                           DynamicArenaVector<const Entity *> &path) {
     switch (expression->kind) {
         using enum Ast::Expression::Kind;
 
@@ -465,7 +473,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
                 return true;
             }
             
-            std::vector<Ast::Identifier *> type_path_storage;
+            auto type_path_storage = make_temp_vector<Ast::Identifier *>();
             auto type_path = Ast::expression_to_type_path(expression, type_path_storage);
             if (!type_path) {
                 return false;
@@ -482,7 +490,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
 }
 
 bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
-                                     std::vector<const Entity *> &path) {
+                                     DynamicArenaVector<const Entity *> &path) {
     switch (type->kind) {
         using enum Type::Kind;
 
@@ -534,7 +542,7 @@ bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
 
 bool Typer::check_for_recursive_statement(Scope *scope,
                                           Ast::Statement *statement,
-                                          std::vector<const Entity *> &path) {
+                                          DynamicArenaVector<const Entity *> &path) {
     switch (statement->kind) {
         using enum Ast::Statement::Kind;
 
@@ -608,7 +616,7 @@ bool Typer::check_for_recursive_statement(Scope *scope,
 }
 
 bool Typer::check_for_recursive_declaration(const Entity *entity,
-                                            std::vector<const Entity *> &path) {
+                                            DynamicArenaVector<const Entity *> &path) {
     if (std::ranges::contains(path, entity)) {
         if (entity->is<ProcedureEntity>()) {
             return false;
@@ -741,7 +749,7 @@ bool Typer::do_typing() {
 
     {
         std::unordered_set<const Entity *> reported_entities;
-        std::vector<const Entity *> path;
+        auto path = make_temp_vector<const Entity *>();
         for (auto entity : entities_) {
             bool is_recursive_entity = check_for_recursive_declaration(entity, path);
             if (is_recursive_entity && !reported_entities.contains(entity)) {

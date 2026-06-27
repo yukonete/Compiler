@@ -177,7 +177,7 @@ struct Maybe<T> {
         return *value_;
     }
 
-    [[nodiscard]] constexpr value_type &expect(std::string_view message) {
+    [[nodiscard]] constexpr value_type &expect(std::string_view message) const {
         if (!is_valid()) {
             panic("{}", message);
         }
@@ -273,7 +273,7 @@ struct Maybe<T> {
         return *value_;
     }
 
-    [[nodiscard]] constexpr value_type &expect(std::string_view message) {
+    [[nodiscard]] constexpr value_type &expect(std::string_view message) const {
         if (!is_valid()) {
             panic("{}", message);
         }

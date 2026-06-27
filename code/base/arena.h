@@ -1,8 +1,11 @@
 #ifndef ARENA_H_
 #define ARENA_H_
 
+#include <print>
 #include <span>
 #include <utility>
+#include <memory_resource>
+#include <vector>
 
 #include "base/types.h"
 #include "base/allocator.h"
@@ -146,5 +149,54 @@ private:
     InlineArena<Size> inline_;
     Allocator backing_;
 };
+
+// For use with std library
+template<class T>
+struct DynamicArenaAllocator {
+    static_assert(alignof(T) <= DEFAULT_ALIGNMENT);
+    using value_type = T;
+
+    DynamicArena &arena;
+
+    DynamicArenaAllocator(DynamicArena &arena) : arena{arena} {
+    }
+
+    template<class U>
+    DynamicArenaAllocator(const DynamicArenaAllocator<U>& other) : arena{other.arena} {
+    }
+
+    [[nodiscard]] T* allocate(std::size_t n) {
+        return arena.allocate<T>(n);
+    }
+
+    void deallocate(T* p, std::size_t n) noexcept {
+        return arena.deallocate<T>(p, n);
+    }
+
+    friend bool operator==(const DynamicArenaAllocator& a, const DynamicArenaAllocator& b) {
+        return &a.arena == &b.arena;
+    }
+
+    friend bool operator!=(const DynamicArenaAllocator& a, const DynamicArenaAllocator& b) {
+        return !(a == b);
+    }
+
+    using is_always_equal = std::false_type;
+    using propagate_on_container_move_assignment = std::true_type;
+};
+
+template <typename T>
+using DynamicArenaVector = std::vector<T, DynamicArenaAllocator<T>>;
+
+thread_local inline DynamicArena temp_allocator = DynamicArena{NEW_ALLOCATOR};
+
+template <typename T>
+DynamicArenaVector<T> make_temp_vector(usize capacity = 0) {
+    auto result = DynamicArenaVector<T>(temp_allocator);
+    if (capacity != 0) {
+        result.reserve(capacity);
+    }
+    return result;
+}
 
 #endif

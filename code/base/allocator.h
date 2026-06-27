@@ -8,7 +8,7 @@
 
 #include "base/types.h"
 
-constexpr auto DEFAULT_ALIGNMENT = 16;
+constexpr auto DEFAULT_ALIGNMENT = alignof(std::max_align_t);
 
 constexpr bool is_power_of_two(u64 value) {
     return (value & (value - 1)) == 0;

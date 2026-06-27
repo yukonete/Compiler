@@ -4,6 +4,7 @@
 #include <string_view>
 
 #include "ast.h"
+#include "base/tformat.h"
 #include "base/allocator.h"
 #include "parser.h"
 #include "typer.h"
