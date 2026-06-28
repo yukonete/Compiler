@@ -6,6 +6,7 @@
 #include <concepts>
 #include <string>
 
+#include "base/util.h"
 #include "base/arena.h"
 #include "base/maybe.h"
 #include "base/flags.h"
@@ -534,14 +535,15 @@ struct Type {
     Kind kind;
 };
 
-inline std::string type_path_to_string(TypePath path) {
-    auto result = std::string{};
-    for (usize i = 0; i < path.size(); ++i) {
-        result += path[i]->token.value;
-
-        if (i != path.size() - 1) {
+inline DynamicArenaString type_path_to_string(TypePath path) {
+    assert(path.size() > 0);
+    auto result = make_temp_string();
+    for (auto i : indices(path.size())) {
+        if (i != 0) {
             result += '.';
         }
+        auto identifier = path[i];
+        result += identifier->token.value;
     }
     return result;
 }
@@ -562,8 +564,7 @@ struct IdentifierType : public Type {
     constexpr IdentifierType(TypePath path) : Type{KIND}, path{path} {
     }
 
-    // temporary
-    std::string get_full_type_name() const {
+    DynamicArenaString get_full_type_name() const {
         return type_path_to_string(path);
     }
 

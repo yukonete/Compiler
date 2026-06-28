@@ -7,6 +7,7 @@
 #include <vector>
 #include <utility>
 
+#include "base/util.h"
 #include "base/arena.h"
 #include "base/allocator.h"
 #include "base/concepts.h"
@@ -49,7 +50,7 @@ public:
     template<typename NodeType>
     std::span<NodeType*> NewArray(std::span<NodeType*> nodes) {
         auto array = nodes_storage_.allocate<NodeType*>(nodes.size());
-        for (usize i = 0; i < nodes.size(); ++i) {
+        for (auto i : indices(nodes.size())) {
             array[i] = nodes[i];
         }
         return std::span{array, nodes.size()};

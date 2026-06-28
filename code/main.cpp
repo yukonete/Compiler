@@ -2,10 +2,13 @@
 #include <string>
 #include <cstdlib>
 #include <string_view>
+#include <ranges>
 
 #include "ast.h"
 #include "base/tformat.h"
 #include "base/allocator.h"
+#include "base/util.h"
+#include "base/arena.h"
 #include "parser.h"
 #include "typer.h"
 
@@ -20,6 +23,8 @@ int main(int argc, char **argv) {
                           std::println("Could not open/read file {}.", input);
                           std::exit(1);
                       });
+
+    parser.lexer.tokenize_until_eof();
 
     if (!parser.parse_program()) {
         return 1;

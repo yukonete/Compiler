@@ -3,12 +3,56 @@
 #include <string_view>
 #include <cassert>
 
+#include "base/util.h"
 #include "base/panic.h"
 #include "lexer.h"
 
+struct StringViewHash {
+    std::string_view str;
+    usize hash = 0;
+
+    friend bool operator==(const StringViewHash &left, const StringViewHash &right) = default; 
+
+    constexpr StringViewHash() {};
+    constexpr StringViewHash(std::string_view str) : str{str}, hash{std::hash<std::string_view>{}(str)} {};
+};
+
+struct Keyword {
+    StringViewHash str;
+    TokenType token_type = TokenType::invalid;
+};
+
 static TokenType check_identifier_for_keyword(std::string_view identifier) {
-    if (Lexer::keywords.contains(identifier)) {
-        return Lexer::keywords.at(identifier);
+    using namespace std::literals;
+    static const std::array keywords = {
+        Keyword{"if"sv, TokenType::keyword_if},
+        Keyword{"else"sv, TokenType::keyword_else},
+        Keyword{"while"sv, TokenType::keyword_while},
+        Keyword{"for"sv, TokenType::keyword_for},
+        Keyword{"return"sv, TokenType::keyword_return},
+        Keyword{"fn"sv, TokenType::keyword_fn},
+        Keyword{"true"sv, TokenType::keyword_true},
+        Keyword{"false"sv, TokenType::keyword_false},
+        Keyword{"cast"sv, TokenType::keyword_cast},
+        Keyword{"transmute"sv, TokenType::keyword_transmute},
+        Keyword{"type"sv, TokenType::keyword_type},
+        Keyword{"const"sv, TokenType::keyword_const},
+        Keyword{"struct"sv, TokenType::keyword_struct},
+        Keyword{"var"sv, TokenType::keyword_var},
+        Keyword{"break"sv, TokenType::keyword_break},
+        Keyword{"continue"sv, TokenType::keyword_continue},
+        Keyword{"size_of"sv, TokenType::keyword_size_of},
+    };
+
+    auto hash = StringViewHash{identifier};
+    auto search = std::ranges::find_if(
+        keywords,
+        [&hash](const StringViewHash &str) {
+            return str.hash == hash.hash && str.str == hash.str;
+        },
+        &Keyword::str);
+    if (search != keywords.end()) {
+        return search->token_type;
     }
     return TokenType::identifier;
 }
@@ -23,23 +67,23 @@ std::string_view Lexer::get_line(u64 byte) const {
     assert(!is_new_line(input_[byte]));
 
     if (byte == 0) {
-        for (usize i = 0; i < input_.size(); ++i) {
+        for (auto i : indices(input_.size())) {
             if (is_new_line(input_[i])) {
                 return input_view().substr(0, i);
             }
-        } 
+        }
     }
     
     u64 start = 0;
-    for (auto i = byte - 1; i < input_.size(); --i) {
+    for (auto i : reverse_indices(byte)) {
         if (is_new_line(input_[i])) {
             start = i + 1;
             break;
-        }
+        } 
     }
 
     u64 end = input_.size();
-    for (auto i = byte + 1; i < input_.size(); ++i) {
+    for (auto i : iota(byte + 1, input_.size())) {
         if (is_new_line(input_[i])) {
             end = i;
             break;
@@ -350,6 +394,13 @@ void Lexer::tokenize() {
     token.end.byte -= 1;
     assert(token.end.column != 0);
     tokens_.push_back(token);
+}
+
+void Lexer::tokenize_until_eof() {
+    tokenize();
+    while (tokens_.back().type != TokenType::eof) {
+        tokenize();
+    }
 }
 
 int Lexer::peek_next_char() const {

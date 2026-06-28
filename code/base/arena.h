@@ -156,25 +156,21 @@ struct DynamicArenaAllocator {
     static_assert(alignof(T) <= DEFAULT_ALIGNMENT);
     using value_type = T;
 
-    DynamicArena &arena;
+    DynamicArena *arena;
 
-    DynamicArenaAllocator(DynamicArena &arena) : arena{arena} {
-    }
-
-    template<class U>
-    DynamicArenaAllocator(const DynamicArenaAllocator<U>& other) : arena{other.arena} {
+    DynamicArenaAllocator(DynamicArena &arena) : arena{&arena} {
     }
 
     [[nodiscard]] T* allocate(std::size_t n) {
-        return arena.allocate<T>(n);
+        return arena->allocate<T>(n);
     }
 
     void deallocate(T* p, std::size_t n) noexcept {
-        return arena.deallocate<T>(p, n);
+        return arena->deallocate<T>(p, n);
     }
 
     friend bool operator==(const DynamicArenaAllocator& a, const DynamicArenaAllocator& b) {
-        return &a.arena == &b.arena;
+        return a.arena == b.arena;
     }
 
     friend bool operator!=(const DynamicArenaAllocator& a, const DynamicArenaAllocator& b) {
@@ -183,6 +179,8 @@ struct DynamicArenaAllocator {
 
     using is_always_equal = std::false_type;
     using propagate_on_container_move_assignment = std::true_type;
+    using propagate_on_swap = std::true_type;
+    using propagate_on_container_copy_assignment = std::false_type;
 };
 
 template <typename T>
@@ -191,8 +189,23 @@ using DynamicArenaVector = std::vector<T, DynamicArenaAllocator<T>>;
 thread_local inline DynamicArena temp_allocator = DynamicArena{NEW_ALLOCATOR};
 
 template <typename T>
+DynamicArenaAllocator<T> std_temp_allocator() {
+    return DynamicArenaAllocator<T>{temp_allocator};
+}
+
+template <typename T>
 DynamicArenaVector<T> make_temp_vector(usize capacity = 0) {
-    auto result = DynamicArenaVector<T>(temp_allocator);
+    auto result = DynamicArenaVector<T>(std_temp_allocator<T>());
+    if (capacity != 0) {
+        result.reserve(capacity);
+    }
+    return result;
+}
+
+using DynamicArenaString = std::basic_string<char, std::char_traits<char>, DynamicArenaAllocator<char>>;
+
+inline DynamicArenaString make_temp_string(usize capacity = 0) {
+    auto result = DynamicArenaString(std_temp_allocator<char>());
     if (capacity != 0) {
         result.reserve(capacity);
     }

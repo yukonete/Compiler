@@ -12,7 +12,7 @@
 namespace Typing {
 
 // resulting string is stored in temp_allocator
-static std::string_view full_entity_name(const Entity *entity) {
+static DynamicArenaString full_entity_name(const Entity *entity) {
     std::string_view entity_name;
     if (has_flag(entity->flags, Entity::Flags::BUILTIN)) {
         entity_name = entity->type->as<NamedType>()->name;
@@ -22,15 +22,15 @@ static std::string_view full_entity_name(const Entity *entity) {
 
     auto scope_name = entity->scope->full_name();
     if (scope_name == "") {
-        return entity_name;
+        return tformat("{}", entity_name);
     }
     return tformat("{}.{}", entity->scope->full_name(), entity_name);
 }
 
 // resulting string is stored in temp_allocator
-std::string_view Scope::full_name() const {
+DynamicArenaString Scope::full_name() const {
     if (!entity || !entity->is<NamedTypeEntity>()) {
-        return "";
+        return tformat("");
     }
 
     auto named_type = entity->type->as<NamedType>();
@@ -40,7 +40,7 @@ std::string_view Scope::full_name() const {
                     "parent scope.")
             .full_name();
     if (parent_scope_name == "") {
-        return named_type->name;
+        return tformat("{}", named_type->name);
     }
 
     return tformat("{}.{}", parent_scope_name, named_type->name);
@@ -378,7 +378,7 @@ void Typer::resolve_alias(NamedTypeEntity *entity) {
     entity->flags |= Entity::Flags::RESOLVED;
 
     auto path = entity->ast_type->as<Ast::IdentifierType>()->path;
-    for (usize i = 0; i < path.size(); ++i) {
+    for (auto i : indices(path.size())) {
         auto looked_up_entity = look_up_type(entity->scope, path.subspan(0, i + 1));
         if (looked_up_entity) {
             resolve_alias(looked_up_entity.value_as_ptr());
@@ -767,7 +767,7 @@ bool Typer::do_typing() {
                 } else {
                     error(parser_.lexer, path[0]->declaration,
                             "Invalid recursive declaration '{}'", full_entity_name(path[0]));
-                    for (usize i = 0; i < path.size() - 1; ++i) {
+                    for (auto i : indices(path.size() - 1)) {
                         reported_entities.insert(path[i + 1]);
                         error(parser_.lexer, path[i]->declaration,
                                 "'{}' refers to '{}'", full_entity_name(path[i]),

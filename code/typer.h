@@ -13,6 +13,7 @@
 #include "base/allocator.h"
 #include "base/arena.h"
 #include "base/concepts.h"
+#include "base/util.h"
 #include "parser.h"
 #include "entity.h"
 #include "ast.h"
@@ -27,7 +28,7 @@ struct Scope {
     Maybe<Entity*> look_up(Ast::Identifier *identifier) const;
     Maybe<Entity*> look_up(Ast::TypePath path) const;
     
-    std::string_view full_name() const;
+    DynamicArenaString full_name() const;
 };
 
 struct Typer {
@@ -55,7 +56,7 @@ struct Typer {
         requires TriviallyDestructible<T>
     {
         auto array = entities_storage_.allocate<T>(span.size());
-        for (usize i = 0; i < span.size(); ++i) {
+        for (auto i : indices(span.size())) {
             array[i] = span[i];
         }
         return std::span{array, span.size()};

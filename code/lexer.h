@@ -19,27 +19,6 @@
 
 class Lexer {
 public:
-    static const inline std::unordered_map<std::string_view, TokenType>
-        keywords = {
-            {"if", TokenType::keyword_if},
-            {"else", TokenType::keyword_else},
-            {"while", TokenType::keyword_while},
-            {"for", TokenType::keyword_for},
-            {"return", TokenType::keyword_return},
-            {"fn", TokenType::keyword_fn},
-            {"true", TokenType::keyword_true},
-            {"false", TokenType::keyword_false},
-            {"cast", TokenType::keyword_cast},
-            {"transmute", TokenType::keyword_transmute},
-            {"type", TokenType::keyword_type},
-            {"const", TokenType::keyword_const},
-            {"struct", TokenType::keyword_struct},
-            {"var", TokenType::keyword_var},
-            {"break", TokenType::keyword_break},
-            {"continue", TokenType::keyword_continue},
-            {"size_of", TokenType::keyword_size_of},
-    };
-
     constexpr Lexer(std::string &&input, std::string &&file_name,
                              FILE *log)
         : file_name_{std::move(file_name)}, input_{std::move(input)}, log{log} {
@@ -84,6 +63,8 @@ public:
     std::string_view file_name() const {
         return file_name_;
     }
+
+    void tokenize_until_eof();
 
 private:
     struct ParseNumberResult {
