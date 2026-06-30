@@ -23,9 +23,9 @@ using usize = size_t;
 using uintptr = uintptr_t;
 using intptr = intptr_t;
 
-constexpr auto kilobytes(auto value) { return value * 1024; }
-constexpr auto megabytes(auto value) { return kilobytes(value) * 1024; }
-constexpr auto gigabytes(auto value) { return megabytes(value) * 1024; }
-constexpr auto terabytes(auto value) { return gigabytes(value) * 1024; }
+constexpr u64 kilobytes(u64 value) { return value * 1024; }
+constexpr u64 megabytes(u64 value) { return kilobytes(value) * 1024; }
+constexpr u64 gigabytes(u64 value) { return megabytes(value) * 1024; }
+constexpr u64 terabytes(u64 value) { return gigabytes(value) * 1024; }
 
 #endif

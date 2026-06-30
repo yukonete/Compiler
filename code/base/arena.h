@@ -1,6 +1,7 @@
-#ifndef ARENA_H_
-#define ARENA_H_
+#ifndef BASE_ARENA_H
+#define BASE_ARENA_H
 
+#include <memory>
 #include <print>
 #include <span>
 #include <utility>
@@ -36,24 +37,6 @@ struct Arena : public AllocatorInterface<Arena> {
     void free(void *pointer, usize size);
     void free_all();
 
-    Allocator create_allocator() {
-        return Allocator{this, Allocator::default_allocator_func<Arena>};
-    }
-    
-    struct TempMemory {
-        TempMemory(Arena &arena) 
-            : arena_{arena}, previous_offset{arena.offset()} {}
-        TempMemory(const TempMemory &other) = delete;
-        TempMemory(TempMemory &&other) = delete;
-
-        ~TempMemory();
-    private:
-        Arena &arena_;
-        usize previous_offset;
-    };
-
-    friend TempMemory;
-
 private:
     std::span<u8> data_;
     usize offset_ = 0;
@@ -69,13 +52,14 @@ private:
 struct DynamicArena : public AllocatorInterface<DynamicArena> {
     constexpr static auto DEFAULT_BLOCK_SIZE = megabytes(2);
 
-    constexpr DynamicArena(Allocator allocator, 
-                           usize block_size = DEFAULT_BLOCK_SIZE) 
-    :  allocator_{allocator}, block_size_{block_size} {
+    constexpr DynamicArena(const std::pmr::polymorphic_allocator<u8>
+                               &allocator = std::pmr::get_default_resource(),
+                           usize block_size = DEFAULT_BLOCK_SIZE)
+        : allocator_{allocator}, block_size_{block_size} {
     }
     constexpr DynamicArena(const DynamicArena&) = delete;
     constexpr DynamicArena(DynamicArena &&other) 
-        : allocator_{other.allocator_}
+        : allocator_{std::move(other.allocator_)}
         , block_size_{other.block_size_}
         , first_{std::exchange(other.first_, nullptr)}
         , last_{std::exchange(other.last_, nullptr)}
@@ -94,10 +78,6 @@ struct DynamicArena : public AllocatorInterface<DynamicArena> {
     void free(void *pointer, usize size);
     void free_all();
 
-    Allocator create_allocator() {
-        return Allocator{this, Allocator::default_allocator_func<DynamicArena>};
-    }
-
 private:
     bool add_block(usize size);
 
@@ -106,9 +86,9 @@ private:
         MemoryBlock *next = nullptr;
     };
 
-    static constexpr auto MEMORY_BLOCK_HEADER_SIZE = round(sizeof(MemoryBlock), DEFAULT_ALIGNMENT);
+    static constexpr auto MEMORY_BLOCK_HEADER_SIZE = align_forward(sizeof(MemoryBlock), DEFAULT_ALIGNMENT);
 
-    Allocator allocator_;
+    std::pmr::polymorphic_allocator<u8> allocator_;
     usize block_size_;
 
     MemoryBlock *first_ = nullptr;
@@ -118,14 +98,14 @@ private:
 
 template<usize Size>
 struct Scratch : public AllocatorInterface<Scratch<Size>> {
-    constexpr Scratch(Allocator backing) : backing_{backing} {}
+    constexpr Scratch(const std::pmr::polymorphic_allocator<u8> &backing) : backing_{backing} {}
 
     void *alloc(usize size) {
         auto pointer = inline_.alloc(size);
         if (pointer != nullptr) {
             return pointer;
         }  
-        return backing_.alloc(size);
+        return backing_.allocate_bytes(size);
     }
 
     void free(void *pointer, usize size) {
@@ -133,69 +113,34 @@ struct Scratch : public AllocatorInterface<Scratch<Size>> {
             inline_.free(pointer, size);
             return;
         }
-        backing_.free(pointer, size);
+        backing_.deallocate_bytes(pointer, size);
     }
 
     void free_all() {
         inline_.free_all();
-        backing_.free_all();
-    }
-
-    Allocator create_allocator() {
-        return Allocator{this, Allocator::default_allocator_func<Scratch>};
     }
 
 private:
     InlineArena<Size> inline_;
-    Allocator backing_;
+    std::pmr::polymorphic_allocator<u8> backing_;
 };
 
-// For use with std library
-template<class T>
-struct DynamicArenaAllocator {
-    static_assert(alignof(T) <= DEFAULT_ALIGNMENT);
-    using value_type = T;
-
-    DynamicArena *arena;
-
-    DynamicArenaAllocator(DynamicArena &arena) : arena{&arena} {
-    }
-
-    [[nodiscard]] T* allocate(std::size_t n) {
-        return arena->allocate<T>(n);
-    }
-
-    void deallocate(T* p, std::size_t n) noexcept {
-        return arena->deallocate<T>(p, n);
-    }
-
-    friend bool operator==(const DynamicArenaAllocator& a, const DynamicArenaAllocator& b) {
-        return a.arena == b.arena;
-    }
-
-    friend bool operator!=(const DynamicArenaAllocator& a, const DynamicArenaAllocator& b) {
-        return !(a == b);
-    }
-
-    using is_always_equal = std::false_type;
-    using propagate_on_container_move_assignment = std::true_type;
-    using propagate_on_swap = std::true_type;
-    using propagate_on_container_copy_assignment = std::false_type;
-};
+template <typename T>
+using DynamicArenaAllocator = Allocator<T, DynamicArena>;
 
 template <typename T>
 using DynamicArenaVector = std::vector<T, DynamicArenaAllocator<T>>;
 
-thread_local inline DynamicArena temp_allocator = DynamicArena{NEW_ALLOCATOR};
+thread_local inline DynamicArena temp_dynamic_arena = DynamicArena{};
 
 template <typename T>
-DynamicArenaAllocator<T> std_temp_allocator() {
-    return DynamicArenaAllocator<T>{temp_allocator};
+DynamicArenaAllocator<T> temp_allocator() {
+    return DynamicArenaAllocator<T>{temp_dynamic_arena};
 }
 
 template <typename T>
 DynamicArenaVector<T> make_temp_vector(usize capacity = 0) {
-    auto result = DynamicArenaVector<T>(std_temp_allocator<T>());
+    auto result = DynamicArenaVector<T>(temp_allocator<T>());
     if (capacity != 0) {
         result.reserve(capacity);
     }
@@ -205,7 +150,7 @@ DynamicArenaVector<T> make_temp_vector(usize capacity = 0) {
 using DynamicArenaString = std::basic_string<char, std::char_traits<char>, DynamicArenaAllocator<char>>;
 
 inline DynamicArenaString make_temp_string(usize capacity = 0) {
-    auto result = DynamicArenaString(std_temp_allocator<char>());
+    auto result = DynamicArenaString(temp_allocator<char>());
     if (capacity != 0) {
         result.reserve(capacity);
     }

@@ -145,7 +145,7 @@ bool Typer::add_entity(Scope *scope, Entity *entity, std::string_view name) {
 }
 
 Scope *Typer::create_scope(Scope *parent) {
-    scopes_.push_back(make_allocator_unique<Scope>(scopes_storage_));
+    scopes_.push_back(make_unique_with_allocator<Scope>(scopes_storage_));
     auto new_scope = scopes_.back().get();
     if (parent != nullptr) {
         new_scope->parent = parent;
@@ -963,14 +963,14 @@ void Typer::calculate_size_and_alignment(Type *type) {
                 if (member->type->align > alignment) {
                     alignment = member->type->align;
                 } 
-                size = round(size, member->type->align);
+                size = align_forward(size, member->type->align);
                 size += member->type->size;
             }
             if (size == 0) {
                 size = 1;
                 alignment = 1;
             } else {
-                size = round(size, alignment);
+                size = align_forward(size, alignment);
             }
             struct_type->size = size;
             struct_type->align = alignment;

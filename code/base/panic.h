@@ -1,5 +1,5 @@
-#ifndef PANIC_H
-#define PANIC_H
+#ifndef BASE_PANIC_H
+#define BASE_PANIC_H
 
 #include <cstdio>
 #include <format>

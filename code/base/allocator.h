@@ -1,12 +1,15 @@
-#ifndef ALLOCATOR_H_
-#define ALLOCATOR_H_
+#ifndef BASE_ALLOCATOR_H
+#define BASE_ALLOCATOR_H
 
 #include <span>
 #include <utility>
 #include <cassert>
 #include <memory>
+#include <concepts>
+#include <memory_resource>
 
 #include "base/types.h"
+#include "base/util.h"
 
 constexpr auto DEFAULT_ALIGNMENT = alignof(std::max_align_t);
 
@@ -14,7 +17,8 @@ constexpr bool is_power_of_two(u64 value) {
     return (value & (value - 1)) == 0;
 }
 
-constexpr usize round(usize value, usize round) {
+constexpr u64 align_forward(u64 value, u64 round) {
+    assert(round > 0);
     auto modulo = value % round;
     if (modulo == 0) {
         return value;
@@ -46,150 +50,137 @@ struct AllocatorInterface {
         deallocate(bytes.data(), bytes.size());
     }
 
-    template<typename T, typename ...Args>
-    T* create(Args &&...args) {
+    template <typename T, typename ...Args>
+    T *new_object(Args &&...args) {
         auto pointer = allocate<T>(1);
         if (pointer != nullptr) {
-            new (pointer) T{std::forward<Args>(args)...};
+            new (pointer) T(std::forward<Args>(args)...);
         }
         return pointer;
     }
 
-    template<typename T>
-    void destroy(T *object) {
-        if (object != nullptr) {
-            object->~T();
-            deallocate(object, 1);
+    template <typename T>
+    void delete_object(T *pointer) {
+        if (pointer != nullptr) {
+            pointer->~T();
+            deallocate<T>(pointer, 1);
         }
     }
 };
 
-struct Allocator : public AllocatorInterface<Allocator> {
-    enum class Mode {
-        ALLOC,
-        FREE,
-        FREE_ALL,
-    };
+template <typename A, typename T>
+concept AllocatorOfType = std::same_as<u8, typename std::allocator_traits<A>::value_type>;
 
-    using Func = void*(void *data, Mode mode, usize size, void *old_memory);
+template <typename A, typename ...Args>
+auto *new_object(A &allocator, Args &&...args) {
+    auto pointer = std::allocator_traits<A>::allocate(allocator, 1);
+    std::allocator_traits<A>::construct(allocator, pointer, std::forward<Args>(args)...);
+    return pointer;
+}
 
-    template<typename T>
-    static void *default_allocator_func(void *data, Mode mode, usize size, void *old_memory) {
-        auto allocator_data = static_cast<T*>(data);
-        switch (mode) {
-            using enum Allocator::Mode;
-
-            case ALLOC: {
-                return allocator_data->alloc(size);
-            }
-
-            case FREE: {
-                allocator_data->free(old_memory, size);
-                return nullptr;
-            }
-
-            case FREE_ALL: {
-                allocator_data->free_all();
-                return nullptr;
-            }
-        }    
-        assert(false && "Should not trigger");
-        return nullptr;
-    }
-
-    constexpr Allocator(void *data, Func *func) : func_{func}, data_{data} {}
-
-    void *alloc(usize size) const {
-        return func_(data_, Mode::ALLOC, size, nullptr);
-    }
-
-    void free(void *pointer, usize size) const {
-        func_(data_, Mode::FREE, size, pointer);
-    }
-
-    void free_all() const {
-        func_(data_, Mode::FREE_ALL, 0, nullptr);
-    } 
-
-private:
-    Func *func_;
-    void *data_;
-};
+template <typename A, typename T>
+void delete_object(A &allocator, T *pointer) {
+    std::allocator_traits<A>::destroy(allocator, pointer);
+    std::allocator_traits<A>::deallocate(allocator, pointer, 1);
+}
 
 template <typename T, typename A>
     requires std::derived_from<A, AllocatorInterface<A>>
+struct Allocator {
+    static_assert(
+        alignof(T) <= DEFAULT_ALIGNMENT,
+        "Alignment bigger than DEFAULT_ALIGNMENT is not supported for now");
+    using value_type = T;
+
+    A *allocator;
+
+    constexpr Allocator(A &allocator) noexcept : allocator{&allocator} {
+    }
+
+    [[nodiscard]] T *allocate(std::size_t n) {
+        return allocator->template allocate<T>(n);
+    }
+
+    void deallocate(T *p, std::size_t n) noexcept {
+        return allocator->template deallocate<T>(p, n);
+    }
+
+    constexpr friend bool operator==(const Allocator &a,
+                                     const Allocator &b) noexcept = default;
+    constexpr friend bool operator!=(const Allocator &a,
+                                     const Allocator &b) noexcept {
+        return !(a == b);
+    }
+
+    using is_always_equal = std::false_type;
+    using propagate_on_container_move_assignment = std::true_type;
+    using propagate_on_swap = std::true_type;
+    using propagate_on_container_copy_assignment = std::false_type;
+};
+
+template <typename T, typename A>
 struct AllocatorDeleter {
-    A &allocator;
+    A allocator;
 
-    constexpr AllocatorDeleter(A &allocator) : allocator{allocator} {
+    constexpr AllocatorDeleter(A allocator) : allocator{allocator} {
     }
 
     void operator()(T *pointer) {
-        allocator.destroy(pointer);
+        delete_object(allocator, pointer);
     }
 };
-
-template<typename T>
-struct AllocatorDeleter<T, Allocator> {
-    Allocator allocator;
-
-    constexpr AllocatorDeleter(Allocator allocator) : allocator{allocator} {
-    }
-
-    void operator()(T *pointer) {
-        allocator.destroy(pointer);        
-    }
-};
-
-template<typename T, typename A = Allocator>
-using AllocatorUniquePtr = std::unique_ptr<T, AllocatorDeleter<T, A>>;
 
 template<typename T, typename A>
-AllocatorUniquePtr<T, A> create_allocator_unique_ptr(A &allocator, T *pointer) {
+using AllocatorUniquePtr = std::unique_ptr<T, AllocatorDeleter<T, A>>;
+
+template <typename T, typename A>
+AllocatorUniquePtr<T, A> create_unique_ptr_with_allocator(const A &allocator,
+                                                          T *pointer)
+    requires(!std::derived_from<A, AllocatorInterface<A>>)
+{
     return AllocatorUniquePtr{pointer, AllocatorDeleter<T, A>{allocator}};
 }
 
-template<typename T>
-AllocatorUniquePtr<T> create_allocator_unique_ptr(Allocator allocator, T *pointer) {
-    return AllocatorUniquePtr{pointer, AllocatorDeleter<T, Allocator>{allocator}};
+template <typename T, typename A>
+AllocatorUniquePtr<T, Allocator<T, A>> create_unique_ptr_with_allocator(A &allocator_like,
+                                                          T *pointer)
+    requires std::derived_from<A, AllocatorInterface<A>>
+{
+    return create_unique_ptr_with_allocator(Allocator<T, A>{allocator_like}, pointer);
 }
 
-template<typename T, typename A, typename ...Args>
-AllocatorUniquePtr<T, A> make_allocator_unique(A &allocator, Args &&...args) {
-    auto object = allocator.template create<T>(std::forward<Args>(args)...);
-    return create_allocator_unique_ptr(allocator, object);
+template <typename T, typename A, typename... Args>
+AllocatorUniquePtr<T, A> make_unique_with_allocator(A allocator, Args &&...args)
+    requires (!std::derived_from<A, AllocatorInterface<A>>)
+{
+    auto object = new_object(allocator, std::forward<Args>(args)...);
+    return create_unique_ptr_with_allocator(allocator, object);
 }
 
-template<typename T, typename ...Args>
-AllocatorUniquePtr<T> make_allocator_unique(Allocator allocator, Args &&...args) {
-    auto object = allocator.create<T>(std::forward<Args>(args)...);
-    return create_allocator_unique_ptr(allocator, object);
+template <typename T, typename A, typename... Args>
+AllocatorUniquePtr<T, Allocator<T, A>> make_unique_with_allocator(A &allocator_like,
+                                                    Args &&...args)
+    requires std::derived_from<A, AllocatorInterface<A>>
+{
+    return make_unique_with_allocator<T>(Allocator<T, A>{allocator_like}, std::forward<Args>(args)...);
 }
 
-constexpr inline auto NEW_ALLOCATOR = Allocator{
-    nullptr,
-    [](void *, Allocator::Mode mode, usize size, void *old_memory) -> void * {
-        switch (mode) {
-            using enum Allocator::Mode;
+template <typename A>
+    requires std::derived_from<A, AllocatorInterface<A>>
+struct MemoryResource : public std::pmr::memory_resource {
+    A *allocator;
 
-            case ALLOC: {
-                if (size == 0) {
-                    return nullptr;
-                }
-                return new u8[size]{};
-            }
+    constexpr MemoryResource(A &allocator) noexcept : allocator{&allocator} {  
+    }
 
-            case FREE: {
-                delete[] static_cast<u8 *>(old_memory);
-                return nullptr;
-            }
+private:
+    void *do_allocate(std::size_t bytes, std::size_t alignment) override {
+        assert(alignment <= DEFAULT_ALIGNMENT);
+        return allocator->template allocate<u8>(bytes);
+    }
 
-            case FREE_ALL: {
-                return nullptr;
-            }
-        }
-        assert(false && "Should not trigger");
-        return nullptr;
+    void do_deallocate(void *p, std::size_t bytes, std::size_t alignment) noexcept override {
+        allocator->template deallocate<u8>(p, bytes);
     }
 };
 

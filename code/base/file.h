@@ -1,5 +1,5 @@
-#ifndef FILE_H_
-#define FILE_H_
+#ifndef BASE_FILE_H
+#define BASE_FILE_H
 
 #include <string>
 #include <filesystem>

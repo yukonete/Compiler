@@ -149,4 +149,13 @@ constexpr std::string_view token_type_to_string(TokenType type) {
     return "unknown";
 }
 
+template <>
+struct std::formatter<TokenType> : public std::formatter<std::string_view> {
+    template <class FmtContext>
+    FmtContext::iterator format(TokenType type, FmtContext &ctx) const {
+        return std::formatter<std::string_view>::format(
+            token_type_to_string(type), ctx);
+    }
+};
+
 #endif

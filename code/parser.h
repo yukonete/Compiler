@@ -28,13 +28,12 @@ enum class Precedence {
 
 class Parser {
 public:
-    constexpr Parser(Lexer &&lexer, Allocator allocator)
-        : lexer{std::move(lexer)}, nodes_storage_{allocator} {}
+    constexpr Parser(Lexer &&lexer)
+        : lexer{std::move(lexer)} {}
 
-    static Maybe<Parser> open(std::string &&path,
-                                      Allocator allocator, FILE *log = stderr) {
-        return Lexer::open(std::move(path), log).transform([&](Lexer &&lexer) {
-            return Parser{std::move(lexer), allocator};
+    static Maybe<Parser> open(std::string &&path, FILE *log = stderr) {
+        return Lexer::open(std::move(path), log).transform([](Lexer &&lexer) {
+            return Parser{std::move(lexer)};
         });
     }
 
@@ -44,7 +43,7 @@ public:
     NodeType *New(Args &&...args) 
         requires TriviallyDestructible<NodeType>
     {
-        return nodes_storage_.create<NodeType>(std::forward<Args>(args)...);
+        return nodes_storage_.new_object<NodeType>(std::forward<Args>(args)...);
     };
 
     template<typename NodeType>

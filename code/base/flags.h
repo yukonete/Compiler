@@ -1,5 +1,5 @@
-#ifndef FLAGS_H
-#define FLAGS_H
+#ifndef BASE_FLAGS_H
+#define BASE_FLAGS_H
 
 #include <type_traits>
 

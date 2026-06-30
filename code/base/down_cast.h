@@ -1,5 +1,5 @@
-#ifndef DOWN_CAST_H
-#define DOWN_CAST_H
+#ifndef BASE_DOWN_CAST_H
+#define BASE_DOWN_CAST_H
 
 #include <concepts>
 

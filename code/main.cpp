@@ -18,7 +18,7 @@ int main(int argc, char **argv) {
         input = argv[1];
     }
 
-    auto parser = Ast::Parser::open(std::string{input}, NEW_ALLOCATOR)
+    auto parser = Ast::Parser::open(std::string{input})
                       .value_or_else([input]() -> Ast::Parser {
                           std::println("Could not open/read file {}.", input);
                           std::exit(1);
@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
         std::println("{}", node_string);
     }
 
-    auto typer = Typing::Typer{parser, NEW_ALLOCATOR};
+    auto typer = Typing::Typer{parser};
 	typer.do_typing();
 
     return 0;

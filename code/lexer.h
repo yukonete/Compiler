@@ -98,13 +98,4 @@ public:
     bool report_only_first_syntax_error = true;
 };
 
-template <>
-struct std::formatter<TokenType> : std::formatter<std::string_view> {
-    template <class FmtContext>
-    FmtContext::iterator format(TokenType type, FmtContext &ctx) const {
-        return std::formatter<std::string_view>::format(
-            token_type_to_string(type), ctx);
-    }
-};
-
 #endif

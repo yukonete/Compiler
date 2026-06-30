@@ -41,7 +41,7 @@ void *Arena::alloc(usize size) {
         return nullptr;
     }
 
-    size = round(size, DEFAULT_ALIGNMENT);
+    size = align_forward(size, DEFAULT_ALIGNMENT);
     if (offset_ + size > data_.size()) {
         return nullptr;
     }
@@ -57,7 +57,7 @@ void Arena::free(void *pointer, usize size) {
     if (pointer == nullptr) {
         return;
     }
-    size = round(size, DEFAULT_ALIGNMENT);
+    size = align_forward(size, DEFAULT_ALIGNMENT);
     assert(owns(pointer, size));
     ASAN_POISON_MEMORY_REGION(pointer, size);
     if (static_cast<u8*>(pointer) + size == &data_[offset_]) {
@@ -80,7 +80,7 @@ void *DynamicArena::alloc(usize size) {
         return nullptr;
     }
 
-    size = round(size, DEFAULT_ALIGNMENT);
+    size = align_forward(size, DEFAULT_ALIGNMENT);
     if (current_ == nullptr && !add_block(size)) {
         return nullptr;
     }
@@ -150,7 +150,7 @@ DynamicArena* DynamicArena::drop() {
         auto next = node->next;
         auto memory_block_size = node->arena.size();
         node->~MemoryBlock();
-        allocator_.free(node, MEMORY_BLOCK_HEADER_SIZE + memory_block_size);
+        allocator_.deallocate_bytes(node, MEMORY_BLOCK_HEADER_SIZE + memory_block_size);
         node = next;
     }
 
@@ -165,7 +165,7 @@ bool DynamicArena::add_block(usize size) {
         size = block_size_;
     }
 
-    auto memory_block = allocator_.allocate<u8>(MEMORY_BLOCK_HEADER_SIZE + size);
+    auto memory_block = static_cast<u8*>(allocator_.allocate_bytes(MEMORY_BLOCK_HEADER_SIZE + size));
     if (memory_block == nullptr) {
         return false;
     }
@@ -183,10 +183,4 @@ bool DynamicArena::add_block(usize size) {
     last_->next = block;
     last_ = block;
     return true;
-}
-
-Arena::TempMemory::~TempMemory() {
-    arena_.offset_ = previous_offset;
-    ASAN_POISON_MEMORY_REGION(arena_.data_.data() + arena_.offset(),
-                              arena_.size() - arena_.offset());
 }

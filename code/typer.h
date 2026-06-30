@@ -32,23 +32,22 @@ struct Scope {
 };
 
 struct Typer {
-    constexpr Typer(Ast::Parser &parser, Allocator allocator)
-        : entities_storage_{allocator}, scopes_storage_{allocator},
-          parser_{parser}, file_scope{create_scope(nullptr)} {
+    constexpr Typer(Ast::Parser &parser)
+        : parser_{parser}, file_scope{create_scope(nullptr)} {
     }
 
     template <typename T, typename... Args>
     T *create_entity(Args &&...args)
         requires std::derived_from<T, Entity> && TriviallyDestructible<T>
     {
-        return entities_storage_.create<T>(std::forward<Args>(args)...);
+        return entities_storage_.new_object<T>(std::forward<Args>(args)...);
     }
 
     template <typename T, typename... Args>
     T *create_type(Args &&...args)
         requires std::derived_from<T, Type> && TriviallyDestructible<T>
     {
-        return entities_storage_.create<T>(std::forward<Args>(args)...);
+        return entities_storage_.new_object<T>(std::forward<Args>(args)...);
     }
 
     template <typename T>
@@ -105,7 +104,7 @@ struct Typer {
 private:
     DynamicArena entities_storage_;
     DynamicArena scopes_storage_;
-    std::vector<AllocatorUniquePtr<Scope, DynamicArena>> scopes_;
+    std::vector<AllocatorUniquePtr<Scope, Allocator<Scope, DynamicArena>>> scopes_;
     
     Ast::Parser &parser_;
     std::vector<Entity*> entities_;
