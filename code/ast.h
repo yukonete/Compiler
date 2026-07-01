@@ -535,9 +535,9 @@ struct Type {
     Kind kind;
 };
 
-inline DynamicArenaString type_path_to_string(TypePath path) {
+inline AllocatorString type_path_to_string(TypePath path) {
     assert(path.size() > 0);
-    auto result = make_temp_string();
+    auto result = create_temp_string();
     for (auto i : indices(path.size())) {
         if (i != 0) {
             result += '.';
@@ -564,7 +564,7 @@ struct IdentifierType : public Type {
     constexpr IdentifierType(TypePath path) : Type{KIND}, path{path} {
     }
 
-    DynamicArenaString get_full_type_name() const {
+    AllocatorString get_full_type_name() const {
         return type_path_to_string(path);
     }
 
@@ -680,7 +680,7 @@ void error(Lexer &lexer, Ast::TypePath path, std::format_string<Args...> fmt,
 
 Maybe<TypePath>
 expression_to_type_path(const Expression *expression,
-                        DynamicArenaVector<Identifier *> &out);
+                        AllocatorVector<Identifier *> &out);
 
 }; // namespace Ast
 #endif // #ifndef AST_H

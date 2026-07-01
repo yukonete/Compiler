@@ -72,16 +72,12 @@ struct Maybe {
         return std::forward_like<decltype(self)>(self.value_);
     }
 
-    [[nodiscard]] auto *value_as_ptr(this auto &&self) {
-        return &self.value();
-    }
-
     [[nodiscard]] constexpr auto &&operator*(this auto &&self) {
         return std::forward_like<decltype(self)>(self.value());
     }
 
     [[nodiscard]] constexpr auto *operator->(this auto &&self) {
-        return self.value_as_ptr();
+        return &self.value();
     }
 
     [[nodiscard]] constexpr bool is_valid() const {
@@ -172,28 +168,24 @@ struct Maybe<T> {
         return *this;
     }
 
-    [[nodiscard]] constexpr value_type &value() const {
+    [[nodiscard]] constexpr value_type *value() const {
         assert(is_valid());
-        return *value_;
+        return value_;
     }
 
-    [[nodiscard]] constexpr value_type &expect(std::string_view message) const {
+    [[nodiscard]] constexpr value_type *expect(std::string_view message) const {
         if (!is_valid()) {
             panic("{}", message);
         }
-        return *value_;
+        return value_;
     }
 
-    [[nodiscard]] value_type *value_as_ptr() const {
-        return &value();
-    }
-
-    [[nodiscard]] constexpr value_type &operator*() const {
+    [[nodiscard]] constexpr value_type *operator*() const {
         return value();
     }
 
     [[nodiscard]] constexpr value_type *operator->() const {
-        return value_as_ptr();
+        return value();
     }
 
     [[nodiscard]] constexpr bool is_valid() const {
@@ -280,16 +272,12 @@ struct Maybe<T> {
         return *value_;
     }
 
-    [[nodiscard]] value_type *value_as_ptr() const {
-        return &value();
-    }
-
     [[nodiscard]] constexpr value_type &operator*() const {
         return value();
     }
 
     [[nodiscard]] constexpr value_type *operator->() const {
-        return value_as_ptr();
+        return &value();
     }
 
     [[nodiscard]] constexpr bool is_valid() const {

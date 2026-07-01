@@ -28,12 +28,12 @@ enum class Precedence {
 
 class Parser {
 public:
-    constexpr Parser(Lexer &&lexer)
-        : lexer{std::move(lexer)} {}
+    constexpr Parser(Lexer &&lexer, Allocator allocator)
+        : lexer{std::move(lexer)}, nodes_storage_{allocator} {}
 
-    static Maybe<Parser> open(std::string &&path, FILE *log = stderr) {
-        return Lexer::open(std::move(path), log).transform([](Lexer &&lexer) {
-            return Parser{std::move(lexer)};
+    static Maybe<Parser> open(std::string &&path, Allocator allocator, FILE *log = stderr) {
+        return Lexer::open(std::move(path), log).transform([allocator](Lexer &&lexer) {
+            return Parser{std::move(lexer), allocator};
         });
     }
 

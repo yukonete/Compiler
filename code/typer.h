@@ -28,12 +28,13 @@ struct Scope {
     Maybe<Entity*> look_up(Ast::Identifier *identifier) const;
     Maybe<Entity*> look_up(Ast::TypePath path) const;
     
-    DynamicArenaString full_name() const;
+    AllocatorString full_name() const;
 };
 
 struct Typer {
-    constexpr Typer(Ast::Parser &parser)
-        : parser_{parser}, file_scope{create_scope(nullptr)} {
+    constexpr Typer(Ast::Parser &parser, Allocator allocator)
+        : entities_storage_{allocator}, scopes_storage_{allocator},
+          parser_{parser}, file_scope{create_scope(nullptr)} {
     }
 
     template <typename T, typename... Args>
@@ -77,14 +78,14 @@ struct Typer {
                                          Ast::Statement *statement);
 
     bool check_for_recursive_type(Scope *scope, const Type *type,
-                                  DynamicArenaVector<const Entity *> &path);
+                                  AllocatorVector<const Entity *> &path);
     bool check_for_recursive_declaration(const Entity *entity,
-                                         DynamicArenaVector<const Entity *> &path);
+                                         AllocatorVector<const Entity *> &path);
     bool check_for_recursive_expression(Scope *scope,
                                         Ast::Expression *expression,
-                                        DynamicArenaVector<const Entity *> &path);
+                                        AllocatorVector<const Entity *> &path);
     bool check_for_recursive_statement(Scope *scope, Ast::Statement *statement,
-                                       DynamicArenaVector<const Entity *> &path);
+                                       AllocatorVector<const Entity *> &path);
 
     bool do_typing();
 
@@ -104,7 +105,7 @@ struct Typer {
 private:
     DynamicArena entities_storage_;
     DynamicArena scopes_storage_;
-    std::vector<AllocatorUniquePtr<Scope, Allocator<Scope, DynamicArena>>> scopes_;
+    std::vector<AllocatorUniquePtr<Scope>> scopes_;
     
     Ast::Parser &parser_;
     std::vector<Entity*> entities_;

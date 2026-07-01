@@ -150,7 +150,7 @@ DynamicArena* DynamicArena::drop() {
         auto next = node->next;
         auto memory_block_size = node->arena.size();
         node->~MemoryBlock();
-        allocator_.deallocate_bytes(node, MEMORY_BLOCK_HEADER_SIZE + memory_block_size);
+        allocator_.free(node, MEMORY_BLOCK_HEADER_SIZE + memory_block_size);
         node = next;
     }
 
@@ -165,7 +165,7 @@ bool DynamicArena::add_block(usize size) {
         size = block_size_;
     }
 
-    auto memory_block = static_cast<u8*>(allocator_.allocate_bytes(MEMORY_BLOCK_HEADER_SIZE + size));
+    auto memory_block = allocator_.allocate<u8>(MEMORY_BLOCK_HEADER_SIZE + size);
     if (memory_block == nullptr) {
         return false;
     }

@@ -9,8 +9,8 @@
 #include "base/arena.h"
 
 template <typename... Args>
-DynamicArenaString tformat(std::format_string<Args...> fmt, Args &&...args) {
-    auto buffer = make_temp_string();
+AllocatorString tformat(std::format_string<Args...> fmt, Args &&...args) {
+    auto buffer = create_temp_string();
     std::format_to(std::back_inserter(buffer), fmt, std::forward<Args>(args)...);
     return buffer;
 }

@@ -170,7 +170,7 @@ Token Type::end_token() const {
 
 Maybe<TypePath>
 expression_to_type_path(const Expression *expression,
-                        DynamicArenaVector<Identifier*> &out) {
+                        AllocatorVector<Identifier*> &out) {
     auto type_path_from_expression =
         [&out](this auto &&self,
                      const Ast::Expression *expression) -> bool {
