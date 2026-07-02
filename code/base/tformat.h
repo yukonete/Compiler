@@ -10,7 +10,7 @@
 
 template <typename... Args>
 AllocatorString tformat(std::format_string<Args...> fmt, Args &&...args) {
-    auto buffer = create_temp_string();
+    auto buffer = create_temp_string(fmt.get().size());
     std::format_to(std::back_inserter(buffer), fmt, std::forward<Args>(args)...);
     return buffer;
 }

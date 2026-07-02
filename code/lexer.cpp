@@ -3,9 +3,11 @@
 #include <string_view>
 #include <cassert>
 
+#include "base/allocator.h"
 #include "base/util.h"
 #include "base/panic.h"
 #include "lexer.h"
+#include "base/tformat.h"
 
 struct Keyword {
     TokenType token_type = TokenType::invalid;
@@ -40,14 +42,35 @@ static TokenType check_identifier_for_keyword(std::string_view identifier) {
     return TokenType::identifier;
 }
 
+AllocatorString Lexer::location_to_report_string(const FileLocation &location) const {
+    return tformat("{}({}:{})", file_name_, location.line, location.column);
+}
+
+AllocatorString
+Lexer::token_to_location_string(const Token &token) const {
+    auto location = byte_position_to_file_location(token.start);
+    return location_to_report_string(location);
+}
+
+FileLocation Lexer::byte_position_to_file_location(u64 byte_position) const {
+    auto search = std::ranges::lower_bound(new_lines, byte_position);
+    auto line_number =
+        static_cast<u64>(std::distance(new_lines.begin(), search)) + 1;
+    auto new_line_position = [&]() -> u64 {
+        if (search == new_lines.begin()) {
+            return 0;
+        }
+        return *std::prev(search) + 1;
+    }();
+    return FileLocation{.line = line_number,
+                        .column = byte_position - new_line_position + 1,
+                        .byte = byte_position};
+}
+
 std::string_view Lexer::get_line(u64 byte) const {
     if (byte >= input_.size()) {
         return {};
     }
-
-    // new line is not a token and byte is byte position of the token
-    // so it should never be new line
-    assert(!is_new_line(input_[byte]));
 
     if (byte == 0) {
         for (auto i : indices(input_.size())) {
@@ -62,14 +85,23 @@ std::string_view Lexer::get_line(u64 byte) const {
         if (is_new_line(input_[i])) {
             start = i + 1;
             break;
-        } 
+        }
     }
 
     u64 end = input_.size();
-    for (auto i : iota(byte + 1, input_.size())) {
-        if (is_new_line(input_[i])) {
-            end = i;
-            break;
+    if (is_new_line(input_[byte])) {
+        // dont include '\r' in resulting string
+        if (input_[byte - 1] == '\r') {
+            end = byte - 1;
+        } else {
+            end = byte;
+        }
+    } else {
+        for (auto i : iota(byte + 1, input_.size())) {
+            if (is_new_line(input_[i])) {
+                end = i;
+                break;
+            }
         }
     }
 
@@ -117,7 +149,7 @@ void Lexer::tokenize() {
     auto ch = peek_next_char();
 
     Token token;
-    token.start = current_location_;
+    token.start = input_cursor_;
 
     switch (ch) {
         case '=': {
@@ -372,10 +404,8 @@ void Lexer::tokenize() {
         }
     }
 
-    token.end = current_location_;
-    token.end.column -= 1;
-    token.end.byte -= 1;
-    assert(token.end.column != 0);
+    assert(input_cursor_ != 0);
+    token.end = input_cursor_ - 1;
     tokens_.push_back(token);
 }
 
@@ -390,7 +420,7 @@ int Lexer::peek_next_char() const {
     return peek_char(0);
 }
 
-int Lexer::peek_char(usize peek) const {
+int Lexer::peek_char(u64 peek) const {
     auto index = input_cursor_ + peek;
     if (index >= input_.size()) {
         return -1;
@@ -402,16 +432,11 @@ int Lexer::peek_char(usize peek) const {
 void Lexer::eat_char() {
     const auto ch = peek_next_char();
     if (is_new_line(ch)) {
-        current_location_.line += 1;
-        current_location_.column = 1;
         if (ch == '\r') {
-            current_location_.byte += 1;
             input_cursor_ += 1;
         }
-    } else {
-        current_location_.column += 1;
+        new_lines.push_back(input_cursor_);
     }
-    current_location_.byte += 1;
     input_cursor_ += 1;
 }
 
@@ -527,9 +552,7 @@ void Lexer::skip_whitespaces_and_comments() {
 
 const Token &Lexer::get_token_before(u64 byte) const {
     auto token =
-        std::ranges::lower_bound(tokens_, byte, {}, [](const Token &token) {
-            return token.start.byte;
-        });
+        std::ranges::lower_bound(tokens_, byte, {}, &Token::start);
 
     assert(token != tokens_.end());
     assert(token != tokens_.begin());

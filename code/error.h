@@ -10,8 +10,6 @@
 void highlight_token_on_line(Lexer &lexer, const FileLocation &start,
                              const FileLocation &end);
 
-void highlight_token_on_line(Lexer &lexer, const Token &token);
-
 template <typename... Args>
 void error_no_line(Lexer &lexer, const FileLocation &location,
                    std::format_string<Args...> fmt, Args &&...args) {
@@ -30,11 +28,13 @@ void error_no_line(Lexer &lexer, const FileLocation &location,
 }
 
 template <typename... Args>
-void error(Lexer &lexer, const FileLocation &start, const FileLocation &end,
-           std::format_string<Args...> fmt, Args &&...args) {
-    error_no_line(lexer, start, fmt, std::forward<Args>(args)...);
+void error(Lexer &lexer, u64 start, u64 end, std::format_string<Args...> fmt,
+           Args &&...args) {
+    auto start_location = lexer.byte_position_to_file_location(start);
+    auto end_location = lexer.byte_position_to_file_location(end);
+    error_no_line(lexer, start_location, fmt, std::forward<Args>(args)...);
     if (!lexer.report_only_first_error || lexer.error_count == 1) {
-        highlight_token_on_line(lexer, start, end);
+        highlight_token_on_line(lexer, start_location, end_location);
     }
 }
 
@@ -57,10 +57,12 @@ void warning_no_line(Lexer &lexer, const FileLocation &location,
 }
 
 template <typename... Args>
-void warning(Lexer &lexer, const FileLocation &start, const FileLocation &end,
-             std::format_string<Args...> fmt, Args &&...args) {
-    warning_no_line(lexer, start, fmt, std::forward<Args>(args)...);
-    highlight_token_on_line(lexer, start, end);
+void warning(Lexer &lexer, u64 start, u64 end, std::format_string<Args...> fmt,
+             Args &&...args) {
+    auto start_location = lexer.byte_position_to_file_location(start);
+    auto end_location = lexer.byte_position_to_file_location(end);
+    warning_no_line(lexer, start_location, fmt, std::forward<Args>(args)...);
+    highlight_token_on_line(lexer, start_location, end_location);
 }
 
 template <typename... Args>
@@ -86,12 +88,13 @@ void syntax_error_no_line(Lexer &lexer, const FileLocation &location,
 }
 
 template <typename... Args>
-void syntax_error(Lexer &lexer, const FileLocation &start,
-                  const FileLocation &end, std::format_string<Args...> fmt,
+void syntax_error(Lexer &lexer, u64 start, u64 end, std::format_string<Args...> fmt,
                   Args &&...args) {
-    syntax_error_no_line(lexer, start, fmt, std::forward<Args>(args)...);
+    auto start_location = lexer.byte_position_to_file_location(start);
+    auto end_location = lexer.byte_position_to_file_location(end);
+    syntax_error_no_line(lexer, start_location, fmt, std::forward<Args>(args)...);
     if (!lexer.report_only_first_syntax_error || lexer.error_count == 1) {
-        highlight_token_on_line(lexer, start, end);
+        highlight_token_on_line(lexer, start_location, end_location);
     }
 }
 

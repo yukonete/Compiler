@@ -63,8 +63,8 @@ Maybe<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
             return search->second;
         }
 
-        auto declaration_position = variable->declaration->end_token().end.byte;
-        auto usage_position = identifier->token.start.byte;
+        auto declaration_position = variable->declaration->end_token().end;
+        auto usage_position = identifier->token.start;
         if (usage_position > declaration_position) {
             return search->second;
         }
@@ -1047,12 +1047,9 @@ void Typer::not_declared_error(Ast::TypePath path) {
 void Typer::redeclaration_error(Entity *old_entity, Entity *new_entity) {
     auto old_declaration = old_entity->declaration;
     auto new_declaration = new_entity->declaration;
-    error(parser_.lexer, new_declaration,
-            "Redeclaration of '{}'\n    at {}({}:{})",
-            new_declaration->identifier->token.value,
-            parser_.lexer.file_name(),
-            old_declaration->start_token().start.line,
-            old_declaration->start_token().start.column);
+    auto old_declaration_token = old_declaration->start_token();
+    error(parser_.lexer, new_declaration, "Redeclaration of '{}'\n    at {}",
+          new_declaration->identifier->token.value,
+          parser_.lexer.token_to_location_string(old_declaration_token));
 }
-
 }

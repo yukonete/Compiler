@@ -8,9 +8,12 @@
 #include <concepts>
 #include <vector>
 #include <string>
+#include <cstring>
 
 #include "base/types.h"
 #include "base/util.h"
+
+static_assert(std::same_as<u8, unsigned char>);
 
 constexpr auto DEFAULT_ALIGNMENT = alignof(std::max_align_t);
 
@@ -124,11 +127,13 @@ constexpr inline auto NEW_ALLOCATOR = Allocator{
                 if (size == 0) {
                     return nullptr;
                 }
-                return new u8[size]{};
+                auto pointer = operator new (size, std::nothrow_t{});
+                std::memset(pointer, 0, size);
+                return pointer;
             }
 
             case FREE: {
-                delete[] static_cast<u8 *>(old_memory);
+                operator delete (old_memory, size);
                 return nullptr;
             }
 

@@ -13,6 +13,7 @@
 #include <iterator>
 #include <print>
 
+#include "base/allocator.h"
 #include "base/file.h"
 #include "base/types.h"
 #include "token.h"
@@ -66,15 +67,19 @@ public:
 
     void tokenize_until_eof();
 
+    FileLocation byte_position_to_file_location(u64 byte_position) const;
+    AllocatorString location_to_report_string(const FileLocation &location) const;
+    AllocatorString token_to_location_string(const Token &token) const;
+
 private:
     struct ParseNumberResult {
         std::string_view value;
-        TokenType type; // integer or float
+        TokenType type = TokenType::invalid; // integer or float
     };
 
     void tokenize();
     int peek_next_char() const;
-    int peek_char(usize peek) const;
+    int peek_char(u64 peek) const;
     void eat_char();
     Maybe<ParseNumberResult> parse_number();
     std::string_view parse_identifier();
@@ -85,12 +90,12 @@ private:
     std::string file_name_;
     
     std::string input_;
-    usize input_cursor_ = 0;
+    u64 input_cursor_ = 0;
 
     std::vector<Token> tokens_;
     usize tokens_cursor_ = 0;
     
-    FileLocation current_location_ = {.line = 1, .column = 1, .byte = 0};
+    std::vector<u64> new_lines; 
 public:
     FILE *log = nullptr;
     u64 error_count = 0;

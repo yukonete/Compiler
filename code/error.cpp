@@ -25,6 +25,6 @@ void highlight_token_on_line(Lexer &lexer, const FileLocation &start,
     std::println(lexer.log, "");
 }
 
-void highlight_token_on_line(Lexer &lexer, const Token &token) {
-    highlight_token_on_line(lexer, token.start, token.end);
-}
+// void highlight_token_on_line(Lexer &lexer, const Token &token) {
+//     highlight_token_on_line(lexer, token.start, token.end);
+// }

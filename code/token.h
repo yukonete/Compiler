@@ -79,8 +79,8 @@ struct FileLocation {
 
 struct Token {
     TokenType type = TokenType::invalid;
-    FileLocation start;
-    FileLocation end;
+    u64 start = 0;
+    u64 end = 0;
     std::string_view value;
 };
 
