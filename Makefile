@@ -1,6 +1,6 @@
 CONFIG ?= debug
 
-CXXFLAGS = -std=c++23 -Wall -Wextra -fhardened -pedantic -MMD -MP -fno-exceptions -Wsign-conversion
+CXXFLAGS = -std=c++23 -Wall -Wextra -fhardened -pedantic -fno-exceptions -Wsign-conversion
 INCLUDE = -Icode/
 LINK=-lstdc++exp
 
@@ -25,16 +25,20 @@ DEPS := $(OBJS:.o=.d)
 TARGET_DIR = $(CONFIGURATION_DIR)bin/
 TARGET = $(TARGET_DIR)compiler
 
-.PHONY: debug
+.PHONY: build
 
-debug: $(TARGET)
+build: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(TARGET) $(LINK)
 
 $(OBJDIR)%.o : %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@ -MMD -MP 
+
+.PHONY: unity
+unity: 
+	$(CXX) $(CXXFLAGS) unity.cpp  $(INCLUDE) $(LINK) -o $(TARGET)
 
 -include $(DEPS)
 

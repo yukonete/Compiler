@@ -1,0 +1,7 @@
+#include "code/base/arena.cpp"
+#include "code/ast.cpp"
+#include "code/error.cpp"
+#include "code/lexer.cpp"
+#include "code/parser.cpp"
+#include "code/typer.cpp"
+#include "code/main.cpp"
