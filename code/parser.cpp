@@ -6,19 +6,17 @@
 #include <string_view>
 #include <vector>
 
-#include "base/panic.h"
 #include "ast.h"
+#include "base/panic.h"
+#include "error.h"
 #include "lexer.h"
 #include "parser.h"
-#include "error.h"
 
 namespace Ast {
 
 bool Parser::parse_program() {
     while (true) {
-        auto token = lexer.next_token();
-
-        if (token.type == TokenType::eof) {
+        if (next_token_is(TokenType::eof)) {
             break;
         }
 
@@ -49,15 +47,13 @@ Statement *Parser::parse_statement() {
         }
 
         case keyword_break: {
-            auto break_statement =
-                New<BreakStatement>(expect_token(TokenType::keyword_break));
+            auto break_statement = New<BreakStatement>(expect_token(TokenType::keyword_break));
             expect_token(TokenType::semicolon);
             return break_statement;
         }
 
         case keyword_continue: {
-            auto continue_statement = New<ContinueStatement>(
-                expect_token(TokenType::keyword_continue));
+            auto continue_statement = New<ContinueStatement>(expect_token(TokenType::keyword_continue));
             expect_token(TokenType::semicolon);
             return continue_statement;
         }
@@ -74,10 +70,10 @@ Statement *Parser::parse_statement() {
         case integer:
         case string:
         case float_literal:
+        case open_paren:
         // Unary operators
         case keyword_cast:
         case keyword_size_of:
-        case open_paren:
         case ampersand:
         case star:
         case plus:
@@ -85,24 +81,21 @@ Statement *Parser::parse_statement() {
         case bang: {
             // Those are essentially "simple" statements
             // Might move that to separate function
-            auto expression = parse_expression();
-            if (next_token_is(TokenType::assign) ||
-                next_token_is(TokenType::plus_assign) ||
-                next_token_is(TokenType::minus_assign) ||
-                next_token_is(TokenType::divide_assign) ||
-                next_token_is(TokenType::multiply_assign) ||
-                next_token_is(TokenType::modulo_assign)) {
+            auto expression = parse_expression(Precedence::lowest, true);
+            if (next_token_is(TokenType::assign) || next_token_is(TokenType::plus_assign) ||
+                next_token_is(TokenType::minus_assign) || next_token_is(TokenType::divide_assign) ||
+                next_token_is(TokenType::multiply_assign) || next_token_is(TokenType::modulo_assign)) {
                 auto assign_token = lexer.next_token();
                 lexer.eat_token();
                 auto value = parse_expression();
                 expect_token(TokenType::semicolon);
-                return New<AssignmentStatement>(expression, assign_token, value);    
+                return New<AssignmentStatement>(expression, assign_token, value);
             }
 
             expect_token(TokenType::semicolon);
             return New<ExpressionStatement>(expression);
         }
-        
+
         case invalid:
         case divide:
         case modulo:
@@ -156,11 +149,8 @@ Declaration *Parser::parse_declaration() {
         using enum TokenType;
 
         case keyword_var: return parse_variable_declaration();
-
         case keyword_fn: return parse_procedure_declaration();
-
         case keyword_const: return parse_constant_declaration();
-
         case keyword_type: return parse_type_declaration();
 
         default: panic("parse_declaratin should be called with delcaration");
@@ -170,7 +160,7 @@ Declaration *Parser::parse_declaration() {
 ConstDeclaration *Parser::parse_constant_declaration() {
     auto const_token = expect_token(TokenType::keyword_const);
     auto identifier = parse_identifier();
-    auto type = Maybe<Type*>{};
+    auto type = Maybe<Type *>{};
     if (next_token_is(TokenType::colon)) {
         lexer.eat_token();
         type = parse_type();
@@ -185,13 +175,13 @@ VariableDeclaration *Parser::parse_variable_declaration() {
     auto var_token = expect_token(TokenType::keyword_var);
     auto identifier = parse_identifier();
 
-    auto type = Maybe<Type*>{};
+    auto type = Maybe<Type *>{};
     if (next_token_is(TokenType::colon)) {
         lexer.eat_token();
         type = parse_type();
     }
 
-    auto value = Maybe<Expression*>{};
+    auto value = Maybe<Expression *>{};
     if (next_token_is(TokenType::assign)) {
         lexer.eat_token();
         value = parse_expression();
@@ -200,18 +190,20 @@ VariableDeclaration *Parser::parse_variable_declaration() {
     expect_token(TokenType::semicolon);
 
     if (!type && !value) {
-        syntax_error(lexer, var_token, "Variable declaration has no type and value."
-            " At least one should be specified");
+        syntax_error(lexer, var_token,
+                     "Variable declaration has no type and value."
+                     " At least one should be specified");
     }
 
-    return New<VariableDeclaration>(var_token, identifier, type, value);;
+    return New<VariableDeclaration>(var_token, identifier, type, value);
+    ;
 }
 
 TypeDeclaration *Parser::parse_type_declaration() {
     auto type_token = expect_token(TokenType::keyword_type);
     auto identifier = parse_identifier();
     expect_token(TokenType::assign);
-    auto type = parse_type();
+    auto type = parse_type(true);
     expect_token(TokenType::semicolon);
     return New<TypeDeclaration>(type_token, identifier, type);
 }
@@ -227,36 +219,47 @@ ProcedureType *Parser::parse_procedure_type(bool skip_identifier) {
     }
 
     auto open = expect_token(TokenType::open_paren);
-    bool first_parameter = true;
-    auto parameters_temp = create_temp_vector<Field*>();
-    while (!(next_token_is(TokenType::close_paren) ||
-                next_token_is(TokenType::eof))) {
-        if (!first_parameter) {
-            expect_token(TokenType::comma);
-        } else {
-            first_parameter = false;
-        }
+    auto parse_fields = [this]() -> std::span<Field *> {
+        bool first_parameter = true;
+        auto parameters_temp = create_temp_vector<Field *>();
+        while (!(next_token_is(TokenType::close_paren) || next_token_is(TokenType::eof))) {
+            if (!first_parameter) {
+                expect_token(TokenType::comma);
+            } else {
+                first_parameter = false;
+            }
 
-        auto identifier = parse_identifier();
-        if (next_token_is(TokenType::colon)) {
-            expect_token(TokenType::colon);
-            auto type = parse_type();
-            auto field = New<Field>(identifier, type);
-            parameters_temp.push_back(field);
-        } else {
-            auto type_path = NewArray<Ast::Identifier>(std::span{&identifier, 1});
-            auto type = New<IdentifierType>(type_path);
-            auto field = New<Field>(nullptr, type);
-            parameters_temp.push_back(field);
+            if (next_token_is(TokenType::identifier) && peek_token_is(TokenType::colon, 1)) {
+                parameters_temp.push_back(parse_field());
+            } else {
+                auto type = parse_type();
+                auto field = New<Field>(nullptr, type);
+                parameters_temp.push_back(field);
+            }
         }
-    }
-    auto parameters = NewArray(std::span{parameters_temp});
+        return NewArray(std::span{parameters_temp});
+    };
+    auto parameters = parse_fields();
     auto close = expect_token(TokenType::close_paren);
 
     auto return_type = Maybe<Type *>{};
     if (next_token_is(TokenType::return_arrow)) {
         lexer.eat_token();
-        return_type = parse_type();
+        if (next_token_is(TokenType::open_paren)) {
+            auto open_return = expect_token(TokenType::open_paren);
+            auto return_values = parse_fields();
+            auto close_return = expect_token(TokenType::close_paren);
+            if (return_values.size() > 0) {
+                return_type = return_values[0]->type;
+            } else {
+                error(lexer, open_return.start, close_return.end, "Expected return type");
+            }
+            if (return_values.size() > 1) {
+                error(lexer, open_return.start, close_return.end, "Multiple return type are not supported");
+            }
+        } else {
+            return_type = parse_type();
+        }
     }
 
     return New<ProcedureType>(fn_token, open, parameters, close, return_type);
@@ -266,7 +269,7 @@ ProcedureDeclaration *Parser::parse_procedure_declaration() {
     expect_token(TokenType::keyword_fn);
     auto identifier = parse_identifier();
     lexer.uneat_token(); // Put identifier back (it is going to be skipped in
-                          // parse_procedure_type)
+                         // parse_procedure_type)
     lexer.uneat_token(); // Put fn back
     auto type = parse_procedure_type(true);
     auto body = parse_block_statement();
@@ -275,21 +278,23 @@ ProcedureDeclaration *Parser::parse_procedure_declaration() {
 
 IfStatement *Parser::parse_if_statement() {
     auto if_token = expect_token(TokenType::keyword_if);
-    auto condition = parse_expression();
+    auto condition = parse_expression(Precedence::lowest, true);
     auto body = parse_block_statement();
     auto else_branch = Maybe<IfStatement::ElseBranch>{};
     if (next_token_is(TokenType::keyword_else)) {
-        else_branch = IfStatement::ElseBranch{
-            expect_token(TokenType::keyword_else),
-            parse_statement(),
-        };
+        auto else_token = expect_token(TokenType::keyword_else);
+        auto statement = parse_statement();
+        if (!statement->is<BlockStatement>() && !statement->is<IfStatement>()) {
+            syntax_error(lexer, statement, "Only block or if statements are allowed after else");
+        }
+        else_branch = IfStatement::ElseBranch{else_token, statement};
     }
     return New<IfStatement>(if_token, condition, body, else_branch);
 }
 
 WhileStatement *Parser::parse_while_statement() {
     auto while_token = expect_token(TokenType::keyword_while);
-    auto condition = parse_expression();
+    auto condition = parse_expression(Precedence::lowest, true);
     auto body = parse_block_statement();
     return New<WhileStatement>(while_token, condition, body);
 }
@@ -301,7 +306,7 @@ Field *Parser::parse_field() {
     return New<Field>(identifier, type);
 }
 
-Type *Parser::parse_type() {
+Type *Parser::parse_type(bool named) {
     const auto &token = lexer.next_token();
     lexer.eat_token();
 
@@ -310,12 +315,12 @@ Type *Parser::parse_type() {
 
         case identifier: {
             lexer.uneat_token();
-            auto path_temp = create_temp_vector<Identifier*>();
+            auto path_temp = create_temp_vector<Identifier *>();
             while (true) {
                 path_temp.push_back(parse_identifier());
                 if (next_token_is(TokenType::dot)) {
                     lexer.eat_token();
-                    continue;    
+                    continue;
                 }
 
                 break;
@@ -334,10 +339,9 @@ Type *Parser::parse_type() {
             auto struct_token = token;
 
             auto open = expect_token(TokenType::open_brace);
-            auto members_temp = create_temp_vector<Field*>();
+            auto members_temp = create_temp_vector<Field *>();
             auto declarations_temp = create_temp_vector<DeclarationStatement *>();
-            while (!(next_token_is(TokenType::close_brace) ||
-                     next_token_is(TokenType::eof))) {
+            while (!(next_token_is(TokenType::close_brace) || next_token_is(TokenType::eof))) {
                 if (next_token_is(TokenType::identifier)) {
                     auto field = parse_field();
                     expect_token(TokenType::semicolon);
@@ -350,9 +354,11 @@ Type *Parser::parse_type() {
                 // variable declaration
                 auto statement = parse_statement();
                 if (!statement->is<DeclarationStatement>()) {
-                    syntax_error(lexer, statement,
-                                 "Expected declaration or struct member");
+                    syntax_error(lexer, statement, "Expected declaration or struct member");
                 } else {
+                    if (!named) {
+                        syntax_error(lexer, statement, "Declarations are not allowed inside unnamed struct");
+                    }
                     declarations_temp.push_back(statement->as<DeclarationStatement>());
                 }
             }
@@ -360,8 +366,7 @@ Type *Parser::parse_type() {
             auto declarations = NewArray(std::span{declarations_temp});
             auto close = expect_token(TokenType::close_brace);
 
-            return New<StructType>(struct_token, open, members, declarations,
-                                   close);
+            return New<StructType>(struct_token, open, members, declarations, close);
         }
 
         case keyword_fn: {
@@ -371,6 +376,11 @@ Type *Parser::parse_type() {
 
         case open_bracket: {
             auto open = token;
+            if (next_token_is(TokenType::close_bracket)) {
+                auto close = expect_token(TokenType::close_bracket);
+                auto element_type = parse_type();
+                return New<SliceType>(open, close, element_type);
+            }
             auto count = parse_expression();
             auto close = expect_token(TokenType::close_bracket);
             auto element_type = parse_type();
@@ -378,8 +388,7 @@ Type *Parser::parse_type() {
         }
 
         default: {
-            syntax_error(lexer, token, "Token \"{}\" can not be parsed as a type",
-                         token.type);
+            syntax_error(lexer, token, "Token \"{}\" can not be parsed as a type", token.type);
             return New<BadType>(token);
         }
     }
@@ -387,7 +396,7 @@ Type *Parser::parse_type() {
 
 ReturnStatement *Parser::parse_return_statement() {
     auto return_token = expect_token(TokenType::keyword_return);
-    auto value = Maybe<Expression*>{};
+    auto value = Maybe<Expression *>{};
     if (!next_token_is(TokenType::semicolon)) {
         value = parse_expression();
     }
@@ -398,8 +407,7 @@ ReturnStatement *Parser::parse_return_statement() {
 BlockStatement *Parser::parse_block_statement() {
     auto open = expect_token(TokenType::open_brace);
     auto statements_temp = create_temp_vector<Statement *>();
-    while (!(next_token_is(TokenType::close_brace) ||
-             next_token_is(TokenType::eof))) {
+    while (!(next_token_is(TokenType::close_brace) || next_token_is(TokenType::eof))) {
         statements_temp.push_back(parse_statement());
     }
     auto statements = NewArray(std::span{statements_temp});
@@ -435,47 +443,37 @@ static Precedence token_type_to_precedense(TokenType type) {
     }
 }
 
-Expression *Parser::parse_unary_expression() {
+Expression *Parser::parse_unary_expression(bool lhs) {
     const auto &token = lexer.next_token();
-    lexer.eat_token();
 
     switch (token.type) {
         using enum TokenType;
 
+        // Operands
         case open_paren: {
+            lexer.eat_token();
             auto expression = parse_expression();
             expect_token(close_paren);
             return expression;
         }
 
         case identifier: {
-            lexer.uneat_token();
             return New<IdentifierExpression>(parse_identifier());
         }
 
-        case keyword_struct: {
-            lexer.uneat_token();
-            auto struct_type = parse_type();
-            auto open = expect_token(TokenType::open_brace);
-            auto values_temp = create_temp_vector<Expression *>();
-            bool first = true;
-            while (!(next_token_is(TokenType::close_brace) ||
-                     next_token_is(TokenType::eof))) {
-                if (!first) {
-                    expect_token(TokenType::comma);
-                } else {
-                    first = false;
-                }
-                values_temp.push_back(parse_expression());
+        case open_brace: {
+            if (lhs) {
+                lexer.eat_token();
+                error(lexer, token, "Expected expression");
+                return New<BadExpression>(token);
             }
-            auto values = NewArray(std::span{values_temp});
-            auto close = expect_token(TokenType::close_brace);
-            return New<StructLiteralExpression>(struct_type, open, values, close);
+            return parse_compound_expression();
         }
 
         case integer: {
             // TODO: Use my own parse integer implementaion
             // For now, this will temporary allocate new string with new
+            lexer.eat_token();
             auto value = std::stoll(std::string{token.value});
             return New<IntegerLiteralExpression>(token, value);
         }
@@ -483,29 +481,33 @@ Expression *Parser::parse_unary_expression() {
         case float_literal: {
             // TODO: Use my own parse float implementaion
             // For now, this will temporary allocate new string
+            lexer.eat_token();
             auto value = std::stod(std::string{token.value});
             return New<FloatLiteralExpression>(token, value);
         }
 
         case keyword_true:
         case keyword_false: {
+            lexer.eat_token();
             auto value = (token.type == keyword_true);
             return New<BoolLiteralExpression>(token, value);
         }
 
+        case string: return New<StringLiteralExpression>(token);
+
+        // Operators
         case plus:
         case minus:
         case bang:
-        case ampersand:
-        case star: {
+        case ampersand: {
+            lexer.eat_token();
             auto op = token;
-            auto right = parse_expression(Precedence::prefix);
+            auto right = parse_expression(Precedence::prefix, lhs);
             return New<UnaryOperatorExpression>(op, right);
         }
 
-        case string: return New<StringLiteralExpression>(token);
-
         case keyword_size_of: {
+            lexer.eat_token();
             auto size_of = token;
             expect_token(TokenType::open_paren);
             auto expression = parse_expression();
@@ -514,25 +516,32 @@ Expression *Parser::parse_unary_expression() {
         }
 
         case keyword_cast: {
+            lexer.eat_token();
             auto cast = token;
             expect_token(TokenType::open_paren);
             auto type = parse_type();
             expect_token(TokenType::close_paren);
-            auto expression = parse_expression(Precedence::prefix);
+            auto expression = parse_expression(Precedence::prefix, lhs);
             return New<CastOperatorExpression>(cast, type, expression);
         }
 
+        // Types
+        // TypeIdentifier is parsed as IdentifierExpression
+        case star:
+        case open_bracket:
+        case keyword_struct: {
+            auto type = parse_type();
+            return New<TypeExpression>(type);
+        }
+
         default: {
-            syntax_error(lexer, token,
-                         "Token \"{}\" can not be parsed as a unary expression",
-                         token.type);
+            syntax_error(lexer, token, "Token \"{}\" can not be parsed as a unary expression", token.type);
             return New<BadExpression>(token);
         }
     }
 }
 
-static Maybe<TypePath>
-expression_to_type_path(Parser &parser, const Expression *expression) {
+static Maybe<TypePath> expression_to_type_path(Parser &parser, const Expression *expression) {
     auto type_path_storage = create_temp_vector<Identifier *>();
     auto type_path = expression_to_type_path(expression, type_path_storage);
     if (type_path) {
@@ -541,16 +550,47 @@ expression_to_type_path(Parser &parser, const Expression *expression) {
     return {};
 }
 
-Expression *Parser::parse_binary_expression(Expression *left) {
+CompoundExpression *Parser::parse_compound_expression(Maybe<Type *> type) {
+    auto open = expect_token(TokenType::open_brace);
+    auto members_temp = create_temp_vector<CompoundFields *>();
+    bool first = true;
+    bool expect_identifier = false;
+    while (!(next_token_is(TokenType::close_brace) || next_token_is(TokenType::eof))) {
+        if (!first) {
+            expect_token(TokenType::comma);
+        } else {
+            first = false;
+        }
+
+        auto identifier = Maybe<Identifier *>{};
+        auto designated = next_token_is(TokenType::identifier) && peek_token_is(TokenType::assign, 1) &&
+                          !peek_token_is(TokenType::assign, 2);
+        if (designated) {
+            expect_identifier = true;
+            identifier = parse_identifier();
+            expect_token(TokenType::assign);
+        }
+        auto expression = parse_expression();
+        auto member = New<CompoundFields>(identifier, expression);
+        if (expect_identifier && !identifier) {
+            syntax_error(lexer, expression, "Mixture of 'field=value' and value elements in literal is not allowed");
+        }
+        members_temp.push_back(member);
+    }
+    auto values = NewArray(std::span{members_temp});
+    auto close = expect_token(TokenType::close_brace);
+    return New<CompoundExpression>(type, open, values, close);
+}
+
+Expression *Parser::parse_binary_expression(Expression *left, bool lhs) {
     const auto &token = lexer.next_token();
     lexer.eat_token();
 
     if (token.type == TokenType::open_paren) {
         auto open = token;
-        auto arguments_temp = create_temp_vector<Expression*>();
+        auto arguments_temp = create_temp_vector<Expression *>();
         bool first_argument = true;
-        while (!(next_token_is(TokenType::close_paren) ||
-                 next_token_is(TokenType::eof))) {
+        while (!(next_token_is(TokenType::close_paren) || next_token_is(TokenType::eof))) {
             if (!first_argument) {
                 expect_token(TokenType::comma);
             } else {
@@ -560,60 +600,89 @@ Expression *Parser::parse_binary_expression(Expression *left) {
         }
         auto arguments = NewArray(std::span{arguments_temp});
         auto close = expect_token(TokenType::close_paren);
-        return New<CallOperatorExpression>(left, open, arguments, close);;
+        return New<CallOperatorExpression>(left, open, arguments, close);
+        ;
     }
 
     if (token.type == TokenType::open_bracket) {
         auto open = token;
-        auto index = parse_expression();
+        Expression *index = nullptr;
+        if (!next_token_is(TokenType::colon)) {
+            index = parse_expression();
+        }
+        if (next_token_is(TokenType::colon)) {
+            auto colon = expect_token(TokenType::colon);
+            Expression *interval_close = nullptr;
+            if (!next_token_is(TokenType::close_bracket)) {
+                interval_close = parse_expression();
+            }
+            auto close = expect_token(TokenType::close_bracket);
+            return New<SliceExpression>(left, open, index, colon, interval_close, close);
+        }
         auto close = expect_token(TokenType::close_bracket);
         return New<IndexExpression>(left, open, index, close);
     }
 
     if (token.type == TokenType::dot) {
         auto dot = token;
+        if (next_token_is(TokenType::star)) {
+            auto star = expect_token(TokenType::star);
+            return New<DerefExpression>(left, dot, star);
+        }
         auto identifier = parse_identifier();
         return New<SelectorExpression>(left, dot, identifier);
     }
 
     if (token.type == TokenType::open_brace) {
-        // struct type is handled in parse_unary_expression()
-        auto type_path_optional = expression_to_type_path(*this, left);
-        if (!type_path_optional) {
-            error(lexer, left, "Not a type");
-            return New<BadExpression>(token);
-        }
-        auto type_path = *type_path_optional;
-        assert(!type_path.empty());
+        assert(!lhs); // Should not be called with lhs
 
-        auto type = New<IdentifierType>(type_path);
-        auto open = token;
-        auto values_temp = create_temp_vector<Expression *>();
-        bool first = true;
-        while (!(next_token_is(TokenType::close_brace) ||
-                    next_token_is(TokenType::eof))) {
-            if (!first) {
-                expect_token(TokenType::comma);
-            } else {
-                first = false;
+        auto is_type_literal = [](const Expression *expression) {
+            switch (expression->kind) {
+                using enum Expression::Kind;
+                case TYPE:
+                case IDENTIFIER:
+                case SELECTOR: return true;
+                default: return false;
             }
-            values_temp.push_back(parse_expression());
+        };
+
+        if (!is_type_literal(left)) {
+            syntax_error(lexer, left, "Not a type literal");
         }
-        auto values = NewArray(std::span{values_temp});
-        auto close = expect_token(TokenType::close_brace);
-        return New<StructLiteralExpression>(type, open, values, close);
+
+        Type *type = nullptr;
+        if (left->is<IdentifierExpression>() || left->is<SelectorExpression>()) {
+            auto type_path = expression_to_type_path(*this, left);
+            if (type_path) {
+                type = New<IdentifierType>(*type_path);
+            }
+        } else if (left->is<TypeExpression>()) {
+            type = left->as<TypeExpression>()->type;
+        }
+        if (type == nullptr) {
+            error(lexer, left, "Not a type");
+            type = New<BadType>(left->start_token());
+        }
+
+        lexer.uneat_token();
+        auto compound = parse_compound_expression(type);
+        assert(compound->type);
+        return compound;
     }
 
     auto op = token;
-    auto right = parse_expression(token_type_to_precedense(token.type));
+    auto right = parse_expression(token_type_to_precedense(token.type), lhs);
     return New<BinaryOperatorExpression>(left, op, right);
 }
 
-Expression *Parser::parse_expression(Precedence precedence) {
-    auto *left = parse_unary_expression();
+Expression *Parser::parse_expression(Precedence precedence, bool lhs) {
+    auto *left = parse_unary_expression(lhs);
 
     while (precedence < token_type_to_precedense(lexer.next_token().type)) {
-        left = parse_binary_expression(left);
+        if (next_token_is(TokenType::open_brace) && lhs) {
+            return left;
+        }
+        left = parse_binary_expression(left, lhs);
     }
 
     return left;
@@ -631,7 +700,11 @@ const Token &Parser::expect_token(TokenType type) {
 }
 
 bool Parser::next_token_is(TokenType type) {
-    return lexer.next_token().type == type;
+    return peek_token_is(type, 0);
+}
+
+bool Parser::peek_token_is(TokenType type, int peek) {
+    return lexer.peek_token(peek).type == type;
 }
 
 static std::string indent(u64 tabs) {
@@ -659,11 +732,10 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
             auto type_struct = type->as<StructType>();
             result += "struct {\n";
             for (auto member : type_struct->members) {
-                result += std::format("{}{};\n", indent(tabs + 1),
-                    declaration_to_string(member, tabs));
+                result += std::format("{}{};\n", indent(tabs + 1), declaration_to_string(member, tabs));
             }
             for (auto declaration : type_struct->declarations) {
-                result += std::format("{}\n", statement_to_string(declaration, tabs+1));
+                result += std::format("{}\n", statement_to_string(declaration, tabs + 1));
             }
             result += indent(tabs);
             result += "}";
@@ -678,9 +750,14 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
 
         case ARRAY: {
             auto type_array = type->as<ArrayType>();
-            result += std::format("[{}]{}", 
-                expression_to_string(type_array->count, tabs),
-                type_to_string(type_array->element_type, tabs));
+            result += std::format("[{}]{}", expression_to_string(type_array->count, tabs),
+                                  type_to_string(type_array->element_type, tabs));
+            break;
+        }
+
+        case SLICE: {
+            auto slice = type->as<SliceType>();
+            result += std::format("[]{}", type_to_string(slice->element_type, tabs));
             break;
         }
 
@@ -699,8 +776,7 @@ std::string type_to_string(const Type *type, u64 tabs, bool include_fn) {
             }
             result += ')';
             if (type_function->return_type) {
-                result += std::format(" -> {}", 
-                    type_to_string(*type_function->return_type, tabs));
+                result += std::format(" -> {}", type_to_string(*type_function->return_type, tabs));
             }
             break;
         }
@@ -731,37 +807,34 @@ std::string statement_to_string(const Statement *type, u64 tabs, bool block_inde
             result += "return";
             if (return_statement->value) {
                 result += std::format(" {}", expression_to_string(*return_statement->value, tabs));
-            } 
+            }
             result += ';';
             break;
         }
 
         case IF: {
             auto if_statement = type->as<IfStatement>();
-            result += std::format("if {} {}",
-                expression_to_string(if_statement->condition, tabs), 
-                statement_to_string(if_statement->body, tabs, false));
+            result += std::format("if ({}) {}", expression_to_string(if_statement->condition, tabs),
+                                  statement_to_string(if_statement->body, tabs, false));
             if (if_statement->else_branch) {
-                result += std::format(" else {}",
-                     statement_to_string(if_statement->else_branch.value().body, tabs, false));
+                result +=
+                    std::format(" else {}", statement_to_string(if_statement->else_branch.value().body, tabs, false));
             }
             break;
         }
 
         case WHILE: {
             auto while_statement = type->as<WhileStatement>();
-            result += std::format("while {} {}",
-                expression_to_string(while_statement->condition, tabs),
-                statement_to_string(while_statement->body, tabs, false));
+            result += std::format("while ({}) {}", expression_to_string(while_statement->condition, tabs),
+                                  statement_to_string(while_statement->body, tabs, false));
             break;
         }
 
         case ASSIGNMENT: {
             auto assignment_statement = type->as<AssignmentStatement>();
-            result += std::format("{} {} {};", 
-                expression_to_string(assignment_statement->expression, tabs),
-                assignment_statement->assign.type,
-                expression_to_string(assignment_statement->value, tabs));
+            result +=
+                std::format("{} {} {};", expression_to_string(assignment_statement->expression, tabs),
+                            assignment_statement->assign.type, expression_to_string(assignment_statement->value, tabs));
             break;
         }
 
@@ -776,18 +849,16 @@ std::string statement_to_string(const Statement *type, u64 tabs, bool block_inde
             result += "}";
             break;
         }
-    
+
         case EXPRESSION: {
             auto expression_statement = type->as<ExpressionStatement>();
-            result += std::format("{};", 
-                expression_to_string(expression_statement->expression, tabs));
+            result += std::format("{};", expression_to_string(expression_statement->expression, tabs));
             break;
         }
 
         case DECLARATION: {
             auto declaration_statement = type->as<DeclarationStatement>();
-            result += std::format("{}", 
-                declaration_to_string(declaration_statement->declaration, tabs));
+            result += std::format("{}", declaration_to_string(declaration_statement->declaration, tabs));
             break;
         }
 
@@ -808,7 +879,7 @@ std::string expression_to_string(const Expression *expression, u64 tabs) {
     auto result = std::string{};
     switch (expression->kind) {
         using enum Expression::Kind;
-        
+
         case BAD: {
             result += "BAD_EXPRESSION";
             break;
@@ -835,22 +906,27 @@ std::string expression_to_string(const Expression *expression, u64 tabs) {
         case UNARY_OPERATOR: {
             auto unary_operator = expression->as<UnaryOperatorExpression>();
             if (unary_operator->op.type == TokenType::keyword_size_of) {
-                result += std::format("size_of({})",
-                    expression_to_string(unary_operator->right, tabs));
+                result += std::format("size_of({})", expression_to_string(unary_operator->right, tabs));
             } else {
-                result += std::format("({}{})", unary_operator->op.type,
-                    expression_to_string(unary_operator->right, tabs));
+                result +=
+                    std::format("({}{})", unary_operator->op.type, expression_to_string(unary_operator->right, tabs));
             }
             break;
         }
 
-        case STRUCT_LITERAL: {
-            auto struct_literal = expression->as<StructLiteralExpression>();
-            result += std::format("{}{{", type_to_string(struct_literal->type, tabs));
-            for (usize i = 0; i < struct_literal->values.size(); ++i) {
-                auto value = struct_literal->values[i];
-                result += expression_to_string(value, tabs);
-                if (i != struct_literal->values.size() - 1) {
+        case COMPOUND: {
+            auto compound = expression->as<CompoundExpression>();
+            if (compound->type) {
+                result += std::format("{}", type_to_string(*compound->type, tabs));
+            }
+            result += "{";
+            for (usize i = 0; i < compound->values.size(); ++i) {
+                auto member = compound->values[i];
+                if (member->identifier) {
+                    result += std::format("{}=", member->identifier->token.value);
+                }
+                result += expression_to_string(member->value, tabs);
+                if (i != compound->values.size() - 1) {
                     result += ", ";
                 }
             }
@@ -860,26 +936,22 @@ std::string expression_to_string(const Expression *expression, u64 tabs) {
 
         case BINARY_OPERATOR: {
             auto binary_operator = expression->as<BinaryOperatorExpression>();
-            result += std::format("({} {} {})",
-                expression_to_string(binary_operator->left, tabs),
-                binary_operator->op.type,
-                expression_to_string(binary_operator->right, tabs));
+            result += std::format("({} {} {})", expression_to_string(binary_operator->left, tabs),
+                                  binary_operator->op.type, expression_to_string(binary_operator->right, tabs));
             break;
         }
 
-        case SELECTOR : {
+        case SELECTOR: {
             auto selector = expression->as<SelectorExpression>();
-            result +=
-                std::format("{}.{}", expression_to_string(selector->expression, tabs),
-                            selector->identifier->token.value);
+            result += std::format("{}.{}", expression_to_string(selector->expression, tabs),
+                                  selector->identifier->token.value);
             break;
         }
 
         case INDEX: {
             auto index = expression->as<IndexExpression>();
-            result += std::format("{}[{}]",
-                expression_to_string(index->expression, tabs),
-                expression_to_string(index->index, tabs));
+            result += std::format("{}[{}]", expression_to_string(index->expression, tabs),
+                                  expression_to_string(index->index, tabs));
             break;
         }
 
@@ -912,8 +984,32 @@ std::string expression_to_string(const Expression *expression, u64 tabs) {
 
         case CAST_OPERATOR: {
             auto cast = expression->as<CastOperatorExpression>();
-            result += std::format("cast({}){}", type_to_string(cast->type),
-                                  expression_to_string(cast->expression, tabs));
+            result +=
+                std::format("cast({}){}", type_to_string(cast->type), expression_to_string(cast->expression, tabs));
+            break;
+        }
+        case TYPE: {
+            auto type = expression->as<TypeExpression>();
+            result += type_to_string(type->type, tabs);
+            break;
+        }
+        case DEREF: {
+            auto deref = expression->as<DerefExpression>();
+            result += std::format("{}.*", expression_to_string(deref->expression, tabs));
+            break;
+        }
+        case SLICE: {
+            auto slice = expression->as<SliceExpression>();
+            result += expression_to_string(slice->expression, tabs);
+            std::string open;
+            if (slice->interval_open) {
+                open = expression_to_string(*slice->interval_open, tabs);
+            }
+            std::string close;
+            if (slice->interval_close) {
+                close = expression_to_string(*slice->interval_close, tabs);
+            }
+            result += std::format("[{}:{}]", open, close);
             break;
         }
     }
@@ -928,8 +1024,7 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
         case FIELD: {
             auto field = decl->as<Field>();
             if (field->identifier != nullptr) {
-                result += std::format("{}: {}", field->identifier->token.value,
-                                      type_to_string(field->type));
+                result += std::format("{}: {}", field->identifier->token.value, type_to_string(field->type));
             } else {
                 result += std::format("{}", type_to_string(field->type));
             }
@@ -942,10 +1037,9 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
             if (variable->type) {
                 result += std::format(": {}", type_to_string(*variable->type, tabs));
             }
-        
+
             if (variable->value) {
-                result += std::format(" = {}", 
-                    expression_to_string(*variable->value, tabs));
+                result += std::format(" = {}", expression_to_string(*variable->value, tabs));
             }
             result += ";";
             break;
@@ -958,29 +1052,25 @@ std::string declaration_to_string(const Declaration *decl, u64 tabs) {
                 result += std::format(": {}", type_to_string(*constant->type, tabs));
             }
 
-            result += std::format(" = {}",
-                expression_to_string(constant->value, tabs));
+            result += std::format(" = {}", expression_to_string(constant->value, tabs));
             result += ";";
             break;
         }
 
         case PROCEDURE: {
             auto function = decl->as<ProcedureDeclaration>();
-            result += std::format("fn {}{} {}", 
-                function->identifier->token.value, 
-                type_to_string(function->type, tabs, false),
-                statement_to_string(function->body, tabs));
+            result +=
+                std::format("fn {}{} {}", function->identifier->token.value,
+                            type_to_string(function->type, tabs, false), statement_to_string(function->body, tabs));
             break;
         }
 
         case TYPE: {
             auto type = decl->as<TypeDeclaration>();
-            result += std::format("type {} = {};",
-                type->identifier->token.value,
-                type_to_string(type->type, tabs));
+            result += std::format("type {} = {};", type->identifier->token.value, type_to_string(type->type, tabs));
             break;
         }
     }
     return result;
 }
-};
+}; // namespace Ast

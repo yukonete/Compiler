@@ -84,7 +84,7 @@ struct Maybe {
         return valid_;
     }
 
-    [[nodiscard]] constexpr operator bool() const {
+    [[nodiscard]] constexpr explicit operator bool() const {
         return is_valid();
     }
 
@@ -119,20 +119,6 @@ struct Maybe {
             return std::forward_like<decltype(self)>(self.value_);
         }
         return std::forward<Func>(func)();
-    }
-
-    template <typename Func>
-    [[nodiscard]] auto transform(this auto &&self, Func &&func) {
-        using SelfType = decltype(self);
-        using ValueType = decltype(std::forward_like<SelfType>(self.value()));
-        static_assert(std::invocable<Func, ValueType>);
-        using ReturnType = std::invoke_result_t<Func, ValueType>;
-
-        if (self.is_valid()) {
-            return Maybe<ReturnType>{std::invoke(
-                std::forward<Func>(func), static_cast<ValueType>(self.value_))};
-        }
-        return Maybe<ReturnType>{};
     }
 
 private:
@@ -192,7 +178,7 @@ struct Maybe<T> {
         return value_ != nullptr;
     }
 
-    [[nodiscard]] constexpr operator bool() const {
+    [[nodiscard]] constexpr explicit operator bool() const {
         return is_valid();
     }
 
@@ -209,7 +195,7 @@ struct Maybe<T> {
     }
 
     template <typename U = T>
-    [[nodiscard]] constexpr value_type value_or(U &&default_value)
+    [[nodiscard]] constexpr value_type value_or(U &&default_value) const
         requires std::convertible_to<std::remove_cv_t<U>, value_type>
     {
         if (is_valid()) {
@@ -219,25 +205,13 @@ struct Maybe<T> {
     }
 
     template <std::invocable Func>
-    [[nodiscard]] constexpr value_type value_or_else(Func &&func)
+    [[nodiscard]] constexpr value_type value_or_else(Func &&func) const
         requires std::convertible_to<std::invoke_result_t<Func>, value_type>
     {
         if (is_valid()) {
             return *value_;
         }
         return std::forward<Func>(func)();
-    }
-
-    template <typename Func>
-    [[nodiscard]] auto transform(Func &&func) {
-        static_assert(std::invocable<Func, value_type &>);
-        using ReturnType = std::invoke_result_t<Func, value_type &>;
-
-        if (is_valid()) {
-            return Maybe<ReturnType>{
-                std::invoke(std::forward<Func>(func), *value_)};
-        }
-        return Maybe<ReturnType>{};
     }
 
 private:
@@ -284,7 +258,7 @@ struct Maybe<T> {
         return value_ != nullptr;
     }
 
-    [[nodiscard]] constexpr operator bool() const {
+    [[nodiscard]] constexpr explicit operator bool() const {
         return is_valid();
     }
 
@@ -304,7 +278,7 @@ struct Maybe<T> {
     }
 
     template <typename U = T>
-    [[nodiscard]] constexpr value_type value_or(U &&default_value)
+    [[nodiscard]] constexpr value_type value_or(U &&default_value) const
         requires std::convertible_to<std::remove_cv_t<U>, value_type>
     {
         if (is_valid()) {
@@ -314,25 +288,13 @@ struct Maybe<T> {
     }
 
     template <std::invocable Func>
-    [[nodiscard]] constexpr value_type value_or_else(Func &&func)
+    [[nodiscard]] constexpr value_type value_or_else(Func &&func) const
         requires std::convertible_to<std::invoke_result_t<Func>, value_type>
     {
         if (is_valid()) {
             return *value_;
         }
         return std::forward<Func>(func)();
-    }
-
-    template <typename Func>
-    [[nodiscard]] auto transform(Func &&func) {
-        static_assert(std::invocable<Func, value_type &>);
-        using ReturnType = std::invoke_result_t<Func, value_type &>;
-
-        if (is_valid()) {
-            return Maybe<ReturnType>{
-                std::invoke(std::forward<Func>(func), *value_)};
-        }
-        return Maybe<ReturnType>{};
     }
 
 private:

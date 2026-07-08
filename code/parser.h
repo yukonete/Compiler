@@ -1,16 +1,17 @@
 #pragma once
 
 #include <cstdio>
-#include <format>
 #include <span>
 #include <string>
 #include <vector>
 #include <utility>
 
+#include "base/maybe.h"
 #include "base/util.h"
 #include "base/arena.h"
 #include "base/allocator.h"
 #include "base/concepts.h"
+#include "token.h"
 #include "lexer.h"
 #include "ast.h"
 
@@ -32,9 +33,11 @@ public:
         : lexer{std::move(lexer)}, nodes_storage_{allocator} {}
 
     static Maybe<Parser> open(std::string &&path, Allocator allocator, FILE *log = stderr) {
-        return Lexer::open(std::move(path), log).transform([allocator](Lexer &&lexer) {
-            return Parser{std::move(lexer), allocator};
-        });
+        auto lexer = Lexer::open(std::move(path), log);
+        if (!lexer) {
+            return {};
+        }
+        return Parser{std::move(*lexer), allocator};
     }
 
     bool parse_program();
@@ -69,11 +72,12 @@ private:
     BlockStatement *parse_block_statement();
     ReturnStatement *parse_return_statement();
 
-    Expression *parse_expression(Precedence precedence = Precedence::lowest);
-    Expression *parse_unary_expression();
-    Expression *parse_binary_expression(Expression *left);
+    Expression *parse_expression(Precedence precedence = Precedence::lowest, bool lhs = false);
+    Expression *parse_unary_expression(bool lhs);
+    Expression *parse_binary_expression(Expression *left, bool lhs);
+    CompoundExpression *parse_compound_expression(Maybe<Type *> type = {});
 
-    Type *parse_type();
+    Type *parse_type(bool named = false);
     ProcedureType *parse_procedure_type(bool skip_identifier = false);
     
     Identifier *parse_identifier();
@@ -81,6 +85,7 @@ private:
 
     const Token &expect_token(TokenType type);
 
+    bool peek_token_is(TokenType type, int peek);
     bool next_token_is(TokenType type);
 public:
     Lexer lexer;

@@ -6,8 +6,9 @@
 
 #include "base/types.h"
 #include "lexer.h"
+#include "ast.h"
 
-void highlight_token_on_line(Lexer &lexer, const FileLocation &start,
+void highlight_location_on_line(Lexer &lexer, const FileLocation &start,
                              const FileLocation &end);
 
 template <typename... Args>
@@ -34,7 +35,7 @@ void error(Lexer &lexer, u64 start, u64 end, std::format_string<Args...> fmt,
     auto end_location = lexer.byte_position_to_file_location(end);
     error_no_line(lexer, start_location, fmt, std::forward<Args>(args)...);
     if (!lexer.report_only_first_error || lexer.error_count == 1) {
-        highlight_token_on_line(lexer, start_location, end_location);
+        highlight_location_on_line(lexer, start_location, end_location);
     }
 }
 
@@ -62,7 +63,7 @@ void warning(Lexer &lexer, u64 start, u64 end, std::format_string<Args...> fmt,
     auto start_location = lexer.byte_position_to_file_location(start);
     auto end_location = lexer.byte_position_to_file_location(end);
     warning_no_line(lexer, start_location, fmt, std::forward<Args>(args)...);
-    highlight_token_on_line(lexer, start_location, end_location);
+    highlight_location_on_line(lexer, start_location, end_location);
 }
 
 template <typename... Args>
@@ -94,7 +95,7 @@ void syntax_error(Lexer &lexer, u64 start, u64 end, std::format_string<Args...> 
     auto end_location = lexer.byte_position_to_file_location(end);
     syntax_error_no_line(lexer, start_location, fmt, std::forward<Args>(args)...);
     if (!lexer.report_only_first_syntax_error || lexer.error_count == 1) {
-        highlight_token_on_line(lexer, start_location, end_location);
+        highlight_location_on_line(lexer, start_location, end_location);
     }
 }
 
@@ -105,5 +106,36 @@ void syntax_error(Lexer &lexer, const Token &token,
                  std::forward<Args>(args)...);
 }
 
+template <typename... Args>
+void error(Lexer &lexer, Ast::Node auto *node, std::format_string<Args...> fmt,
+           Args &&...args) {
+    auto start_pos = node->start_token().start;
+    auto end_pos = node->end_token().end;
+    error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
+}
+
+template <typename... Args>
+void warning(Lexer &lexer, Ast::Node auto *node,
+             std::format_string<Args...> fmt, Args &&...args) {
+    auto start_pos = node->start_token().start;
+    auto end_pos = node->end_token().end;
+    warning(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
+}
+
+template <typename... Args>
+void syntax_error(Lexer &lexer, Ast::Node auto *node,
+                  std::format_string<Args...> fmt, Args &&...args) {
+    auto start_pos = node->start_token().start;
+    auto end_pos = node->end_token().end;
+    syntax_error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
+}
+
+template <typename... Args>
+void error(Lexer &lexer, Ast::TypePath path, std::format_string<Args...> fmt,
+           Args &&...args) {
+    assert(path.size() > 0);
+    error(lexer, path.front()->token.start, path.back()->token.end, fmt,
+          std::forward<Args>(args)...);
+}
 
 #endif

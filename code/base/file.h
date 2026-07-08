@@ -6,33 +6,13 @@
 #include <fstream>
 #include <system_error>
 #include <string_view>
+#include <cstdio>
 
 #include "base/types.h"
 #include "base/maybe.h"
+#include "base/arena.h"
 
-inline Maybe<std::string> read_file_to_string(const char *path) {
-    auto err = std::error_code{};
-    const auto file_size = std::filesystem::file_size(path, err);
-    if (err) {
-        return {};
-    }
-
-    auto file = std::ifstream{path, std::ios::binary};
-    if (!file.is_open()) {
-        return {};
-    }
- 
-    auto result = std::string(file_size, '\0');
-    if (!file.read(&result[0], static_cast<std::streamsize>(file_size))) {
-        return {};
-    }
-    
-    return result;
-}
-
-inline Maybe<std::string> read_file_to_string(std::string_view path) {
-    auto zero_terminated_path = std::string{path};
-    return read_file_to_string(zero_terminated_path.c_str());
-}
+Maybe<std::string> read_file_to_string(const char *path);
+Maybe<std::string> read_file_to_string(std::string_view path);
 
 #endif

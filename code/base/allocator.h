@@ -163,7 +163,7 @@ using AllocatorUniquePtr = std::unique_ptr<T, AllocatorDeleter<T>>;
 template <typename T>
 AllocatorUniquePtr<T>
 create_unique_ptr_with_allocator(Allocator allocator, T *pointer) {
-    return AllocatorUniquePtr{pointer, AllocatorDeleter<T>{allocator}};
+    return AllocatorUniquePtr<T>{pointer, AllocatorDeleter<T>{allocator}};
 }
 
 template <typename T, typename... Args>

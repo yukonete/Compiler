@@ -18,6 +18,7 @@
 #include "base/types.h"
 #include "token.h"
 
+// TODO: Handle UTF8 input properly
 class Lexer {
 public:
     constexpr Lexer(std::string &&input, std::string &&file_name,
@@ -30,10 +31,11 @@ public:
     constexpr Lexer& operator=(Lexer &&) = default;
 
     static Maybe<Lexer> open(std::string &&path, FILE *log = stderr) {
-        return read_file_to_string(path.c_str()).transform(
-            [&](std::string &&file_content) {
-                return Lexer{std::move(file_content), std::move(path), log};
-            });
+        auto input = read_file_to_string(path.c_str());
+        if (!input) {
+            return {};
+        }
+        return Lexer{std::move(*input), std::move(path), log};
     }
 
     // Might invalidate references to tokens

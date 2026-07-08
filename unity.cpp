@@ -4,4 +4,5 @@
 #include "code/lexer.cpp"
 #include "code/parser.cpp"
 #include "code/typer.cpp"
+#include "code/base/file.cpp"
 #include "code/main.cpp"

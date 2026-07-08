@@ -13,7 +13,6 @@
 #include "base/down_cast.h"
 #include "base/types.h"
 #include "token.h"
-#include "error.h"
 
 namespace Ast {
 
@@ -128,6 +127,7 @@ struct IfStatement : public Statement {
             : token{token}, body{body} {
         }
         Token token;
+        // Block or if
         Statement *body;
     };
 
@@ -341,7 +341,10 @@ struct Expression {
         SELECTOR,
         INDEX,
         CAST_OPERATOR,
-        STRUCT_LITERAL,
+        COMPOUND,
+        TYPE,
+        DEREF,
+        SLICE,
     };
 
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Expression);
@@ -418,19 +421,37 @@ struct BinaryOperatorExpression : public Expression {
     }
 
     Token op;
-    Expression *left = nullptr;
-    Expression *right = nullptr;
+    Expression *left;
+    Expression *right;
 };
 
 struct BoolLiteralExpression : public Expression {
     static constexpr auto KIND = Kind::BOOL_LITERAL;
 
-    BoolLiteralExpression(const Token &token, bool value)
+    constexpr BoolLiteralExpression(const Token &token, bool value)
         : Expression{KIND}, token{token}, value{value} {
     }
 
     Token token;
     bool value;
+};
+
+struct SliceExpression : public Expression {
+    static constexpr auto KIND = Kind::SLICE;
+
+    constexpr SliceExpression(Expression *expression, const Token &open, Maybe<Expression *> interval_open,
+                              const Token &colon, Maybe<Expression *> interval_close, const Token &close)
+        : Expression{KIND}, open{open}, colon{colon}, close{close}, expression{expression},
+          interval_open{interval_open}, interval_close{interval_close} {
+    }
+
+    Token open;
+    Token colon;
+    Token close;
+
+    Expression *expression;
+    Maybe<Expression *> interval_open;
+    Maybe<Expression *> interval_close;
 };
 
 struct CallOperatorExpression : public Expression {
@@ -498,21 +519,50 @@ struct IndexExpression : public Expression {
     Expression *index;
 };
 
-struct StructLiteralExpression : public Expression {
-    static constexpr auto KIND = Kind::STRUCT_LITERAL;
+struct DerefExpression : public Expression {
+    static constexpr auto KIND = Kind::DEREF;
 
-    constexpr StructLiteralExpression(Type *type, const Token &open,
-                                      std::span<Expression *> values,
-                                      const Token &close)
-        : Expression{KIND}, open{open}, close{close}, type{type},
-          values{values} {
+    constexpr DerefExpression(Expression *expression, const Token &dot, const Token &star)
+        : Expression{KIND}, dot{dot}, star{star}, expression{expression} {
+    }
+
+    // Should those be a single token?
+    Token dot;
+    Token star;
+
+    Expression *expression;
+};
+
+struct TypeExpression : public Expression {
+    static constexpr auto KIND = Kind::TYPE;
+
+    constexpr TypeExpression(Type *type) : Expression{KIND}, type{type} {
+    }
+
+    Type *type;
+};
+
+struct CompoundFields {
+    constexpr CompoundFields(Maybe<Identifier *> identifier, Expression *value) : identifier{identifier}, value{value} {
+    }
+    Maybe<Identifier *> identifier;
+    Expression *value;
+};
+
+struct CompoundExpression : public Expression {
+    static constexpr auto KIND = Kind::COMPOUND;
+
+    constexpr CompoundExpression(Maybe<Type *> type, const Token &open, std::span<CompoundFields *> values, const Token &close)
+        : Expression{KIND}, open{open}, close{close}, type{type}, values{values} {
     }
 
     Token open;
     Token close;
 
-    Type *type;
-    std::span<Expression*> values;
+    Maybe<Type *> type;
+    // Mixture of 'field=value' and just value is not allowed
+    // So either all values have identifier set or none (assuming no reported errors)
+    std::span<CompoundFields*> values;
 };
 
 struct Type {
@@ -523,6 +573,7 @@ struct Type {
         POINTER,
         PROCEDURE,
         ARRAY,
+        SLICE,
     };
 
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Type);
@@ -599,6 +650,19 @@ struct ArrayType : public Type {
     Expression *count;
 };
 
+struct SliceType : public Type {
+    static constexpr auto KIND = Kind::SLICE;
+
+    constexpr SliceType(const Token &open, const Token &close, Type *element_type)
+        : Type{KIND}, open{open}, close{close}, element_type{element_type} {
+    }
+
+    Token open;
+    Token close;
+
+    Type *element_type;
+};
+
 struct ProcedureType : public Type {
     static constexpr auto KIND = Kind::PROCEDURE;
 
@@ -645,38 +709,6 @@ std::string expression_to_string(const Expression *type, u64 tabs);
 std::string type_to_string(const Type *type, u64 tabs = 0,
                            bool include_fn = true);
 std::string declaration_to_string(const Declaration *decl, u64 tabs);
-
-template <typename... Args>
-void error(Lexer &lexer, Ast::Node auto *node, std::format_string<Args...> fmt,
-           Args &&...args) {
-    auto start_pos = node->start_token().start;
-    auto end_pos = node->end_token().end;
-    error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void warning(Lexer &lexer, Ast::Node auto *node,
-             std::format_string<Args...> fmt, Args &&...args) {
-    auto start_pos = node->start_token().start;
-    auto end_pos = node->end_token().end;
-    warning(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void syntax_error(Lexer &lexer, Ast::Node auto *node,
-                  std::format_string<Args...> fmt, Args &&...args) {
-    auto start_pos = node->start_token().start;
-    auto end_pos = node->end_token().end;
-    syntax_error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void error(Lexer &lexer, Ast::TypePath path, std::format_string<Args...> fmt,
-           Args &&...args) {
-    assert(path.size() > 0);
-    error(lexer, path.front()->token.start, path.back()->token.end, fmt,
-          std::forward<Args>(args)...);
-}
 
 Maybe<TypePath>
 expression_to_type_path(const Expression *expression,

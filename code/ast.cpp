@@ -74,7 +74,16 @@ Token Expression::start_token() const {
         case INDEX: return as<IndexExpression>()->expression->start_token();
         case SELECTOR: return as<SelectorExpression>()->expression->start_token();
         case CAST_OPERATOR: return as<CastOperatorExpression>()->cast;
-        case STRUCT_LITERAL: return as<StructLiteralExpression>()->type->start_token();
+        case COMPOUND: {
+            auto compound =  as<CompoundExpression>();
+            if (compound->type) {
+                return compound->type->start_token();
+            }
+            return compound->open;
+        }
+        case TYPE: return as<TypeExpression>()->type->start_token();
+        case DEREF: return as<DerefExpression>()->expression->start_token();
+        case SLICE: return as<SliceExpression>()->expression->start_token();
     }
     panic("expression.kind is not Expression::Kind")
 }
@@ -97,7 +106,10 @@ Token Expression::end_token() const {
         case INDEX: return as<IndexExpression>()->close;
         case SELECTOR: return as<SelectorExpression>()->identifier->token;
         case CAST_OPERATOR: return as<CastOperatorExpression>()->expression->end_token();
-        case STRUCT_LITERAL: return as<StructLiteralExpression>()->close;
+        case COMPOUND: return as<CompoundExpression>()->close;
+        case TYPE: return as<TypeExpression>()->type->end_token();
+        case DEREF: return as<DerefExpression>()->expression->end_token();
+        case SLICE: return as<SliceExpression>()->close;
     }
     panic("expression.kind is not Expression::Kind")
 }
@@ -147,6 +159,7 @@ Token Type::start_token() const {
         case POINTER: return as<PointerType>()->token;
         case PROCEDURE: return as<ProcedureType>()->token;
         case ARRAY: return as<ArrayType>()->open;
+        case SLICE: return as<SliceType>()->open;
     }
     panic("type.kind is not Type::Kind")
 }
@@ -164,6 +177,7 @@ Token Type::end_token() const {
         case POINTER: return as<PointerType>()->type->end_token();
         case PROCEDURE: return as<ProcedureType>()->close;
         case ARRAY: return as<ArrayType>()->element_type->end_token();
+        case SLICE: return as<SliceType>()->element_type->end_token();
     }
     panic("type.kind is not Type::Kind")
 }
@@ -200,6 +214,7 @@ expression_to_type_path(const Expression *expression,
     };
 
     if (type_path_from_expression(expression)) {
+        assert(!out.empty());
         return std::span{out};
     }
     return {};

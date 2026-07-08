@@ -1,6 +1,6 @@
 #include "error.h"
 
-void highlight_token_on_line(Lexer &lexer, const FileLocation &start,
+void highlight_location_on_line(Lexer &lexer, const FileLocation &start,
                             const FileLocation &end) {
     if (lexer.log == nullptr) {
         return;

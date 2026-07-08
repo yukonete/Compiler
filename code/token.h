@@ -77,6 +77,8 @@ struct FileLocation {
     u64 byte = 0;
 };
 
+// TODO: Use u32 for start and end, remove value
+// Then in Lexer, all methods that return reference to Token should return it by value
 struct Token {
     TokenType type = TokenType::invalid;
     u64 start = 0;

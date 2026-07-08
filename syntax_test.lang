@@ -1,0 +1,66 @@
+// Types
+type Vec2 = struct {
+    x: f32;
+    y: f32;
+
+    type NestedType = int;
+    fn nested_proc() {
+        return;
+    }
+    const NESTED_CONSTANT: int = 2;
+    var nested_variable: Vec2;
+};
+type Position = Vec2;
+type IntArray = [45]int;
+type SliceVec2 = []Vec2;
+type IntPointer = *int;
+
+// Delcarations
+const CONSTANT: int = 2;
+var variable: int;
+
+fn main() -> int {
+    if a {
+    } else if b {
+    }
+
+    if a {
+    } else {
+    }
+
+    // Statements
+    var flag: bool = true;
+    var not_flag = !flag;
+    if flag {
+        return 0;
+    }
+    while flag {
+        break;
+        continue;
+    }
+
+    // Expressions
+    var x = false;
+    var i: int = 1;
+    var i2: int = {};
+    var v = Vec2{x=0, y=1};
+    var v1 = Vec2{-1, -1};
+    var v3 = Vec2{};
+    var i3 = +size_of(i) + cast(f32)i2 + -3.0 * (i + 4) / i;
+    var array: [100]int;
+    var f32_slice = []f32;
+    var f32_array = [CONSTANT]f32;
+    var slice = array[:];
+    slice = slice[1:];
+    slice = slice[:2];
+    slice = slice[1:2];
+    v.x = array[0];
+    v.y = v.x;
+    var v_ptr = &v;
+    v_ptr.* = {};
+    var t = struct{}{};   
+    return 0;
+}
+
+fn test() -> (index: int) {
+}

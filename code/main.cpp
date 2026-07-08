@@ -2,14 +2,9 @@
 #include <string>
 #include <cstdlib>
 #include <string_view>
-#include <ranges>
-#include <list>
 
 #include "ast.h"
-#include "base/tformat.h"
 #include "base/allocator.h"
-#include "base/util.h"
-#include "base/arena.h"
 #include "parser.h"
 #include "typer.h"
 

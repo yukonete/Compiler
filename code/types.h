@@ -25,6 +25,7 @@ struct Type {
         STRING,
         POINTER,
         ARRAY,
+        SLICE,
         STRUCT,
         PROCEDURE,
         NAMED,
@@ -125,6 +126,18 @@ struct ArrayType : public Type {
     u64 count;
     Ast::Expression *count_expression;
     Scope *scope;
+};
+
+struct SliceType : public Type {
+    static constexpr auto KIND = Kind::SLICE;
+
+    constexpr SliceType(Type *type) : Type{KIND}, type{type} {
+        flags = Flags::SIZED;
+        size = 16;
+        align = 8;
+    }
+
+    Type *type;
 };
 
 struct StructType : public Type {

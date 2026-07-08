@@ -10,9 +10,14 @@ var   <identifier> [:<type>] [=<value>];
 type  <identifier> = <type>;
 
 // Function declaration
-fn <identifier>([arg1, arg2, ...]) -> <type> {
-	
+fn <identifier>([arg1, arg2, ...]) [-> <type>] {
+	body;
 }
+
+// For compiler this
+fn identifier() -> (identifier: type) {}
+// Has the same meaning as this
+fn identifier() -> type {}
 
 // Struct
 type Struct = struct {
@@ -28,24 +33,22 @@ type IntPtr = *int;
 
 // Function (pointer) type
 type Fn = fn([arg1, arg2, ...]) -> <type>;
+// This is allowed as well
+type Fn = fn() -> (identifier: type);
 
 // If
-if expression statement
-else statement
+if expression {
+} else if {
+} else {
+}
 
 // While
 while expression {
 	statements
 }
 
-if expression { 
-	statements 
-}
-
 // Pointers
-// * applied to type means pointer to that type
-// & applied to variable takes adress of it
-// * applied to pointer dereferences that pointer
+var b: int;
 var a: *int;
 a = &b;
-var q: int = *b;
+var q: int = a.*;

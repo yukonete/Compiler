@@ -49,12 +49,12 @@ AllocatorString Scope::full_name() const {
 Maybe<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
     auto search = entities.find(identifier->token.value);
     if (search != entities.end()) {
-        auto entity = search->second;
-        if (!entity->is<VariableEntity>()) {
+        auto e = search->second;
+        if (!e->is<VariableEntity>()) {
             return search->second;
         }
         
-        auto variable = entity->as<VariableEntity>();
+        auto variable = e->as<VariableEntity>();
         if (variable->variable_kind != VariableEntity::VariableKind::LOCAL) {
             return search->second;
         }
@@ -162,6 +162,7 @@ void Typer::collect_entities_from_statement(Scope *scope, Ast::Statement *statem
             collect_entity(scope, declaration, true);
             break;
         }
+        // TODO: For if and while, scope should be created for them, not the block
         case IF: {
             auto if_statement = statement->as<Ast::IfStatement>();
             collect_entities_from_statement(scope, if_statement->body);
@@ -201,9 +202,13 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
 
         case VARIABLE: {
             auto ast_variable = declaration->as<Ast::VariableDeclaration>();
+            if (!ast_variable->type) {
+                syntax_error(parser_.lexer, ast_variable, "Variable has no type");
+                break;
+            }
             auto entity = create_entity<VariableEntity>(
                 scope, ast_variable,
-                ast_variable->type.expect("variable should have a type"),
+                *ast_variable->type,
                 ast_variable->value);
             add_entity(scope, entity);
             if (local) {
@@ -214,9 +219,13 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
 
         case CONSTANT: {
             auto ast_constant = declaration->as<Ast::ConstDeclaration>();
+            if (!ast_constant->type) {
+                syntax_error(parser_.lexer, ast_constant, "Constant has no type");
+                break;
+            }
             auto entity = create_entity<ConstantEntity>(
                 scope, ast_constant,
-                ast_constant->type.expect("constant should have a type"),
+                *ast_constant->type,
                 ast_constant->value);
             add_entity(scope, entity);
             break;
@@ -326,6 +335,10 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
             if (ast_proc->return_type) {
                 return_type = ast_type_to_type(scope, *ast_proc->return_type);
             }
+            // Create pointer to procedure since using plain procedure type is not allowed
+            // For EntityProcedure, this will also set it's type to pointer to procedure, rather than procedure type
+            // While we could check if there exists en entity for this procedure type and in this case return the
+            // procedure type itself, but i am not sure what approach is better
             return create_type<PointerType>(create_type<ProcedureType>(parameters, return_type));
         }
 
@@ -354,6 +367,12 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
             }
             auto members = create_array(std::span{members_temp});
             return create_type<StructType>(members, scope);
+        }
+
+        case SLICE: {
+            auto ast_slice = ast_type->as<Ast::SliceType>();
+            auto type = ast_type_to_type(scope, ast_slice->element_type);
+            return create_type<SliceType>(type);
         }
     }
     assert(false && "Shoud not trigger");
@@ -419,14 +438,16 @@ bool Typer::check_for_recursive_expression(Scope *scope,
             }
             return check_for_recursive_expression(scope, cast->expression, path);
         }
-        case STRUCT_LITERAL: {
-            auto struct_literal = expression->as<Ast::StructLiteralExpression>();
-            auto type = ast_type_to_type(scope, struct_literal->type);
-            if (check_for_recursive_type(scope, type, path)) {
-                return true;
+        case COMPOUND: {
+            auto compound = expression->as<Ast::CompoundExpression>();
+            if (compound->type) {
+                auto type = ast_type_to_type(scope, *compound->type);
+                if (check_for_recursive_type(scope, type, path)) {
+                    return true;
+                }
             }
-            for (auto value : struct_literal->values) {
-                if (check_for_recursive_expression(scope, value, path)) {
+            for (auto value : compound->values) {
+                if (check_for_recursive_expression(scope, value->value, path)) {
                     return true;
                 }
             }
@@ -489,8 +510,28 @@ bool Typer::check_for_recursive_expression(Scope *scope,
             }
             return check_for_recursive_declaration(*entity, path);
         }
+        case TYPE: {
+            auto ast_type = expression->as<Ast::TypeExpression>();
+            auto type = ast_type_to_type(scope, ast_type->type);
+            return check_for_recursive_type(scope, type, path);
+        }
+        case DEREF: {
+            auto deref = expression->as<Ast::DerefExpression>();
+            return check_for_recursive_expression(scope, deref->expression, path);
+        }
+        case SLICE: {
+            auto slice = expression->as<Ast::SliceExpression>();
+            if (check_for_recursive_expression(scope, slice->expression, path)) {
+                return true;
+            }
+            if (slice->interval_open && check_for_recursive_expression(scope, *slice->interval_open, path)) {
+                return true;
+            }
+            return slice->interval_close && check_for_recursive_expression(scope, *slice->interval_close, path);
+        }
     }
-    assert(false && "Should not trigger");
+    assert(false && "Expression not handeled");
+    return false;
 }
 
 bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
@@ -498,7 +539,7 @@ bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
     switch (type->kind) {
         using enum Type::Kind;
 
-        case BAD: panic("BAD type");
+        case BAD:
         case INT:
         case ANY:
         case BOOL:
@@ -539,8 +580,12 @@ bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
             }
             return check_for_recursive_type(scope, array_type->type, path);
         }
+        case SLICE: {
+            auto slice_type = type->as<SliceType>();
+            return check_for_recursive_type(scope, slice_type->type, path);
+        }
     }
-    assert(false && "Should not trigger");
+    assert(false && "Type is not handeled");
     return false;
 }
 
@@ -550,7 +595,7 @@ bool Typer::check_for_recursive_statement(Scope *scope,
     switch (statement->kind) {
         using enum Ast::Statement::Kind;
 
-        case BAD: panic("BAD type");
+        case BAD:
         case EMPTY: return false;
         case IF: {
             auto if_statement = statement->as<Ast::IfStatement>();
@@ -820,7 +865,7 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
         case CAST_OPERATOR: {
             panic("Not implemented");
         }
-        case STRUCT_LITERAL: {
+        case COMPOUND: {
             panic("Not implemented");
         }
         case UNARY_OPERATOR: {
@@ -829,11 +874,6 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
                 using enum TokenType;
 
                 case ampersand:
-                case star: {
-                    error(parser_.lexer, unary,
-                          "Not a constant expression");
-                    return 0;
-                }
                 case bang: {
                     error(parser_.lexer, unary, "Expression does not evaluate to integer");
                     return 0;
@@ -919,8 +959,21 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
         case SELECTOR: {
             panic("Not implemented");
         }
+        case SLICE: {
+            // Should probably be an error, because this is essentially pointer
+            panic("Not implemented");
+        }
+        case TYPE: {
+            error(parser_.lexer, expression, "Expected expresson, got type");
+            return 0;
+        }
+        case DEREF: {
+            error(parser_.lexer, expression, "Pointer derefence is not allowed in constant expression");
+            return 0;
+        }
     }
-    assert(false && "Shoud not trigger");
+    assert(false && "Expression not handeled");
+    return 0;
 }
 
 void Typer::calculate_size_and_alignment(Type *type) {
@@ -938,6 +991,7 @@ void Typer::calculate_size_and_alignment(Type *type) {
             panic("Not implemented");
         }
         case POINTER:
+        case SLICE:
         case INT:
         case ANY:
         case BOOL:
