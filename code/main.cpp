@@ -7,8 +7,11 @@
 #include "base/allocator.h"
 #include "parser.h"
 #include "typer.h"
+#include "terminal.h"
 
 int main(int argc, char **argv) {
+    set_utf8_terminal();
+
     std::string_view input = "test.txt";
     if (argc > 1) {
         input = argv[1];

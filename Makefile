@@ -18,7 +18,7 @@ else
 endif
 
 OBJDIR = $(CONFIGURATION_DIR)obj/
-SRCS := $(shell find $(SRC_DIR) -name "*.cpp")
+SRCS := $(shell find $(SRC_DIR) -name "*.cpp" ! -name "_windows.cpp")
 OBJS := $(addprefix $(OBJDIR), $(SRCS:.cpp=.o))
 DEPS := $(OBJS:.o=.d)
 

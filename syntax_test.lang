@@ -19,6 +19,10 @@ type IntPointer = *int;
 const CONSTANT: int = 2;
 var variable: int;
 
+// utf8
+const русский = "тест";
+const 日本語 = "試し";
+
 fn main() -> int {
     if a {
     } else if b {

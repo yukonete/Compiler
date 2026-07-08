@@ -83,7 +83,7 @@ private:
     Identifier *parse_identifier();
     Field *parse_field();
 
-    const Token &expect_token(TokenType type);
+    Token expect_token(TokenType type);
 
     bool peek_token_is(TokenType type, int peek);
     bool next_token_is(TokenType type);

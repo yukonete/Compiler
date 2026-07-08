@@ -16,6 +16,7 @@
 #include "base/allocator.h"
 #include "base/file.h"
 #include "base/types.h"
+#include "base/utf8.h"
 #include "token.h"
 
 // TODO: Handle UTF8 input properly
@@ -38,17 +39,14 @@ public:
         return Lexer{std::move(*input), std::move(path), log};
     }
 
-    // Might invalidate references to tokens
-    const Token &next_token();
-    // Might invalidate references to tokens
-    const Token &peek_token(int peek);
-
-    const Token &previous_token() const;
+    Token next_token();
+    Token peek_token(int peek);
+    Token previous_token() const;
 
     // Finds first token that starts on byte or after
     // and returs token that comes before it
     // There has to be token before, otherwise crash
-    const Token &get_token_before(u64 byte) const;
+    Token get_token_before(u64 byte) const;
 
     void eat_token();
     void uneat_token();
@@ -57,6 +55,13 @@ public:
 
     std::string_view input_view() const {
         return input_;
+    }
+
+    std::string_view input_view_left() const {
+        if (input_cursor_ > input_.size()) {
+            return {};
+        }
+        return input_view().substr(input_cursor_);
     }
 
     bool any_errors() const {
@@ -80,14 +85,18 @@ private:
     };
 
     void tokenize();
-    int peek_next_char() const;
-    int peek_char(u64 peek) const;
+    
+    DecodeRuneResult peek_next_char_result() const;
+    DecodeRuneResult peek_char_result(u64 peek) const;
+    Rune peek_next_char() const;
+    Rune peek_char(u64 peek) const;
+    
     void eat_char();
     Maybe<ParseNumberResult> parse_number();
     std::string_view parse_identifier();
     Maybe<std::string_view> parse_string();
     void skip_whitespaces_and_comments();
-    bool is_new_line(int ch) const;
+    bool is_new_line(Rune ch) const;
     
     std::string file_name_;
     

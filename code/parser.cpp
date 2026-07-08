@@ -124,10 +124,7 @@ Statement *Parser::parse_statement() {
         case keyword_for:
         case keyword_transmute: {
             auto token_string = token_type_to_string(token.type);
-            if (token.type == TokenType::invalid) {
-                token_string = token.value;
-            }
-            syntax_error(lexer, token, "Unexpected token {}", token_string);
+            syntax_error(lexer, token, "Unexpected token {}({})", token_string, token.value);
             lexer.eat_token();
             return New<BadStatement>(token);
         }
@@ -307,7 +304,7 @@ Field *Parser::parse_field() {
 }
 
 Type *Parser::parse_type(bool named) {
-    const auto &token = lexer.next_token();
+    auto token = lexer.next_token();
     lexer.eat_token();
 
     switch (token.type) {
@@ -444,7 +441,7 @@ static Precedence token_type_to_precedense(TokenType type) {
 }
 
 Expression *Parser::parse_unary_expression(bool lhs) {
-    const auto &token = lexer.next_token();
+    auto token = lexer.next_token();
 
     switch (token.type) {
         using enum TokenType;
@@ -493,7 +490,10 @@ Expression *Parser::parse_unary_expression(bool lhs) {
             return New<BoolLiteralExpression>(token, value);
         }
 
-        case string: return New<StringLiteralExpression>(token);
+        case string: {
+            lexer.eat_token();
+            return New<StringLiteralExpression>(token);
+        }
 
         // Operators
         case plus:
@@ -583,7 +583,7 @@ CompoundExpression *Parser::parse_compound_expression(Maybe<Type *> type) {
 }
 
 Expression *Parser::parse_binary_expression(Expression *left, bool lhs) {
-    const auto &token = lexer.next_token();
+    auto token = lexer.next_token();
     lexer.eat_token();
 
     if (token.type == TokenType::open_paren) {
@@ -688,8 +688,8 @@ Expression *Parser::parse_expression(Precedence precedence, bool lhs) {
     return left;
 }
 
-const Token &Parser::expect_token(TokenType type) {
-    const auto &token = lexer.next_token();
+Token Parser::expect_token(TokenType type) {
+    auto token = lexer.next_token();
     lexer.eat_token();
 
     if (token.type != type) {
