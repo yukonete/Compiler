@@ -93,6 +93,7 @@ struct Allocator : public AllocatorInterface<Allocator> {
         return nullptr;
     }
 
+    constexpr Allocator() {}
     constexpr Allocator(void *data, Func func) : func_{func}, data_{data} {}
 
     void *alloc(usize size) const {

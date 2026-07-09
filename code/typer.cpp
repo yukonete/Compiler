@@ -319,7 +319,6 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
             auto ast_array = ast_type->as<Ast::ArrayType>();
             auto type = ast_type_to_type(scope, ast_array->element_type);
             auto array = create_type<ArrayType>(type, u64(0), ast_array->count, scope);
-            arrays_without_size_.push_back(array);
             return array;
         }
 
@@ -530,7 +529,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
             return slice->interval_close && check_for_recursive_expression(scope, *slice->interval_close, path);
         }
     }
-    assert(false && "Expression not handeled");
+    assert(false && "Expression not handled");
     return false;
 }
 
@@ -585,7 +584,7 @@ bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
             return check_for_recursive_type(scope, slice_type->type, path);
         }
     }
-    assert(false && "Type is not handeled");
+    assert(false && "Type is not handled");
     return false;
 }
 
@@ -736,6 +735,37 @@ bool Typer::check_for_recursive_declaration(const Entity *entity,
     return found;
 }
 
+bool Typer::check_for_recursive_alias_indirect(const Type *type, AllocatorVector<const Entity *> &path) {
+    bool found = false;
+    switch (type->kind) {
+        using enum Type::Kind;
+
+        case NAMED: {
+            auto named_type = type->as<NamedType>();
+            auto entity = named_type->entity;
+            if (std::ranges::contains(path, entity)) {
+                path.push_back(entity);
+                return true;
+            }
+
+            path.push_back(entity);
+            found = check_for_recursive_alias_indirect(named_type->type, path);
+            if (!found) {
+                path.pop_back();
+            }
+            return found;
+        }
+
+        case POINTER: {
+            auto pointer = type->as<PointerType>();
+            return check_for_recursive_alias_indirect(pointer->type, path);
+        }
+
+        // If type is not a pointer or named type then it should be handled by check_for_recursive_declarations
+        default: return false;
+    }
+}
+
 bool Typer::do_typing() {
     auto add_builtin_type = [this](Scope *scope, Type *type,
                                    std::string_view name) -> bool {
@@ -805,6 +835,14 @@ bool Typer::do_typing() {
         auto path = create_temp_vector<const Entity *>();
         for (auto entity : entities_) {
             bool is_recursive_entity = check_for_recursive_declaration(entity, path);
+            // Call above does not handle a case when alias aliases it self trough pointer
+            if (!is_recursive_entity) { 
+                path.clear();
+                if (entity->is<NamedTypeEntity>()) {
+                    auto named_typed_entity = entity->as<NamedTypeEntity>();
+                    is_recursive_entity = check_for_recursive_alias_indirect(named_typed_entity->type, path);
+                }
+            }
             if (is_recursive_entity && !reported_entities.contains(entity)) {
                 assert(!path.empty());
                 if (path.front() != path.back()) {
@@ -887,7 +925,7 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
                     panic("Not implemented");
                     // get_scope_from_expression(scope, unary->right);
                 }
-                default: panic("Unary operator not handeled");
+                default: panic("Unary operator not handled");
             }
         }
         case BINARY_OPERATOR: {
@@ -921,7 +959,7 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
                 case modulo:
                     return const_evaluate_integer(scope, binary->left) %
                            const_evaluate_integer(scope, binary->right);
-                default: panic("Binary operator not handeled");
+                default: panic("Binary operator not handled");
             }
         }
 
@@ -975,7 +1013,7 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
             return 0;
         }
     }
-    assert(false && "Expression not handeled");
+    assert(false && "Expression not handled");
     return 0;
 }
 

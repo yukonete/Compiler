@@ -134,8 +134,7 @@ private:
     Allocator backing_;
 };
 
-thread_local inline DynamicArena temp_dynamic_arena = DynamicArena{NEW_ALLOCATOR};
-thread_local inline Allocator temp_allocator = temp_dynamic_arena.create_allocator();
+thread_local inline Allocator temp_allocator;
 
 template <typename T>
 AllocatorVector<T> create_temp_vector(usize capacity = 0) {

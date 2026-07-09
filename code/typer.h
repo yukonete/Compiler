@@ -77,8 +77,13 @@ struct Typer {
     void collect_entities_from_statement(Scope *scope,
                                          Ast::Statement *statement);
 
+    // All check_for_recursive_x functions do not actually have to be member functions,
+    // now they have to only because check_for_recursive_statement needs access to block_scopes_ (i think),
+    // but those could be stored in AST instead
     bool check_for_recursive_type(Scope *scope, const Type *type,
                                   AllocatorVector<const Entity *> &path);
+    bool check_for_recursive_alias_indirect(const Type *type, 
+                                            AllocatorVector<const Entity *> &path);
     bool check_for_recursive_declaration(const Entity *entity,
                                          AllocatorVector<const Entity *> &path);
     bool check_for_recursive_expression(Scope *scope,
@@ -109,9 +114,8 @@ private:
     
     Ast::Parser &parser_;
     std::vector<Entity*> entities_;
-    std::vector<ArrayType*> arrays_without_size_;
 
-    // Maybe it is better just store scopes directly in Ast::BlockStatements instead?
+    // Maybe it is better to just store scopes directly in Ast::BlockStatements instead?
     std::unordered_map<Ast::BlockStatement *, Scope *> block_scopes_;
 
     Scope *file_scope;

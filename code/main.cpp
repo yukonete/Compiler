@@ -12,6 +12,9 @@
 int main(int argc, char **argv) {
     set_utf8_terminal();
 
+    auto temp_dynamic_arena = DynamicArena{NEW_ALLOCATOR};
+    temp_allocator = temp_dynamic_arena.create_allocator();
+
     std::string_view input = "test.txt";
     if (argc > 1) {
         input = argv[1];
