@@ -860,6 +860,9 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
         case BAD: panic("BAD expression");
         case INTEGER_LITERAL: {
             auto integer = expression->as<Ast::IntegerLiteralExpression>();
+            // TODO: Handle when integer->value is bigger than max value of s64
+            // Probably only makes sense to handle it when there will be proper evaluator
+            // and have signed and unsigned int as different types
             return integer->value;
         }
         case CAST_OPERATOR: {

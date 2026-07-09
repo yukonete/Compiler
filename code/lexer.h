@@ -19,7 +19,6 @@
 #include "base/utf8.h"
 #include "token.h"
 
-// TODO: Handle UTF8 input properly
 class Lexer {
 public:
     constexpr Lexer(std::string &&input, std::string &&file_name,

@@ -370,12 +370,12 @@ struct BadExpression : public Expression {
 struct IntegerLiteralExpression : public Expression {
     static constexpr auto KIND = Kind::INTEGER_LITERAL;
 
-    constexpr IntegerLiteralExpression(const Token &token, s64 value)
+    constexpr IntegerLiteralExpression(const Token &token, u64 value)
         : Expression{KIND}, token{token}, value{value} {
     }
 
     Token token;
-    s64 value;
+    u64 value;
 };
 
 struct IdentifierExpression : public Expression {

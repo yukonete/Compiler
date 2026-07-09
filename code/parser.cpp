@@ -468,18 +468,54 @@ Expression *Parser::parse_unary_expression(bool lhs) {
         }
 
         case integer: {
-            // TODO: Use my own parse integer implementaion
-            // For now, this will temporary allocate new string with new
+            auto parse_u64 = [](std::string_view str) -> Maybe<u64> {
+                u64 value = 0;
+                for (auto digit : str) {
+                    auto digit_value = digit - '0';
+                    auto old_value = value;
+                    value = value * 10 + digit_value;
+                    if (value < old_value) {
+                        // Overflowed
+                        return {};
+                    }
+                }
+                return value;
+            };
+
             lexer.eat_token();
-            auto value = std::stoll(std::string{token.value});
-            return New<IntegerLiteralExpression>(token, value);
+            auto value = parse_u64(token.value);
+            if (!value) {
+                error(lexer, token, "Integer literal is bigger than 18,446,744,073,709,551,615");
+                value = 0;
+            }
+            return New<IntegerLiteralExpression>(token, *value);
         }
 
         case float_literal: {
-            // TODO: Use my own parse float implementaion
-            // For now, this will temporary allocate new string
+            auto parse_f64 = [](std::string_view str) -> f64 {
+                // TODO: Figure out how this approach affects precision
+                f64 integer_part = 0;
+                f64 decimal_part = 0;
+                f64 decimal_divider = 1;
+                bool encountered_dot = false;
+                for (auto digit : str) {
+                    if (digit == '.') {
+                        encountered_dot = true;
+                        continue;
+                    }
+                    auto digit_value = digit - '0';
+                    if (!encountered_dot) {
+                        integer_part = integer_part * 10 + digit_value;
+                    } else {
+                        decimal_divider *= 10;
+                        decimal_part = decimal_part * 10 + digit_value;
+                    }
+                }
+                return integer_part + decimal_part / decimal_divider;
+            };
+
             lexer.eat_token();
-            auto value = std::stod(std::string{token.value});
+            auto value = parse_f64(token.value);
             return New<FloatLiteralExpression>(token, value);
         }
 

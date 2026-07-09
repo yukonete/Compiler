@@ -23,23 +23,27 @@ DecodeRuneResult rune_at_pos(std::string_view str, usize pos) {
     return result;
 }
 
-u32 rune_size(Rune rune) {
+Maybe<u32> rune_size(Rune rune) {
     if (rune < 0) {
-        return 0;
+        return 0u;
     }   
     if (rune >= 0x00000000 && rune <= 0x0000007F) {
-        return 1;
+        return 1u;
     }
     if (rune >= 0x00000080 && rune <= 0x000007FF) {
-        return 2;
+        return 2u;
     }
     if (rune >= 0x00000800 && rune <= 0x0000FFFF) {
-        return 3;
+        // Surrogates are not legal Unicode values
+        if (rune >= 0x0000D800 && rune >= 0x0000DFFF) {
+            return {};
+        }
+        return 3u;
     }
     if (rune >= 0x00010000 && rune <= 0x0010FFFF) {
-        return 4;
+        return 4u;
     }
-    return 1;
+    return {};
 }
 
 bool is_letter(Rune rune) {

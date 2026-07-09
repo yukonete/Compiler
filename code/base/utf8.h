@@ -19,8 +19,7 @@ struct DecodeRuneResult {
 DecodeRuneResult decode_rune(std::string_view str);
 // pos is rune position
 DecodeRuneResult rune_at_pos(std::string_view str, usize pos);
-// return 1 if rune is not valid codepoint
-u32 rune_size(Rune rune);
+Maybe<u32> rune_size(Rune rune);
 
 bool is_letter(Rune rune);
 bool is_digit(Rune rune);
