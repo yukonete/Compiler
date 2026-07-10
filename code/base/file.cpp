@@ -15,7 +15,7 @@ Maybe<std::string> read_file_to_string(const char *path) {
     }
 
     auto result = std::string(static_cast<usize>(size), '\0');
-    if(!file.read(result.data(), result.size())) {
+    if(!file.read(result.data(), static_cast<std::streamsize>(result.size()))) {
         return {};
     }
     return result;

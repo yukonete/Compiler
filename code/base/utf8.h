@@ -2,6 +2,7 @@
 #define BASE_UTF8_H
 
 #include <string_view>
+#include "base/maybe.h"
 #include "base/types.h"
 
 using Rune = s32;

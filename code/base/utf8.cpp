@@ -4,7 +4,8 @@
 
 DecodeRuneResult decode_rune(std::string_view str) {
     auto result = Rune{};
-    auto size = utf8proc_iterate(reinterpret_cast<const utf8proc_uint8_t*>(str.data()), str.size(), &result);
+    auto size = utf8proc_iterate(reinterpret_cast<const utf8proc_uint8_t *>(str.data()),
+                                 static_cast<utf8proc_ssize_t>(str.size()), &result);
     if (size < 0) {
         return DecodeRuneResult{RUNE_INVALID, 1};
     }

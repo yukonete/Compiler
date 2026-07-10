@@ -471,7 +471,7 @@ Expression *Parser::parse_unary_expression(bool lhs) {
             auto parse_u64 = [](std::string_view str) -> Maybe<u64> {
                 u64 value = 0;
                 for (auto digit : str) {
-                    auto digit_value = digit - '0';
+                    auto digit_value = static_cast<u8>(digit - '0');
                     auto old_value = value;
                     value = value * 10 + digit_value;
                     if (value < old_value) {

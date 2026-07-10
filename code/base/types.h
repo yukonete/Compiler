@@ -2,6 +2,7 @@
 #define BASE_TYPES_H
 
 #include <cstdint>
+#include <cstddef>
 #include <cstdarg>
 
 using u8 = uint8_t;

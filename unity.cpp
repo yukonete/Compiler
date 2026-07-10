@@ -10,6 +10,6 @@
 #if defined(_WIN32) || defined(_WIN64)
     #include "terminal_windows.cpp"
 #else
-    #include "termnial_linux.cpp"
+    #include "terminal_linux.cpp"
 #endif
 #include "code/main.cpp"

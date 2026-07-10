@@ -901,7 +901,10 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
             // TODO: Handle when integer->value is bigger than max value of s64
             // Probably only makes sense to handle it when there will be proper evaluator
             // and have signed and unsigned int as different types
-            return integer->value;
+            if (integer->value > static_cast<u64>(std::numeric_limits<s64>::max())) {
+                panic("Not implemented");
+            }
+            return static_cast<s64>(integer->value);
         }
         case CAST_OPERATOR: {
             panic("Not implemented");

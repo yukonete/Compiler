@@ -18,8 +18,21 @@ else
 endif
 
 OBJDIR = $(CONFIGURATION_DIR)obj/
-SRCS := $(shell find $(SRC_DIR) -name "*.cpp" ! -name "_windows.cpp")
-OBJS := $(addprefix $(OBJDIR), $(SRCS:.cpp=.o))
+SRCS := $(SRC_DIR)base/arena.cpp \
+		$(SRC_DIR)base/file.cpp \
+		$(SRC_DIR)base/utf8.cpp \
+		$(SRC_DIR)ast.cpp \
+		$(SRC_DIR)error.cpp \
+		$(SRC_DIR)lexer.cpp \
+		$(SRC_DIR)parser.cpp \
+		$(SRC_DIR)typer.cpp \
+		$(SRC_DIR)utf8proc/utf8proc.c \
+		$(SRC_DIR)terminal_linux.cpp \
+		$(SRC_DIR)main.cpp
+
+CPP_SRCS := $(filter %.cpp,$(SRCS))
+C_SRCS := $(filter %.c,$(SRCS))
+OBJS := $(addprefix $(OBJDIR), $(CPP_SRCS:.cpp=.o) $(C_SRCS:.c=.o))
 DEPS := $(OBJS:.o=.d)
 
 TARGET_DIR = $(CONFIGURATION_DIR)bin/
@@ -36,9 +49,9 @@ $(OBJDIR)%.o : %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@ -MMD -MP 
 
-.PHONY: unity
-unity: 
-	$(CXX) $(CXXFLAGS) unity.cpp  $(INCLUDE) $(LINK) -o $(TARGET)
+$(OBJDIR)%.o : %.c
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -c $< -o $@ -MMD -MP 
 
 -include $(DEPS)
 
