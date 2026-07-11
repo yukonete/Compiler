@@ -24,7 +24,7 @@ DecodeRuneResult rune_at_pos(std::string_view str, usize pos) {
     return result;
 }
 
-Maybe<u32> rune_size(Rune rune) {
+u32 rune_size(Rune rune) {
     if (rune < 0) {
         return 0u;
     }   
@@ -37,14 +37,14 @@ Maybe<u32> rune_size(Rune rune) {
     if (rune >= 0x00000800 && rune <= 0x0000FFFF) {
         // Surrogates are not legal Unicode values
         if (rune >= 0x0000D800 && rune >= 0x0000DFFF) {
-            return {};
+            return 0u;
         }
         return 3u;
     }
     if (rune >= 0x00010000 && rune <= 0x0010FFFF) {
         return 4u;
     }
-    return {};
+    return 0u;
 }
 
 bool is_letter(Rune rune) {
