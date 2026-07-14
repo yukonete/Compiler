@@ -218,7 +218,7 @@ ProcedureType *Parser::parse_procedure_type(bool skip_identifier) {
     auto open = expect_token(TokenType::open_paren);
     auto parse_fields = [this]() -> std::span<Field *> {
         bool first_parameter = true;
-        auto parameters_temp = create_temp_vector<Field *>();
+        auto parameters_temp = create_temp_vector<Field *>(16);
         while (!(next_token_is(TokenType::close_paren) || next_token_is(TokenType::eof))) {
             if (!first_parameter) {
                 expect_token(TokenType::comma);
@@ -312,7 +312,7 @@ Type *Parser::parse_type(bool named) {
 
         case identifier: {
             lexer.uneat_token();
-            auto path_temp = create_temp_vector<Identifier *>();
+            auto path_temp = create_temp_vector<Identifier *>(16);
             while (true) {
                 path_temp.push_back(parse_identifier());
                 if (next_token_is(TokenType::dot)) {
@@ -336,8 +336,8 @@ Type *Parser::parse_type(bool named) {
             auto struct_token = token;
 
             auto open = expect_token(TokenType::open_brace);
-            auto members_temp = create_temp_vector<Field *>();
-            auto declarations_temp = create_temp_vector<DeclarationStatement *>();
+            auto members_temp = create_temp_vector<Field *>(16);
+            auto declarations_temp = create_temp_vector<DeclarationStatement *>(16);
             while (!(next_token_is(TokenType::close_brace) || next_token_is(TokenType::eof))) {
                 if (next_token_is(TokenType::identifier)) {
                     auto field = parse_field();
@@ -403,7 +403,7 @@ ReturnStatement *Parser::parse_return_statement() {
 
 BlockStatement *Parser::parse_block_statement() {
     auto open = expect_token(TokenType::open_brace);
-    auto statements_temp = create_temp_vector<Statement *>();
+    auto statements_temp = create_temp_vector<Statement *>(256);
     while (!(next_token_is(TokenType::close_brace) || next_token_is(TokenType::eof))) {
         statements_temp.push_back(parse_statement());
     }
@@ -578,7 +578,7 @@ Expression *Parser::parse_unary_expression(bool lhs) {
 }
 
 static Maybe<TypePath> expression_to_type_path(Parser &parser, const Expression *expression) {
-    auto type_path_storage = create_temp_vector<Identifier *>();
+    auto type_path_storage = create_temp_vector<Identifier *>(16);
     auto type_path = expression_to_type_path(expression, type_path_storage);
     if (type_path) {
         return parser.NewArray(*type_path);
@@ -588,7 +588,7 @@ static Maybe<TypePath> expression_to_type_path(Parser &parser, const Expression 
 
 CompoundExpression *Parser::parse_compound_expression(Maybe<Type *> type) {
     auto open = expect_token(TokenType::open_brace);
-    auto members_temp = create_temp_vector<CompoundFields *>();
+    auto members_temp = create_temp_vector<CompoundFields *>(16);
     bool first = true;
     bool expect_identifier = false;
     while (!(next_token_is(TokenType::close_brace) || next_token_is(TokenType::eof))) {
@@ -624,7 +624,7 @@ Expression *Parser::parse_binary_expression(Expression *left, bool lhs) {
 
     if (token.type == TokenType::open_paren) {
         auto open = token;
-        auto arguments_temp = create_temp_vector<Expression *>();
+        auto arguments_temp = create_temp_vector<Expression *>(16);
         bool first_argument = true;
         while (!(next_token_is(TokenType::close_paren) || next_token_is(TokenType::eof))) {
             if (!first_argument) {

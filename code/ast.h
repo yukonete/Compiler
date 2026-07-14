@@ -14,6 +14,10 @@
 #include "base/types.h"
 #include "token.h"
 
+namespace Typing {
+    struct Scope;
+};
+
 namespace Ast {
 
 struct Program;
@@ -129,6 +133,8 @@ struct IfStatement : public Statement {
         Token token;
         // Block or if
         Statement *body;
+
+        Typing::Scope *scope = nullptr;
     };
 
     constexpr IfStatement(const Token &token, Expression *condition,
@@ -142,6 +148,9 @@ struct IfStatement : public Statement {
     Expression *condition;
     Statement *body;
     Maybe<ElseBranch> else_branch;
+
+    // Set in Typer
+    Typing::Scope *scope = nullptr;
 };
 
 struct WhileStatement : public Statement {
@@ -155,6 +164,9 @@ struct WhileStatement : public Statement {
     Token token;
     Expression *condition;
     Statement *body;
+
+    // Set in Typer
+    Typing::Scope *scope = nullptr;
 };
 
 struct BlockStatement : public Statement {
@@ -168,6 +180,11 @@ struct BlockStatement : public Statement {
     Token open;
     Token close;
     std::span<Statement *> body;
+
+    // Set in Typer
+    // If block is part of a if or while statement,
+    // then the scope is the same as their scope
+    Typing::Scope *scope = nullptr;
 };
 
 struct ReturnStatement : public Statement {

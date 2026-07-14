@@ -21,11 +21,14 @@
 namespace Typing {
 
 struct Scope {
+    constexpr Scope(StdAllocator<Entity*> allocator) : entities{allocator} {
+    }
+
     Maybe<Scope *> parent;
     Maybe<Entity *> entity;
-    std::unordered_map<std::string_view, Entity*> entities;
+    AllocatorUnorderedMap<std::string_view, Entity *> entities;
 
-    Maybe<Entity*> look_up(Ast::Identifier *identifier) const;
+    Maybe<Entity *> look_up(Ast::Identifier *identifier) const;
     Maybe<Entity*> look_up(Ast::TypePath path) const;
     
     AllocatorString full_name() const;
@@ -72,10 +75,9 @@ struct Typer {
 
     bool collect_entities(Scope *scope, std::span<Ast::DeclarationStatement *> declarations);
     bool collect_entities(Scope *scope, std::span<Ast::Statement *> statements);
-    bool collect_entity(Scope *scope, Ast::Declaration *declaration,
-                        bool local);
-    void collect_entities_from_statement(Scope *scope,
-                                         Ast::Statement *statement);
+    bool collect_entity(Scope *scope, Ast::Declaration *declaration, bool local);
+    // Used to collect entities form local statements
+    void collect_entities_from_statement(Scope *scope, Ast::Statement *statement, Scope *block_scope = nullptr);
 
     // All check_for_recursive_x functions do not actually have to be member functions,
     // now they have to only because check_for_recursive_statement needs access to block_scopes_ (i think),
@@ -110,15 +112,16 @@ struct Typer {
 private:
     DynamicArena entities_storage_;
     DynamicArena scopes_storage_;
-    std::vector<AllocatorUniquePtr<Scope>> scopes_;
+    // Scopes use memory from scopes_storage_ for allocations
+    // And are stored in the same arena themselfs
+    // So dont have to destroy them
+    std::vector<Scope*> scopes_;
+
+    // Pointer to first scope in scopes_
+    Scope *file_scope;
     
     Ast::Parser &parser_;
     std::vector<Entity*> entities_;
-
-    // Maybe it is better to just store scopes directly in Ast::BlockStatements instead?
-    std::unordered_map<Ast::BlockStatement *, Scope *> block_scopes_;
-
-    Scope *file_scope;
 };
 
 }

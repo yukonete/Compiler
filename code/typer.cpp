@@ -133,6 +133,7 @@ bool Typer::add_entity(Scope *scope, Entity *entity) {
 bool Typer::add_entity(Scope *scope, Entity *entity, std::string_view name) {
     // manually search entities of a scope, so that parent scope is not being searched
     // (so that shadowing is allowed)
+    // TODO: might want to produce warning here
     auto old_entity = scope->entities.find(name);
     if (old_entity != scope->entities.end()) {
         redeclaration_error(old_entity->second, entity);
@@ -145,15 +146,16 @@ bool Typer::add_entity(Scope *scope, Entity *entity, std::string_view name) {
 }
 
 Scope *Typer::create_scope(Scope *parent) {
-    scopes_.push_back(make_unique_with_allocator<Scope>(scopes_storage_.create_allocator()));
-    auto new_scope = scopes_.back().get();
+    auto allocator = scopes_storage_.create_allocator();
+    auto scope = scopes_storage_.new_object<Scope>(allocator);
+    scopes_.push_back(scope);
     if (parent != nullptr) {
-        new_scope->parent = parent;
+        scope->parent = parent;
     }
-    return scopes_.back().get();
+    return scope;
 }
 
-void Typer::collect_entities_from_statement(Scope *scope, Ast::Statement *statement) {
+void Typer::collect_entities_from_statement(Scope *scope, Ast::Statement *statement, Scope *block_scope) {
     switch (statement->kind) {
         using enum Ast::Statement::Kind;
         case DECLARATION: {
@@ -162,26 +164,30 @@ void Typer::collect_entities_from_statement(Scope *scope, Ast::Statement *statem
             collect_entity(scope, declaration, true);
             break;
         }
-        // TODO: For if and while, scope should be created for them, not the block
         case IF: {
             auto if_statement = statement->as<Ast::IfStatement>();
-            collect_entities_from_statement(scope, if_statement->body);
+            if_statement->scope = create_scope(scope);
+            collect_entities_from_statement(if_statement->scope, if_statement->body);
             if (if_statement->else_branch) {
-                collect_entities_from_statement(scope, if_statement->else_branch->body);
+                if_statement->else_branch->scope = create_scope(scope);
+                collect_entities_from_statement(if_statement->else_branch->scope, if_statement->else_branch->body);
             }
             break;
         }
         case WHILE: {
             auto while_statement = statement->as<Ast::WhileStatement>();
-            collect_entities_from_statement(scope, while_statement->body);
+            while_statement->scope = create_scope(scope);
+            collect_entities_from_statement(while_statement->scope, while_statement->body);
             break;
         }
         case BLOCK: {
             auto block = statement->as<Ast::BlockStatement>();
-            auto block_scope = create_scope(scope);
-            block_scopes_[block] = block_scope;
+            if (block_scope == nullptr) {
+                block_scope = create_scope(scope);
+            }
+            block->scope = block_scope;
             for (auto stmt : block->body) {
-                collect_entities_from_statement(block_scope, stmt);
+                collect_entities_from_statement(block->scope, stmt);
             }
             break;
         }
@@ -324,7 +330,7 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
 
         case PROCEDURE: {
             auto ast_proc = ast_type->as<Ast::ProcedureType>();
-            auto parameters_temp = create_temp_vector<Type*>();
+            auto parameters_temp = create_temp_vector<Type*>(ast_proc->parameters.size());
             for (auto ast_parameter : ast_proc->parameters) {
                 auto type = ast_type_to_type(scope, ast_parameter->type);
                 parameters_temp.push_back(type);
@@ -354,7 +360,7 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
                     "struct should have scope set");
             }
 
-            auto members_temp = create_temp_vector<VariableEntity*>();
+            auto members_temp = create_temp_vector<VariableEntity*>(ast_struct->members.size());
             for (auto ast_member : ast_struct->members) {
                 auto member_entity = create_entity<VariableEntity>(
                     scope, ast_member, ast_member->type,
@@ -497,7 +503,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
                 return true;
             }
             
-            auto type_path_storage = create_temp_vector<Ast::Identifier *>();
+            auto type_path_storage = create_temp_vector<Ast::Identifier *>(16);
             auto type_path = Ast::expression_to_type_path(expression, type_path_storage);
             if (!type_path) {
                 return false;
@@ -627,9 +633,7 @@ bool Typer::check_for_recursive_statement(Scope *scope,
         }
         case BLOCK: {
             auto block = statement->as<Ast::BlockStatement>();
-            auto search = block_scopes_.find(block);
-            assert(search != block_scopes_.end());
-            auto block_scope = search->second;
+            auto block_scope = block->scope;
             for (auto stmt : block->body) {
                 if (check_for_recursive_statement(block_scope, stmt, path)) {
                     return true;
@@ -832,7 +836,7 @@ bool Typer::do_typing() {
 
     {
         std::unordered_set<const Entity *> reported_entities;
-        auto path = create_temp_vector<const Entity *>();
+        auto path = create_temp_vector<const Entity *>(16);
         for (auto entity : entities_) {
             bool is_recursive_entity = check_for_recursive_declaration(entity, path);
             // Call above does not handle a case when alias aliases it self trough pointer

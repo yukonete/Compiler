@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <unordered_map>
 
 #include "base/types.h"
 #include "base/util.h"
@@ -211,7 +212,9 @@ struct StdAllocator {
 template <typename T>
 using AllocatorVector = std::vector<T, StdAllocator<T>>;
 
-using AllocatorString =
-    std::basic_string<char, std::char_traits<char>, StdAllocator<char>>;
+using AllocatorString = std::basic_string<char, std::char_traits<char>, StdAllocator<char>>;
+
+template <typename Key, typename Value, typename Hash = std::hash<Key>, typename Equal = std::equal_to<Key>>
+using AllocatorUnorderedMap = std::unordered_map<Key, Value, Hash, Equal, StdAllocator<std::pair<const Key, Value>>>;
 
 #endif
