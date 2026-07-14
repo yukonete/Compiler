@@ -54,6 +54,7 @@ struct AnyType : public Type {
     static constexpr auto KIND = Kind::ANY;
 
     constexpr AnyType() : Type{KIND} {
+        flags |= Flags::SIZED;
         size = 8;
         align = 8;
     }
@@ -63,6 +64,7 @@ struct BadType : public Type {
     static constexpr auto KIND = Kind::BAD;
 
     constexpr BadType() : Type{KIND} {
+        flags |= Flags::SIZED;
     }
 };
 
@@ -70,6 +72,7 @@ struct IntType : public Type {
     static constexpr auto KIND = Kind::INT;
 
     constexpr IntType(u64 size_in, u64 align_in, bool no_sign = false) : Type{KIND}, no_sign{no_sign} {
+        flags |= Flags::SIZED;
         size = size_in;
         align = align_in;
     }
@@ -81,6 +84,7 @@ struct BoolType : public Type {
     static constexpr auto KIND = Kind::BOOL;
 
     constexpr BoolType() : Type{KIND} {
+        flags |= Flags::SIZED;
         size = 1;
         align = 1;
     }
@@ -90,6 +94,7 @@ struct FloatType : public Type {
     static constexpr auto KIND = Kind::FLOAT;
 
     constexpr FloatType(u64 size_in, u64 align_in) : Type{KIND} {
+        flags |= Flags::SIZED;
         size = size_in;
         align = align_in;
     }

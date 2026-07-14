@@ -107,7 +107,7 @@ void syntax_error(Lexer &lexer, const Token &token,
 }
 
 template <typename... Args>
-void error(Lexer &lexer, Ast::Node auto *node, std::format_string<Args...> fmt,
+void error(Lexer &lexer, Ast::Node auto const *node, std::format_string<Args...> fmt,
            Args &&...args) {
     auto start_pos = node->start_token().start;
     auto end_pos = node->end_token().end;
@@ -115,7 +115,7 @@ void error(Lexer &lexer, Ast::Node auto *node, std::format_string<Args...> fmt,
 }
 
 template <typename... Args>
-void warning(Lexer &lexer, Ast::Node auto *node,
+void warning(Lexer &lexer, Ast::Node auto const *node,
              std::format_string<Args...> fmt, Args &&...args) {
     auto start_pos = node->start_token().start;
     auto end_pos = node->end_token().end;
@@ -123,7 +123,7 @@ void warning(Lexer &lexer, Ast::Node auto *node,
 }
 
 template <typename... Args>
-void syntax_error(Lexer &lexer, Ast::Node auto *node,
+void syntax_error(Lexer &lexer, Ast::Node auto const *node,
                   std::format_string<Args...> fmt, Args &&...args) {
     auto start_pos = node->start_token().start;
     auto end_pos = node->end_token().end;

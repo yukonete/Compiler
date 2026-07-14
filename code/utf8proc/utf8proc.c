@@ -40,8 +40,10 @@
  *  Implementation of libutf8proc.
  */
 
+#ifdef __GNUC_
 #pragma GCC diagnostic push 
 #pragma GCC diagnostic ignored "-Wsign-conversion"
+#endif
 
 #include "utf8proc.h"
 
@@ -839,4 +841,6 @@ UTF8PROC_DLLEXPORT utf8proc_uint8_t *utf8proc_NFKC_Casefold(const utf8proc_uint8
   return retval;
 }
 
+#ifdef __GNUC_
 #pragma GCC diagnostic pop
+#endif

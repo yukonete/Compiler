@@ -28,7 +28,7 @@ struct Scope {
     Maybe<Entity *> entity;
     AllocatorUnorderedMap<std::string_view, Entity *> entities;
 
-    Maybe<Entity *> look_up(Ast::Identifier *identifier) const;
+    Maybe<Entity *> look_up(const Ast::Identifier *identifier) const;
     Maybe<Entity*> look_up(Ast::TypePath path) const;
     
     AllocatorString full_name() const;
@@ -79,35 +79,20 @@ struct Typer {
     // Used to collect entities form local statements
     void collect_entities_from_statement(Scope *scope, Ast::Statement *statement, Scope *block_scope = nullptr);
 
-    // All check_for_recursive_x functions do not actually have to be member functions,
-    // now they have to only because check_for_recursive_statement needs access to block_scopes_ (i think),
-    // but those could be stored in AST instead
-    bool check_for_recursive_type(Scope *scope, const Type *type,
-                                  AllocatorVector<const Entity *> &path);
-    bool check_for_recursive_alias_indirect(const Type *type, 
-                                            AllocatorVector<const Entity *> &path);
-    bool check_for_recursive_declaration(const Entity *entity,
-                                         AllocatorVector<const Entity *> &path);
-    bool check_for_recursive_expression(Scope *scope,
-                                        Ast::Expression *expression,
-                                        AllocatorVector<const Entity *> &path);
-    bool check_for_recursive_statement(Scope *scope, Ast::Statement *statement,
-                                       AllocatorVector<const Entity *> &path);
-
     bool do_typing();
 
-    s64 const_evaluate_integer(Scope *scope, Ast::Expression *expression);
+    s64 const_evaluate_integer(const Scope *scope, const Ast::Expression *expression);
 
     void calculate_size_and_alignment(Type *type);
 
-    Maybe<Entity*> get_entity_by_ast_type(Ast::Type *ast_type) const;
-    Maybe<NamedTypeEntity *> look_up_type(Scope *scope, Ast::TypePath path);
-    Maybe<Entity*> look_up(Scope *scope, Ast::TypePath path);
-    Maybe<Entity*> look_up(Scope *scope, Ast::Identifier *identifier);
+    Maybe<Entity*> get_entity_by_ast_type(const Ast::Type *ast_type) const;
+    Maybe<NamedTypeEntity *> look_up_type(const Scope *scope, Ast::TypePath path);
+    Maybe<Entity*> look_up(const Scope *scope, Ast::TypePath path);
+    Maybe<Entity*> look_up(const Scope *scope, const Ast::Identifier *identifier);
 
     void not_declared_error(Ast::TypePath path);
-    void not_declared_error(Ast::Identifier *identifier);
-    void redeclaration_error(Entity *old_entity, Entity *new_entity);
+    void not_declared_error(const Ast::Identifier *identifier);
+    void redeclaration_error(const Entity *old_entity, const Entity *new_entity);
 
 private:
     DynamicArena entities_storage_;

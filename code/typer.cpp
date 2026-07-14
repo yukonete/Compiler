@@ -11,6 +11,12 @@
 
 namespace Typing {
 
+static bool check_for_recursive_type(const Scope *scope, const Type *type, AllocatorVector<const Entity *> &path);
+static bool check_for_recursive_alias_indirect(const Type *type, AllocatorVector<const Entity *> &path);
+static bool check_for_recursive_declaration(const Entity *entity, AllocatorVector<const Entity *> &path);
+static bool check_for_recursive_expression(const Scope *scope, const Ast::Expression *expression, AllocatorVector<const Entity *> &path);
+static bool check_for_recursive_statement(const Scope *scope, const Ast::Statement *statement, AllocatorVector<const Entity *> &path);
+
 // resulting string is stored in temp_allocator
 static AllocatorString full_entity_name(const Entity *entity) {
     std::string_view entity_name;
@@ -46,7 +52,7 @@ AllocatorString Scope::full_name() const {
     return tformat("{}.{}", parent_scope_name, named_type->name);
 }
 
-Maybe<Entity*> Scope::look_up(Ast::Identifier *identifier) const {
+Maybe<Entity*> Scope::look_up(const Ast::Identifier *identifier) const {
     auto search = entities.find(identifier->token.value);
     if (search != entities.end()) {
         auto e = search->second;
@@ -216,6 +222,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
                 scope, ast_variable,
                 *ast_variable->type,
                 ast_variable->value);
+            declaration->entity = entity;
             add_entity(scope, entity);
             if (local) {
                 entity->variable_kind = VariableEntity::VariableKind::LOCAL;
@@ -233,6 +240,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
                 scope, ast_constant,
                 *ast_constant->type,
                 ast_constant->value);
+            declaration->entity = entity;
             add_entity(scope, entity);
             break;
         }
@@ -241,6 +249,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
             auto ast_proc = declaration->as<Ast::ProcedureDeclaration>();
             auto entity = create_entity<ProcedureEntity>(
                 scope, ast_proc, ast_proc->type, create_scope(scope));
+            declaration->entity = entity;
             add_entity(scope, entity);
 
             for (auto ast_parameter : ast_proc->type->parameters) {
@@ -251,6 +260,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
                     entity->inner_scope, ast_parameter, ast_parameter->type,
                     Maybe<Ast::Expression *>{});
                 parameter_entity->variable_kind = VariableEntity::VariableKind::PARAMETER;
+                ast_parameter->entity = parameter_entity;
                 add_entity(entity->inner_scope, parameter_entity);
             }
 
@@ -263,7 +273,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
             auto entity = create_entity<NamedTypeEntity>(
                 scope, ast_type, ast_type->type, create_scope(scope));
             entity->inner_scope->entity = entity;
-            
+            declaration->entity = entity;
             add_entity(scope, entity);
 
             if (ast_type->type->is<Ast::StructType>()) {
@@ -301,31 +311,41 @@ bool Typer::collect_entities(
 }
 
 Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
+    if (ast_type->type != nullptr) {
+        return ast_type->type;
+    }
+
     switch (ast_type->kind) {
         using enum Ast::Type::Kind;
         
-        case BAD: panic("BAD type");
+        case BAD: {
+            ast_type->type = create_type<BadType>();
+            return ast_type->type;
+        }
 
         case IDENTIFIER: {
             auto ast_identifier = ast_type->as<Ast::IdentifierType>();
             auto entity = look_up_type(scope, ast_identifier->path);
             if (!entity) {
-                return create_type<BadType>();
-            }
-            return entity->type;
+                ast_type->type = create_type<BadType>();
+            } else {
+                ast_type->type = entity->type;
+            } 
+            return ast_type->type;
         }
         
         case POINTER: {
             auto ast_pointer = ast_type->as<Ast::PointerType>();
             auto type = ast_type_to_type(scope, ast_pointer->type);
-            return create_type<PointerType>(type);
+            ast_type->type = create_type<PointerType>(type);
+            return ast_type->type;
         }
 
         case ARRAY: {
             auto ast_array = ast_type->as<Ast::ArrayType>();
             auto type = ast_type_to_type(scope, ast_array->element_type);
-            auto array = create_type<ArrayType>(type, u64(0), ast_array->count, scope);
-            return array;
+            ast_type->type = create_type<ArrayType>(type, u64(0), ast_array->count, scope);
+            return ast_type->type;
         }
 
         case PROCEDURE: {
@@ -344,7 +364,8 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
             // For EntityProcedure, this will also set it's type to pointer to procedure, rather than procedure type
             // While we could check if there exists en entity for this procedure type and in this case return the
             // procedure type itself, but i am not sure what approach is better
-            return create_type<PointerType>(create_type<ProcedureType>(parameters, return_type));
+            ast_type->type = create_type<PointerType>(create_type<ProcedureType>(parameters, return_type));
+            return ast_type->type;
         }
 
         case STRUCT: {
@@ -371,13 +392,16 @@ Type *Typer::ast_type_to_type(Scope *scope, Ast::Type *ast_type) {
                 members_temp.push_back(member_entity);
             }
             auto members = create_array(std::span{members_temp});
-            return create_type<StructType>(members, scope);
+            // Could set ast_type->type to point to entity's type instead, but i dont think it is necessary
+            ast_type->type = create_type<StructType>(members, scope);
+            return ast_type->type;
         }
 
         case SLICE: {
             auto ast_slice = ast_type->as<Ast::SliceType>();
             auto type = ast_type_to_type(scope, ast_slice->element_type);
-            return create_type<SliceType>(type);
+            ast_type->type = create_type<SliceType>(type);
+            return ast_type->type;
         }
     }
     assert(false && "Shoud not trigger");
@@ -422,34 +446,35 @@ void Typer::resolve_alias(NamedTypeEntity *entity) {
     }
 }
 
-bool Typer::check_for_recursive_expression(Scope *scope,
-                                           Ast::Expression *expression,
+static bool check_for_recursive_expression(const Scope *scope,
+                                           const Ast::Expression *expression,
                                            AllocatorVector<const Entity *> &path) {
     switch (expression->kind) {
         using enum Ast::Expression::Kind;
 
-        case BAD: panic("BAD type");
+        case BAD:
         case INTEGER_LITERAL:
         case BOOL_LITERAL:
         case STRING_LITERAL:
         case FLOAT_LITERAL: return false;
         case CAST_OPERATOR: {
             auto cast = expression->as<Ast::CastOperatorExpression>();
-            // Might want to store that type somewhere, but for now just check
-            // it for recursion
-            auto type = ast_type_to_type(scope, cast->type);
-            if (check_for_recursive_type(scope, type, path)) {
-                return true;
-            }
+            // Type of cast is not checked for now because the actuall checking is not implemented yet, 
+            // which will set Typing::Type.
+            // auto type = cast->type->type;
+            // if (check_for_recursive_type(scope, type, path)) {
+            //     return true;
+            // }
             return check_for_recursive_expression(scope, cast->expression, path);
         }
         case COMPOUND: {
             auto compound = expression->as<Ast::CompoundExpression>();
             if (compound->type) {
-                auto type = ast_type_to_type(scope, *compound->type);
-                if (check_for_recursive_type(scope, type, path)) {
-                    return true;
-                }
+                // See comment for CAST_OPERATOR
+                // auto type = compound->type->type;
+                // if (check_for_recursive_type(scope, type, path)) {
+                //     return true;
+                // }
             }
             for (auto value : compound->values) {
                 if (check_for_recursive_expression(scope, value->value, path)) {
@@ -516,9 +541,11 @@ bool Typer::check_for_recursive_expression(Scope *scope,
             return check_for_recursive_declaration(*entity, path);
         }
         case TYPE: {
-            auto ast_type = expression->as<Ast::TypeExpression>();
-            auto type = ast_type_to_type(scope, ast_type->type);
-            return check_for_recursive_type(scope, type, path);
+            // See comment for CAST_OPERATOR
+            // auto ast_type = expression->as<Ast::TypeExpression>();
+            // auto type = type->type;
+            // return check_for_recursive_type(scope, type, path);
+            return false;
         }
         case DEREF: {
             auto deref = expression->as<Ast::DerefExpression>();
@@ -539,7 +566,7 @@ bool Typer::check_for_recursive_expression(Scope *scope,
     return false;
 }
 
-bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
+static bool check_for_recursive_type(const Scope *scope, const Type *type,
                                      AllocatorVector<const Entity *> &path) {
     switch (type->kind) {
         using enum Type::Kind;
@@ -594,9 +621,8 @@ bool Typer::check_for_recursive_type(Scope *scope, const Type *type,
     return false;
 }
 
-bool Typer::check_for_recursive_statement(Scope *scope,
-                                          Ast::Statement *statement,
-                                          AllocatorVector<const Entity *> &path) {
+static bool check_for_recursive_statement(const Scope *scope, const Ast::Statement *statement,
+                                   AllocatorVector<const Entity *> &path) {
     switch (statement->kind) {
         using enum Ast::Statement::Kind;
 
@@ -671,7 +697,7 @@ bool Typer::check_for_recursive_statement(Scope *scope,
     return false;
 }
 
-bool Typer::check_for_recursive_declaration(const Entity *entity,
+static bool check_for_recursive_declaration(const Entity *entity,
                                             AllocatorVector<const Entity *> &path) {
     if (std::ranges::contains(path, entity)) {
         if (entity->is<ProcedureEntity>()) {
@@ -739,7 +765,7 @@ bool Typer::check_for_recursive_declaration(const Entity *entity,
     return found;
 }
 
-bool Typer::check_for_recursive_alias_indirect(const Type *type, AllocatorVector<const Entity *> &path) {
+static bool check_for_recursive_alias_indirect(const Type *type, AllocatorVector<const Entity *> &path) {
     bool found = false;
     switch (type->kind) {
         using enum Type::Kind;
@@ -773,7 +799,6 @@ bool Typer::check_for_recursive_alias_indirect(const Type *type, AllocatorVector
 bool Typer::do_typing() {
     auto add_builtin_type = [this](Scope *scope, Type *type,
                                    std::string_view name) -> bool {
-        type->flags |= Type::Flags::SIZED;
         auto entity =
             create_entity<NamedTypeEntity>(scope, nullptr, nullptr, Maybe<Scope *>{});
         auto type_named = create_type<NamedType>(name, entity);
@@ -880,26 +905,24 @@ bool Typer::do_typing() {
     }
 
     for (auto entity : entities_) {
-        if (entity->is<ProcedureEntity>() || has_flag(entity->flags, Entity::Flags::BUILTIN)) {
-            continue;
-        }
-
         calculate_size_and_alignment(entity->type);
-        std::println("Entity: {}", full_entity_name(entity));
-        std::println("Size: {}", entity->type->size);
-        std::println("Alignment: {}", entity->type->align);
-        std::println("----------------");
+        if (!has_flag(entity->flags, Entity::Flags::BUILTIN)) {
+            std::println("Entity: {} (at {})", full_entity_name(entity),
+                         parser_.lexer.token_to_location_string(entity->declaration->start_token()));
+            std::println("Size: {}", entity->type->size);
+            std::println("Alignment: {}", entity->type->align);
+            std::println("----------------");
+        }
     }
 
     return parser_.lexer.any_errors();
 }
 
 // TODO: Replace this with proper evaluator that will evaluate expression of any type
-s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
+s64 Typer::const_evaluate_integer(const Scope *scope, const Ast::Expression *expression) {
     switch (expression->kind) {
         using enum Ast::Expression::Kind;
 
-        case BAD: panic("BAD expression");
         case INTEGER_LITERAL: {
             auto integer = expression->as<Ast::IntegerLiteralExpression>();
             // TODO: Handle when integer->value is bigger than max value of s64
@@ -970,6 +993,7 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
             }
         }
 
+        case BAD:
         case BOOL_LITERAL:
         case STRING_LITERAL:
         case FLOAT_LITERAL: {
@@ -1008,7 +1032,7 @@ s64 Typer::const_evaluate_integer(Scope *scope, Ast::Expression *expression) {
             panic("Not implemented");
         }
         case SLICE: {
-            // Should probably be an error, because this is essentially pointer
+            // TODO: Should probably be an error, because this is essentially a pointer
             panic("Not implemented");
         }
         case TYPE: {
@@ -1033,11 +1057,11 @@ void Typer::calculate_size_and_alignment(Type *type) {
     switch (type->kind) {
         using enum Type::Kind;
 
-        case BAD: panic("BAD type");
-        case PROCEDURE: panic("Attempted to calculate size of procedure");
         case STRING: {
             panic("Not implemented");
         }
+        case PROCEDURE:
+        case BAD:
         case POINTER:
         case SLICE:
         case INT:
@@ -1096,7 +1120,7 @@ void Typer::calculate_size_and_alignment(Type *type) {
     }
 }
 
-Maybe<Entity*> Typer::get_entity_by_ast_type(Ast::Type *ast_type) const {
+Maybe<Entity*> Typer::get_entity_by_ast_type(const Ast::Type *ast_type) const {
     auto search = std::ranges::find_if(entities_, [ast_type](Entity *entity) {
         return entity->ast_type == ast_type;
     });
@@ -1106,7 +1130,7 @@ Maybe<Entity*> Typer::get_entity_by_ast_type(Ast::Type *ast_type) const {
     return {};
 }
 
-Maybe<NamedTypeEntity *> Typer::look_up_type(Scope *scope, Ast::TypePath path) {
+Maybe<NamedTypeEntity *> Typer::look_up_type(const Scope *scope, Ast::TypePath path) {
     auto entity = look_up(scope, path);
     if (!entity) {
         return {};
@@ -1118,7 +1142,7 @@ Maybe<NamedTypeEntity *> Typer::look_up_type(Scope *scope, Ast::TypePath path) {
     return {};
 }
 
-Maybe<Entity*> Typer::look_up(Scope *scope, Ast::Identifier *identifier) {
+Maybe<Entity*> Typer::look_up(const Scope *scope, const Ast::Identifier *identifier) {
     auto entity = scope->look_up(identifier);
     if (entity) {
         return entity;
@@ -1127,7 +1151,7 @@ Maybe<Entity*> Typer::look_up(Scope *scope, Ast::Identifier *identifier) {
     return {};
 }
 
-Maybe<Entity*> Typer::look_up(Scope *scope, Ast::TypePath path) {
+Maybe<Entity*> Typer::look_up(const Scope *scope, Ast::TypePath path) {
     auto entity = scope->look_up(path);
     if (entity) {
         return entity;
@@ -1136,7 +1160,7 @@ Maybe<Entity*> Typer::look_up(Scope *scope, Ast::TypePath path) {
     return {};
 }
 
-void Typer::not_declared_error(Ast::Identifier *identifier) {
+void Typer::not_declared_error(const Ast::Identifier *identifier) {
     error(parser_.lexer, identifier->token, "{} is not declared", identifier->token.value);
 }
 
@@ -1146,7 +1170,7 @@ void Typer::not_declared_error(Ast::TypePath path) {
             type_path_to_string(path));
 }
 
-void Typer::redeclaration_error(Entity *old_entity, Entity *new_entity) {
+void Typer::redeclaration_error(const Entity *old_entity, const Entity *new_entity) {
     auto old_declaration = old_entity->declaration;
     auto new_declaration = new_entity->declaration;
     auto old_declaration_token = old_declaration->start_token();
@@ -1154,4 +1178,4 @@ void Typer::redeclaration_error(Entity *old_entity, Entity *new_entity) {
           new_declaration->identifier->token.value,
           parser_.lexer.token_to_location_string(old_declaration_token));
 }
-}
+} // namespace Typing

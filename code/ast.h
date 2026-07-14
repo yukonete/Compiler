@@ -16,6 +16,8 @@
 
 namespace Typing {
     struct Scope;
+    struct Entity;
+    struct Type;
 };
 
 namespace Ast {
@@ -277,6 +279,9 @@ struct Declaration {
     Kind kind;
     Flags flags = Flags::NONE;
     Identifier *identifier;
+
+    // Set in Typer
+    Typing::Entity *entity = nullptr;
 };
 
 DEFINE_ENUM_FLAG_OPERATORS(Declaration::Flags);
@@ -578,7 +583,7 @@ struct CompoundExpression : public Expression {
 
     Maybe<Type *> type;
     // Mixture of 'field=value' and just value is not allowed
-    // So either all values have identifier set or none (assuming no reported errors)
+    // So either all values have identifier set or none (assuming no errors were reported)
     std::span<CompoundFields*> values;
 };
 
@@ -601,6 +606,9 @@ struct Type {
     Token end_token() const;
 
     Kind kind;
+
+    // Set in typer
+    Typing::Type *type = nullptr;
 };
 
 inline AllocatorString type_path_to_string(TypePath path) {
@@ -723,13 +731,10 @@ concept Node = std::derived_from<T, Statement> || std::derived_from<T, Declarati
 
 std::string statement_to_string(const Statement *type, u64 tabs, bool block_indent = true);
 std::string expression_to_string(const Expression *type, u64 tabs);
-std::string type_to_string(const Type *type, u64 tabs = 0,
-                           bool include_fn = true);
+std::string type_to_string(const Type *type, u64 tabs = 0, bool include_fn = true);
 std::string declaration_to_string(const Declaration *decl, u64 tabs);
 
-Maybe<TypePath>
-expression_to_type_path(const Expression *expression,
-                        AllocatorVector<Identifier *> &out);
+Maybe<TypePath> expression_to_type_path(const Expression *expression, AllocatorVector<Identifier *> &out);
 
 }; // namespace Ast
 #endif // #ifndef AST_H
