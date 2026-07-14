@@ -25,6 +25,6 @@ template <typename... Args>
 }
 
 #define panic(fmt, ...)                                                        \
-    panic_(fmt, std::source_location::current(), ##__VA_ARGS__);
+    panic_(fmt, std::source_location::current(), ##__VA_ARGS__)
 
 #endif

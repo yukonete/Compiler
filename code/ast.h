@@ -101,6 +101,7 @@ struct Statement {
     }
     Token start_token() const;
     Token end_token() const;
+    void dump(std::string& out, u32 indent_level, bool do_indent = true) const;
 
     Kind kind;
 };
@@ -275,6 +276,7 @@ struct Declaration {
     }
     Token start_token() const;
     Token end_token() const;
+    void dump(std::string &out, u32 indent_level) const;
 
     Kind kind;
     Flags flags = Flags::NONE;
@@ -375,6 +377,7 @@ struct Expression {
     }
     Token start_token() const;
     Token end_token() const;
+    void dump(std::string& out, u32 indent_level) const;
 
     Kind kind;
 };
@@ -604,6 +607,7 @@ struct Type {
     }
     Token start_token() const;
     Token end_token() const;
+    void dump(std::string &out, u32 indent_level, bool include_fn = true) const;
 
     Kind kind;
 
@@ -728,11 +732,6 @@ struct StructType : public Type {
 template <typename T>
 concept Node = std::derived_from<T, Statement> || std::derived_from<T, Declaration> ||
                std::derived_from<T, Type> || std::derived_from<T, Expression>;
-
-std::string statement_to_string(const Statement *type, u64 tabs, bool block_indent = true);
-std::string expression_to_string(const Expression *type, u64 tabs);
-std::string type_to_string(const Type *type, u64 tabs = 0, bool include_fn = true);
-std::string declaration_to_string(const Declaration *decl, u64 tabs);
 
 Maybe<TypePath> expression_to_type_path(const Expression *expression, AllocatorVector<Identifier *> &out);
 

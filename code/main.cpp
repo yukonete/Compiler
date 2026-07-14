@@ -33,9 +33,11 @@ int main(int argc, char **argv) {
     }
 
     std::println("AST to code:");
+    auto buffer = std::string{};
     for (auto statement : parser.ast) {
-        auto node_string = Ast::statement_to_string(statement, 0);
-        std::println("{}", node_string);
+        statement->dump(buffer, 0);
+        std::println("{}", buffer);
+        buffer.clear();
     }
 
     auto typer = Typing::Typer{parser, NEW_ALLOCATOR};
