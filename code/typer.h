@@ -37,7 +37,7 @@ struct Scope {
 struct Typer {
     constexpr Typer(Ast::Parser &parser, Allocator allocator)
         : entities_storage_{allocator}, scopes_storage_{allocator},
-          parser_{parser}, file_scope{create_scope(nullptr)} {
+          parser_{parser}, file_scope{create_scope(nullptr)}, reporter{parser.reporter} {
     }
 
     template <typename T, typename... Args>
@@ -107,6 +107,8 @@ private:
     
     Ast::Parser &parser_;
     std::vector<Entity*> entities_;
+public:
+    Reporter &reporter;
 };
 
 }

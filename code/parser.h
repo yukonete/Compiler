@@ -14,6 +14,7 @@
 #include "token.h"
 #include "lexer.h"
 #include "ast.h"
+#include "error.h"
 
 namespace Ast {
 
@@ -32,8 +33,8 @@ public:
     constexpr Parser(Lexer &&lexer, Allocator allocator)
         : lexer{std::move(lexer)}, nodes_storage_{allocator} {}
 
-    static Maybe<Parser> open(std::string &&path, Allocator allocator, FILE *log = stderr) {
-        auto lexer = Lexer::open(std::move(path), log);
+    static Maybe<Parser> open(std::string &&path, Allocator allocator) {
+        auto lexer = Lexer::open(std::move(path));
         if (!lexer) {
             return {};
         }
@@ -89,9 +90,12 @@ private:
     bool next_token_is(TokenType type);
 public:
     Lexer lexer;
+    Reporter reporter;
     std::vector<Statement *> ast;
 private:
     DynamicArena nodes_storage_;
+
+    bool invalid_statement_ = false;
 };
 
 }; // namespace Ast

@@ -1,140 +1,103 @@
 #ifndef ERROR_H
 #define ERROR_H
 
-#include <print>
 #include <format>
+#include <vector>
 
 #include "base/types.h"
 #include "lexer.h"
+#include "token.h"
 #include "ast.h"
 
-void highlight_location_on_line(Lexer &lexer, const FileLocation &start,
-                             const FileLocation &end);
+struct Diagnostic {
+    enum class Kind {
+        INVALID,
+        ERROR,
+        WARNING,
+    };
+
+    Kind kind = Kind::INVALID;
+    u64 start = 0;
+    u64 end = 0;
+    std::string message;
+};
+
+struct Reporter {
+    Lexer *lexer = nullptr;
+
+    std::vector<Diagnostic> diagnostics;
+    u64 count = 0;
+    u64 warning_count = 0;
+    bool report_on_add = false;
+
+    FILE *log = stderr;
+
+    void add(Diagnostic &&diagnostic);
+    bool any_errors() const;
+    void print_all_diagnostics();
+};
+
+void highlight_location_on_line(Reporter &reporter, std::string &out, const FileLocation &start,
+                                const FileLocation &end);
 
 template <typename... Args>
-void error_no_line(Lexer &lexer, const FileLocation &location,
-                   std::format_string<Args...> fmt, Args &&...args) {
-    lexer.error_count += 1;
-    if (lexer.report_only_first_error && lexer.error_count > 1) {
-        return;
-    }
-
-    if (lexer.log == nullptr) {
-        return;
-    }
-
-    std::print(lexer.log, "{}({}:{}) Error: ", lexer.file_name(), location.line,
-               location.column);
-    std::println(lexer.log, fmt, std::forward<Args>(args)...);
+void error(Reporter &reporter, u64 start, u64 end, std::format_string<Args...> fmt, Args &&...args) {
+    auto message = reporter.lexer->byte_position_to_location_string(start);
+    message += " Error: ";
+    std::format_to(std::back_inserter(message), fmt, std::forward<Args>(args)...);
+    message += '\n';
+    auto start_location = reporter.lexer->byte_position_to_file_location(start);
+    auto end_location = reporter.lexer->byte_position_to_file_location(end);
+    highlight_location_on_line(reporter, message, start_location, end_location); 
+    reporter.add(Diagnostic{.kind = Diagnostic::Kind::ERROR, .start = start, .end = end, .message = message});
 }
 
 template <typename... Args>
-void error(Lexer &lexer, u64 start, u64 end, std::format_string<Args...> fmt,
+void error(Reporter &reporter, const Token &token, std::format_string<Args...> fmt,
            Args &&...args) {
-    auto start_location = lexer.byte_position_to_file_location(start);
-    auto end_location = lexer.byte_position_to_file_location(end);
-    error_no_line(lexer, start_location, fmt, std::forward<Args>(args)...);
-    if (!lexer.report_only_first_error || lexer.error_count == 1) {
-        highlight_location_on_line(lexer, start_location, end_location);
-    }
+    error(reporter, token.start, token.end, fmt, std::forward<Args>(args)...);
 }
 
 template <typename... Args>
-void error(Lexer &lexer, const Token &token, std::format_string<Args...> fmt,
-           Args &&...args) {
-    error(lexer, token.start, token.end, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void warning_no_line(Lexer &lexer, const FileLocation &location,
-                     std::format_string<Args...> fmt, Args &&...args) {
-    if (lexer.log == nullptr) {
-        return;
-    }
-
-    std::print(lexer.log, "{}({}:{}) Warning: ", lexer.file_name(),
-               location.line, location.column);
-    std::println(lexer.log, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void warning(Lexer &lexer, u64 start, u64 end, std::format_string<Args...> fmt,
+void warning(Reporter &reporter, u64 start, u64 end, std::format_string<Args...> fmt,
              Args &&...args) {
-    auto start_location = lexer.byte_position_to_file_location(start);
-    auto end_location = lexer.byte_position_to_file_location(end);
-    warning_no_line(lexer, start_location, fmt, std::forward<Args>(args)...);
-    highlight_location_on_line(lexer, start_location, end_location);
+    auto message = reporter.lexer->byte_position_to_location_string(start);
+    message += " Warning: ";
+    std::format_to(std::back_inserter(message), fmt, std::forward<Args>(args)...);
+    message += '\n';
+    auto start_location = reporter.lexer->byte_position_to_file_location(start);
+    auto end_location = reporter.lexer->byte_position_to_file_location(end);
+    highlight_location_on_line(reporter, message, start_location, end_location);
+    reporter.add(Diagnostic{.kind = Diagnostic::Kind::WARNING, .start = start, .end = end, .message = message});
 }
 
 template <typename... Args>
-void warning(Lexer &lexer, const Token &token, std::format_string<Args...> fmt,
+void warning(Reporter &reporter, const Token &token, std::format_string<Args...> fmt,
              Args &&...args) {
-    warning(token.start, token.end, fmt, std::forward<Args>(args)...);
+    warning(reporter, token.start, token.end, fmt, std::forward<Args>(args)...);
 }
 
 template <typename... Args>
-void syntax_error_no_line(Lexer &lexer, const FileLocation &location,
-                          std::format_string<Args...> fmt, Args &&...args) {
-    lexer.error_count += 1;
-    if (lexer.report_only_first_syntax_error && lexer.error_count > 1) {
-        return;
-    }
-
-    if (lexer.log == nullptr) {
-        return;
-    }
-    std::print(lexer.log, "{}({}:{}) Syntax error: ", lexer.file_name(),
-               location.line, location.column);
-    std::println(lexer.log, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void syntax_error(Lexer &lexer, u64 start, u64 end, std::format_string<Args...> fmt,
-                  Args &&...args) {
-    auto start_location = lexer.byte_position_to_file_location(start);
-    auto end_location = lexer.byte_position_to_file_location(end);
-    syntax_error_no_line(lexer, start_location, fmt, std::forward<Args>(args)...);
-    if (!lexer.report_only_first_syntax_error || lexer.error_count == 1) {
-        highlight_location_on_line(lexer, start_location, end_location);
-    }
-}
-
-template <typename... Args>
-void syntax_error(Lexer &lexer, const Token &token,
-                  std::format_string<Args...> fmt, Args &&...args) {
-    syntax_error(lexer, token.start, token.end, fmt,
-                 std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void error(Lexer &lexer, Ast::Node auto const *node, std::format_string<Args...> fmt,
+void error(Reporter &reporter, Ast::Node auto const *node, std::format_string<Args...> fmt,
            Args &&...args) {
     auto start_pos = node->start_token().start;
     auto end_pos = node->end_token().end;
-    error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
+    error(reporter, start_pos, end_pos, fmt, std::forward<Args>(args)...);
 }
 
 template <typename... Args>
-void warning(Lexer &lexer, Ast::Node auto const *node,
+void warning(Reporter &reporter, Ast::Node auto const *node,
              std::format_string<Args...> fmt, Args &&...args) {
     auto start_pos = node->start_token().start;
     auto end_pos = node->end_token().end;
-    warning(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
+    warning(reporter, start_pos, end_pos, fmt, std::forward<Args>(args)...);
 }
 
 template <typename... Args>
-void syntax_error(Lexer &lexer, Ast::Node auto const *node,
-                  std::format_string<Args...> fmt, Args &&...args) {
-    auto start_pos = node->start_token().start;
-    auto end_pos = node->end_token().end;
-    syntax_error(lexer, start_pos, end_pos, fmt, std::forward<Args>(args)...);
-}
-
-template <typename... Args>
-void error(Lexer &lexer, Ast::TypePath path, std::format_string<Args...> fmt,
+void error(Reporter &reporter, Ast::TypePath path, std::format_string<Args...> fmt,
            Args &&...args) {
     assert(path.size() > 0);
-    error(lexer, path.front()->token.start, path.back()->token.end, fmt,
+    error(reporter, path.front()->token.start, path.back()->token.end, fmt,
           std::forward<Args>(args)...);
 }
 

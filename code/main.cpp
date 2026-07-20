@@ -26,7 +26,8 @@ int main(int argc, char **argv) {
                           std::exit(1);
                       });
 
-    parser.lexer.tokenize_until_eof();
+    parser.reporter.lexer = &parser.lexer;
+    parser.reporter.report_on_add = true;
 
     if (!parser.parse_program()) {
         return 1;
@@ -35,9 +36,9 @@ int main(int argc, char **argv) {
     std::println("AST to code:");
     auto buffer = std::string{};
     for (auto statement : parser.ast) {
+        buffer.clear();
         statement->dump(buffer, 0);
         std::println("{}", buffer);
-        buffer.clear();
     }
 
     auto typer = Typing::Typer{parser, NEW_ALLOCATOR};

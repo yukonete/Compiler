@@ -43,12 +43,17 @@ static TokenType check_identifier_for_keyword(std::string_view identifier) {
     return TokenType::identifier;
 }
 
-AllocatorString Lexer::location_to_report_string(const FileLocation &location) const {
-    return tformat("{}({}:{})", file_name_, location.line, location.column);
+std::string Lexer::location_to_report_string(const FileLocation &location) const {
+    return format("{}({}:{})", file_name_, location.line, location.column);
 }
 
-AllocatorString Lexer::token_to_location_string(const Token &token) const {
+std::string Lexer::token_to_location_string(const Token &token) const {
     auto location = byte_position_to_file_location(token.start);
+    return location_to_report_string(location);
+}
+
+std::string Lexer::byte_position_to_location_string(u64 byte) const {
+    auto location = byte_position_to_file_location(byte);
     return location_to_report_string(location);
 }
 

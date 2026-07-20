@@ -21,21 +21,20 @@
 
 class Lexer {
 public:
-    constexpr Lexer(std::string &&input, std::string &&file_name,
-                             FILE *log)
-        : file_name_{std::move(file_name)}, input_{std::move(input)}, log{log} {
+    constexpr Lexer(std::string &&input, std::string &&file_name)
+        : file_name_{std::move(file_name)}, input_{std::move(input)} {
     }
     constexpr Lexer(const Lexer &) = delete;
     constexpr Lexer& operator=(const Lexer &) = delete;
     constexpr Lexer(Lexer&&) = default;
     constexpr Lexer& operator=(Lexer &&) = default;
 
-    static Maybe<Lexer> open(std::string &&path, FILE *log = stderr) {
+    static Maybe<Lexer> open(std::string &&path) {
         auto input = read_file_to_string(path.c_str());
         if (!input) {
             return {};
         }
-        return Lexer{std::move(*input), std::move(path), log};
+        return Lexer{std::move(*input), std::move(path)};
     }
 
     Token next_token();
@@ -63,10 +62,6 @@ public:
         return input_view().substr(input_cursor_);
     }
 
-    bool any_errors() const {
-        return error_count != 0;
-    }
-
     std::string_view file_name() const {
         return file_name_;
     }
@@ -74,8 +69,9 @@ public:
     void tokenize_until_eof();
 
     FileLocation byte_position_to_file_location(u64 byte_position) const;
-    AllocatorString location_to_report_string(const FileLocation &location) const;
-    AllocatorString token_to_location_string(const Token &token) const;
+    std::string location_to_report_string(const FileLocation &location) const;
+    std::string token_to_location_string(const Token &token) const;
+    std::string byte_position_to_location_string(u64 byte) const;
 
 private:
     struct ParseNumberResult {
@@ -106,11 +102,6 @@ private:
     usize tokens_cursor_ = 0;
     
     std::vector<u64> new_lines; 
-public:
-    FILE *log = nullptr;
-    u64 error_count = 0;
-    bool report_only_first_error = false;
-    bool report_only_first_syntax_error = true;
 };
 
 #endif

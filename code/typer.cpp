@@ -215,7 +215,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
         case VARIABLE: {
             auto ast_variable = declaration->as<Ast::VariableDeclaration>();
             if (!ast_variable->type) {
-                syntax_error(parser_.lexer, ast_variable, "Variable has no type");
+                error(reporter, ast_variable, "Variable has no type");
                 break;
             }
             auto entity = create_entity<VariableEntity>(
@@ -233,7 +233,7 @@ bool Typer::collect_entity(Scope *scope, Ast::Declaration *declaration,
         case CONSTANT: {
             auto ast_constant = declaration->as<Ast::ConstDeclaration>();
             if (!ast_constant->type) {
-                syntax_error(parser_.lexer, ast_constant, "Constant has no type");
+                error(reporter, ast_constant, "Constant has no type");
                 break;
             }
             auto entity = create_entity<ConstantEntity>(
@@ -296,6 +296,8 @@ bool Typer::collect_entities(Scope *scope,
     for (auto statement : statements) {
         if (statement->is<Ast::DeclarationStatement>()) {
             collected |= collect_entity(scope, statement->as<Ast::DeclarationStatement>()->declaration, false);
+        } else {
+            error(reporter, statement, "Expected declaration");
         }
     }
     return collected;
@@ -826,11 +828,11 @@ bool Typer::do_typing() {
         panic("Could not add builtin type to file scope");
     }
 
-    assert(!parser_.lexer.any_errors());
+    assert(!parser_.reporter.any_errors());
 
     collect_entities(file_scope, parser_.ast);
 
-    if (parser_.lexer.any_errors()) {
+    if (parser_.reporter.any_errors()) {
         return false;
     }
 
@@ -842,7 +844,7 @@ bool Typer::do_typing() {
         resolve_alias(entity->as<NamedTypeEntity>());
     }
 
-    if (parser_.lexer.any_errors()) {
+    if (parser_.reporter.any_errors()) {
         return false;
     }
 
@@ -850,7 +852,7 @@ bool Typer::do_typing() {
         resolve_entity(entity);
     }
 
-    if (parser_.lexer.any_errors()) {
+    if (parser_.reporter.any_errors()) {
         return false;
     }
 
@@ -881,15 +883,15 @@ bool Typer::do_typing() {
                 reported_entities.insert(entity);
                 if (path.size() == 2) {
                     auto entity_name = full_entity_name(path[0]);
-                    error(parser_.lexer, path[0]->declaration,
+                    error(reporter, path[0]->declaration,
                         "Invalid recursive declaration '{}': '{}' refers to itself",
                         entity_name, entity_name);
                 } else {
-                    error(parser_.lexer, path[0]->declaration,
+                    error(reporter, path[0]->declaration,
                             "Invalid recursive declaration '{}'", full_entity_name(path[0]));
                     for (auto i : indices(path.size() - 1)) {
                         reported_entities.insert(path[i + 1]);
-                        error(parser_.lexer, path[i]->declaration,
+                        error(reporter, path[i]->declaration,
                                 "'{}' refers to '{}'", full_entity_name(path[i]),
                                 full_entity_name(path[i + 1]));
                     }
@@ -900,7 +902,7 @@ bool Typer::do_typing() {
         }
     }
 
-    if (parser_.lexer.any_errors()) {
+    if (parser_.reporter.any_errors()) {
         return false;
     }
 
@@ -915,7 +917,7 @@ bool Typer::do_typing() {
         }
     }
 
-    return parser_.lexer.any_errors();
+    return parser_.reporter.any_errors();
 }
 
 // TODO: Replace this with proper evaluator that will evaluate expression of any type
@@ -946,7 +948,7 @@ s64 Typer::const_evaluate_integer(const Scope *scope, const Ast::Expression *exp
 
                 case ampersand:
                 case bang: {
-                    error(parser_.lexer, unary, "Expression does not evaluate to integer");
+                    error(reporter, unary, "Expression does not evaluate to integer");
                     return 0;
                 }
                 case plus: return const_evaluate_integer(scope, unary->right);
@@ -969,7 +971,7 @@ s64 Typer::const_evaluate_integer(const Scope *scope, const Ast::Expression *exp
                 case greater:
                 case less_equals:
                 case greater_equals: {
-                    error(parser_.lexer, binary,
+                    error(reporter, binary,
                           "Expression does not evaluate to integer");
                     return 0;
                 }
@@ -997,7 +999,7 @@ s64 Typer::const_evaluate_integer(const Scope *scope, const Ast::Expression *exp
         case BOOL_LITERAL:
         case STRING_LITERAL:
         case FLOAT_LITERAL: {
-            error(parser_.lexer, expression,
+            error(reporter, expression,
                   "Expression does not evaluate to integer");
             return 0;
         }
@@ -1008,20 +1010,20 @@ s64 Typer::const_evaluate_integer(const Scope *scope, const Ast::Expression *exp
                 return 0;
             }
             if (!entity->is<ConstantEntity>()) {
-                error(parser_.lexer, identifier, "{} is not a constant",
+                error(reporter, identifier, "{} is not a constant",
                       identifier->identifier->token.value);
                 return 0;
             }
             auto constant = entity->as<ConstantEntity>();
             if (!is_integer(constant->type)) {
-                error(parser_.lexer, identifier, "Type of {} is not integer",
+                error(reporter, identifier, "Type of {} is not integer",
                       identifier->identifier->token.value);
                 return 0;
             }
-            return const_evaluate_integer(scope, constant->init_expression);
+            return const_evaluate_integer(constant->scope, constant->init_expression);
         }
         case CALL_OPERATOR: {
-            error(parser_.lexer, expression,
+            error(reporter, expression,
                   "Procedure call at compile time is not supported");
             return 0;
         }
@@ -1036,11 +1038,11 @@ s64 Typer::const_evaluate_integer(const Scope *scope, const Ast::Expression *exp
             panic("Not implemented");
         }
         case TYPE: {
-            error(parser_.lexer, expression, "Expected expresson, got type");
+            error(reporter, expression, "Expected expresson, got type");
             return 0;
         }
         case DEREF: {
-            error(parser_.lexer, expression, "Pointer derefence is not allowed in constant expression");
+            error(reporter, expression, "Pointer derefence is not allowed in constant expression");
             return 0;
         }
     }
@@ -1076,7 +1078,7 @@ void Typer::calculate_size_and_alignment(Type *type) {
                 auto count = const_evaluate_integer(
                     array_type->scope, array_type->count_expression);
                 if (count <= 0) {
-                    error(parser_.lexer, array_type->count_expression,
+                    error(reporter, array_type->count_expression,
                         "Size of the array has to be greater than 0, got {}",
                         count);
                     count = 1;
@@ -1138,7 +1140,7 @@ Maybe<NamedTypeEntity *> Typer::look_up_type(const Scope *scope, Ast::TypePath p
     if (entity->is<NamedTypeEntity>()) {
         return entity->as<NamedTypeEntity>();
     }
-    error(parser_.lexer, path, "{} is not a type", type_path_to_string(path));
+    error(reporter, path, "{} is not a type", type_path_to_string(path));
     return {};
 }
 
@@ -1161,12 +1163,12 @@ Maybe<Entity*> Typer::look_up(const Scope *scope, Ast::TypePath path) {
 }
 
 void Typer::not_declared_error(const Ast::Identifier *identifier) {
-    error(parser_.lexer, identifier->token, "{} is not declared", identifier->token.value);
+    error(reporter, identifier->token, "{} is not declared", identifier->token.value);
 }
 
 void Typer::not_declared_error(Ast::TypePath path) {
     assert(path.size() > 0);
-    error(parser_.lexer, path, "{} is not declared",
+    error(reporter, path, "{} is not declared",
             type_path_to_string(path));
 }
 
@@ -1174,7 +1176,7 @@ void Typer::redeclaration_error(const Entity *old_entity, const Entity *new_enti
     auto old_declaration = old_entity->declaration;
     auto new_declaration = new_entity->declaration;
     auto old_declaration_token = old_declaration->start_token();
-    error(parser_.lexer, new_declaration, "Redeclaration of '{}'\n    at {}",
+    error(reporter, new_declaration, "Redeclaration of '{}'\n    at {}",
           new_declaration->identifier->token.value,
           parser_.lexer.token_to_location_string(old_declaration_token));
 }

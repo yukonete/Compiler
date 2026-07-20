@@ -21,13 +21,10 @@ bool Parser::parse_program() {
         }
 
         auto statement = parse_statement();
-        if (!statement->is<DeclarationStatement>()) {
-            syntax_error(lexer, statement, "Expected declaration");
-        }
         ast.push_back(statement);
     }
 
-    return !lexer.any_errors();
+    return !reporter.any_errors();
 }
 
 Identifier *Parser::parse_identifier() {
@@ -35,6 +32,7 @@ Identifier *Parser::parse_identifier() {
 }
 
 Statement *Parser::parse_statement() {
+    invalid_statement_ = false;
     auto token = lexer.next_token();
     switch (token.type) {
         using enum TokenType;
@@ -124,20 +122,61 @@ Statement *Parser::parse_statement() {
         case keyword_for:
         case keyword_transmute: {
             auto token_string = token_type_to_string(token.type);
-            syntax_error(lexer, token, "Unexpected token {}({})", token_string, token.value);
+            error(reporter, token, "Unexpected token {}({})", token_string, token.value);
             lexer.eat_token();
-            return New<BadStatement>(token);
+            break;
         }
-
+        
         case semicolon: {
             lexer.eat_token();
             return New<EmptyStatement>(token);
         }
-
+        
         case eof: panic("parse_statement called with eof");
     }
+    
+    // Skip tokens untill there is a token that can be parsed or eof
+    while (true) {
+        auto token = lexer.next_token();
+        switch (token.type) {
+            using enum TokenType;
+            case invalid:
+            case divide:
+            case modulo:
+            case plus_assign:
+            case minus_assign:
+            case multiply_assign:
+            case divide_assign:
+            case modulo_assign:
+            case dot:
+            case assign:
+            case equals:
+            case not_equals:
+            case less:
+            case greater:
+            case less_equals:
+            case greater_equals:
+            case return_arrow:
+            case keyword_struct:
+            case close_brace:
+            case close_paren:
+            case open_bracket:
+            case close_bracket:
+            case colon:
+            case comma:
+            case keyword_else:
+            case keyword_for:
+            case keyword_transmute: {
+                lexer.eat_token();
+                continue;
+            }
+            default:
+                break;
+        }
+        break;
+    }
 
-    panic("Value of the token.type is not TokenType");
+    return New<BadStatement>(token);
 }
 
 Declaration *Parser::parse_declaration() {
@@ -187,13 +226,12 @@ VariableDeclaration *Parser::parse_variable_declaration() {
     expect_token(TokenType::semicolon);
 
     if (!type && !value) {
-        syntax_error(lexer, var_token,
+        error(reporter, var_token,
                      "Variable declaration has no type and value."
                      " At least one should be specified");
     }
 
     return New<VariableDeclaration>(var_token, identifier, type, value);
-    ;
 }
 
 TypeDeclaration *Parser::parse_type_declaration() {
@@ -208,7 +246,7 @@ TypeDeclaration *Parser::parse_type_declaration() {
 ProcedureType *Parser::parse_procedure_type(bool skip_identifier) {
     auto fn_token = expect_token(TokenType::keyword_fn);
     if (skip_identifier) {
-        if (!next_token_is(TokenType::identifier) && !lexer.any_errors()) {
+        if (!next_token_is(TokenType::identifier) && !reporter.any_errors()) {
             panic("parse_procedure_type was called with skip_identifier = true but "
                   "there was no identifier.");
         }
@@ -249,10 +287,10 @@ ProcedureType *Parser::parse_procedure_type(bool skip_identifier) {
             if (return_values.size() > 0) {
                 return_type = return_values[0]->type;
             } else {
-                error(lexer, open_return.start, close_return.end, "Expected return type");
+                error(reporter, open_return.start, close_return.end, "Expected return type");
             }
             if (return_values.size() > 1) {
-                error(lexer, open_return.start, close_return.end, "Multiple return type are not supported");
+                error(reporter, open_return.start, close_return.end, "Multiple return type are not supported");
             }
         } else {
             return_type = parse_type();
@@ -282,7 +320,7 @@ IfStatement *Parser::parse_if_statement() {
         auto else_token = expect_token(TokenType::keyword_else);
         auto statement = parse_statement();
         if (!statement->is<BlockStatement>() && !statement->is<IfStatement>()) {
-            syntax_error(lexer, statement, "Only block or if statements are allowed after else");
+            error(reporter, statement, "Only block or if statements are allowed after else");
         }
         else_branch = IfStatement::ElseBranch{else_token, statement};
     }
@@ -351,10 +389,10 @@ Type *Parser::parse_type(bool named) {
                 // variable declaration
                 auto statement = parse_statement();
                 if (!statement->is<DeclarationStatement>()) {
-                    syntax_error(lexer, statement, "Expected declaration or struct member");
+                    error(reporter, statement, "Expected declaration or struct member");
                 } else {
                     if (!named) {
-                        syntax_error(lexer, statement, "Declarations are not allowed inside unnamed struct");
+                        error(reporter, statement, "Declarations are not allowed inside unnamed struct");
                     }
                     declarations_temp.push_back(statement->as<DeclarationStatement>());
                 }
@@ -385,7 +423,7 @@ Type *Parser::parse_type(bool named) {
         }
 
         default: {
-            syntax_error(lexer, token, "Token \"{}\" can not be parsed as a type", token.type);
+            error(reporter, token, "Token \"{}\" can not be parsed as a type", token.type);
             return New<BadType>(token);
         }
     }
@@ -461,7 +499,7 @@ Expression *Parser::parse_unary_expression(bool lhs) {
         case open_brace: {
             if (lhs) {
                 lexer.eat_token();
-                error(lexer, token, "Expected expression");
+                error(reporter, token, "Expected expression");
                 return New<BadExpression>(token);
             }
             return parse_compound_expression();
@@ -485,7 +523,7 @@ Expression *Parser::parse_unary_expression(bool lhs) {
             lexer.eat_token();
             auto value = parse_u64(token.value);
             if (!value) {
-                error(lexer, token, "Integer literal is bigger than 18,446,744,073,709,551,615");
+                error(reporter, token, "Integer literal is bigger than 18,446,744,073,709,551,615");
                 value = 0;
             }
             return New<IntegerLiteralExpression>(token, *value);
@@ -572,7 +610,7 @@ Expression *Parser::parse_unary_expression(bool lhs) {
         }
 
         default: {
-            syntax_error(lexer, token, "Token \"{}\" can not be parsed as a unary expression", token.type);
+            error(reporter, token, "Token \"{}\" can not be parsed as a unary expression", token.type);
             return New<BadExpression>(token);
         }
     }
@@ -610,7 +648,7 @@ CompoundExpression *Parser::parse_compound_expression(Maybe<Type *> type) {
         auto expression = parse_expression();
         auto member = New<CompoundFields>(identifier, expression);
         if (expect_identifier && !identifier) {
-            syntax_error(lexer, expression, "Mixture of 'field=value' and value elements in literal is not allowed");
+            error(reporter, expression, "Mixture of 'field=value' and value elements in literal is not allowed");
         }
         members_temp.push_back(member);
     }
@@ -683,7 +721,7 @@ Expression *Parser::parse_binary_expression(Expression *left, bool lhs) {
         };
 
         if (!is_type_literal(left)) {
-            syntax_error(lexer, left, "Not a type literal");
+            error(reporter, left, "Not a type literal");
         }
 
         Type *type = nullptr;
@@ -696,7 +734,7 @@ Expression *Parser::parse_binary_expression(Expression *left, bool lhs) {
             type = left->as<TypeExpression>()->type;
         }
         if (type == nullptr) {
-            error(lexer, left, "Not a type");
+            error(reporter, left, "Not a type");
             type = New<BadType>(left->start_token());
         }
 
@@ -728,8 +766,9 @@ Token Parser::expect_token(TokenType type) {
     auto token = lexer.next_token();
     lexer.eat_token();
 
-    if (token.type != type) {
-        syntax_error(lexer, token, "Expected {}, got {}", type, token.type);
+    if (token.type != type && !invalid_statement_) {
+        // invalid_statement_ = true;
+        error(reporter, token, "Expected {}, got {}", type, token.type);
     }
 
     return token;
