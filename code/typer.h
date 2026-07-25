@@ -28,16 +28,47 @@ struct Scope {
     Maybe<Entity *> entity;
     AllocatorUnorderedMap<std::string_view, Entity *> entities;
 
+
+    Maybe<Entity *> look_up_current(std::string_view name) const;
+    Maybe<Entity *> look_up(std::string_view name) const;
+    Maybe<Entity *> look_up_current(const Ast::Identifier *identifier) const;
     Maybe<Entity *> look_up(const Ast::Identifier *identifier) const;
-    Maybe<Entity*> look_up(Ast::TypePath path) const;
     
     AllocatorString full_name() const;
 };
 
+struct TyperContext {
+    Entity *entity = nullptr;
+    Scope *scope = nullptr;
+    std::vector<const Entity *> *decl_path = nullptr;
+};
+
+struct Operand {
+    enum class Kind {
+        INVALID,
+        NO_VALUE,
+        VALUE,
+        CONSTANT,
+        VARIABLE,
+        TYPE,
+    };
+
+    Kind kind = Kind::INVALID;
+    Typing::Type *type = bad_t;
+    Value value;
+    Ast::Expression *expr = nullptr;
+};
+
+inline void set_type_and_value(Ast::Expression *expression, Operand &operand) {
+    expression->type = operand.type;
+    expression->value = operand.value;
+    operand.expr = expression;
+}
+
 struct Typer {
     constexpr Typer(Ast::Parser &parser, Allocator allocator)
         : entities_storage_{allocator}, scopes_storage_{allocator},
-          parser_{parser}, file_scope{create_scope(nullptr)}, reporter{parser.reporter} {
+          parser_{parser}, file_scope_{create_scope(nullptr)}, reporter{parser.reporter} {
     }
 
     template <typename T, typename... Args>
@@ -64,49 +95,74 @@ struct Typer {
         }
         return std::span{array, span.size()};
     }
+    
+    bool do_typing();
 
     Scope *create_scope(Scope *parent);
 
     bool add_entity(Scope *scope, Entity *entity);
     bool add_entity(Scope *scope, Entity *entity, std::string_view name);
-    void resolve_entity(Entity *entity);
-    Type *ast_type_to_type(Scope *scope, Ast::Type *ast_type);
-    void resolve_alias(NamedTypeEntity *entity);
 
-    bool collect_entities(Scope *scope, std::span<Ast::DeclarationStatement *> declarations);
-    bool collect_entities(Scope *scope, std::span<Ast::Statement *> statements);
-    bool collect_entity(Scope *scope, Ast::Declaration *declaration, bool local);
-    // Used to collect entities form local statements
-    void collect_entities_from_statement(Scope *scope, Ast::Statement *statement, Scope *block_scope = nullptr);
+    void open_scope(TyperContext &context, Ast::StructType *ast_struct);
+    void close_scope(TyperContext &context);
 
-    bool do_typing();
-
-    s64 const_evaluate_integer(const Scope *scope, const Ast::Expression *expression);
-
-    void calculate_size_and_alignment(Type *type);
-
-    Maybe<Entity*> get_entity_by_ast_type(const Ast::Type *ast_type) const;
-    Maybe<NamedTypeEntity *> look_up_type(const Scope *scope, Ast::TypePath path);
-    Maybe<Entity*> look_up(const Scope *scope, Ast::TypePath path);
-    Maybe<Entity*> look_up(const Scope *scope, const Ast::Identifier *identifier);
-
-    void not_declared_error(Ast::TypePath path);
+    bool collect_entities(TyperContext &context, std::span<Ast::Statement *> statements);
+    bool collect_entities(TyperContext &context, std::span<Ast::DeclarationStatement *> statements);
+    bool collect_entity(TyperContext &context, Ast::Declaration *declaration);
+    
     void not_declared_error(const Ast::Identifier *identifier);
     void redeclaration_error(const Entity *old_entity, const Entity *new_entity);
+
+    bool check_cycle(TyperContext &context, const Entity *entity);
+
+    void check_entity_decl(TyperContext &context, Entity *entity);
+    void check_global_variable_decl(TyperContext &context, VariableEntity *entity);
+    void check_constant_decl(TyperContext &context, ConstantEntity *entity);
+    void check_proc_decl(TyperContext &context, ProcedureEntity *entity);
+    void check_type_decl(TyperContext &context, NamedTypeEntity *entity);
+
+    Type *check_type(TyperContext &context, Ast::Type *type);
+
+    Maybe<Entity *> check_identifier(TyperContext &context, Operand &operand, Ast::Identifier *identifier);
+    Maybe<Entity *> check_selector(TyperContext &context, Operand &operand, Ast::SelectorExpression *selector);
+    Maybe<Entity*> check_identifier_or_selector(TyperContext &context, Operand &operand, Ast::Expression *expression);
+    Maybe<Entity *> lookup_field(Type *type, Ast::Identifier *identifier, bool is_type);
+
+    // TODO: Consider taking operand as a parameter instead of value, to and expression
+    bool check_representable_as_constant(Value &value, Type *to, Ast::Expression *expression);
+
+    void check_expr_internal(TyperContext &context, Operand &operand, Ast::Expression *expression, Type *type_hint);
+    void check_expr(TyperContext &context, Operand &operand, Ast::Expression *expression, Type *type_hint = nullptr);
+    void check_unary_expr(TyperContext &context, Operand &operand, Ast::UnaryOperatorExpression *expression);
+    void check_binary_expr(TyperContext &context, Operand &operand, Ast::BinaryOperatorExpression *expression);
+    void check_deref_expr(TyperContext &context, Operand &operand, Ast::DerefExpression *expression);
+    void check_index_expr(TyperContext &context, Operand &operand, Ast::IndexExpression *expression);
+    void check_call_expr(TyperContext &context, Operand &operand, Ast::CallOperatorExpression *expression);
+    void check_cast_expr(TyperContext &context, Operand &operand, Ast::CastOperatorExpression *expression);
+    void check_compound_expr(TyperContext &context, Operand &operand, Ast::CompoundExpression *expression, Type *type_hint);
+    void check_slice_expr(TyperContext &context, Operand &operand, Ast::SliceExpression *expression);
+
+    bool check_unary_operator(TyperContext &context, const Operand &operand, const Token &token);
+    bool check_binary_operator(TyperContext &context, const Operand &left, const Operand &right, const Token &token);
+
+    u64 check_array_count(TyperContext &context, Operand &operand, Ast::Expression *expression);
+    
+    void check_init_variable(TyperContext &context, const Operand &operand, VariableEntity *entity);
+    void check_init_constant(TyperContext &context, const Operand &operand, ConstantEntity *entity);
+
+    bool check_assignment(TyperContext &context, const Operand &operand, Type *type);
 
 private:
     DynamicArena entities_storage_;
     DynamicArena scopes_storage_;
-    // Scopes use memory from scopes_storage_ for allocations
-    // And are stored in the same arena themselfs
-    // So dont have to destroy them
-    std::vector<Scope*> scopes_;
 
-    // Pointer to first scope in scopes_
-    Scope *file_scope;
+    Scope *file_scope_;
     
     Ast::Parser &parser_;
     std::vector<Entity*> entities_;
+
+    std::vector<ProcedureEntity*> procedure_bodies_to_check_;
+
 public:
     Reporter &reporter;
 };

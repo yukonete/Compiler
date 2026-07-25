@@ -137,7 +137,7 @@ Statement *Parser::parse_statement() {
     
     // Skip tokens untill there is a token that can be parsed or eof
     while (true) {
-        auto token = lexer.next_token();
+        token = lexer.next_token();
         switch (token.type) {
             using enum TokenType;
             case invalid:
@@ -350,18 +350,12 @@ Type *Parser::parse_type(bool named) {
 
         case identifier: {
             lexer.uneat_token();
-            auto path_temp = create_temp_vector<Identifier *>(16);
-            while (true) {
-                path_temp.push_back(parse_identifier());
-                if (next_token_is(TokenType::dot)) {
-                    lexer.eat_token();
-                    continue;
-                }
-
-                break;
+            auto expression = parse_expression(Precedence::lowest, true);
+            if (!(expression->is<IdentifierExpression>() || expression->is<SelectorExpression>())) {
+                error(reporter, expression, "Expected identifier or selector");
             }
-            auto path = NewArray(std::span{path_temp});
-            return New<IdentifierType>(path);
+
+            return New<IdentifierType>(expression);
         }
 
         case star: {
@@ -506,62 +500,19 @@ Expression *Parser::parse_unary_expression(bool lhs) {
         }
 
         case integer: {
-            auto parse_u64 = [](std::string_view str) -> Maybe<u64> {
-                u64 value = 0;
-                for (auto digit : str) {
-                    auto digit_value = static_cast<u8>(digit - '0');
-                    auto old_value = value;
-                    value = value * 10 + digit_value;
-                    if (value < old_value) {
-                        // Overflowed
-                        return {};
-                    }
-                }
-                return value;
-            };
-
             lexer.eat_token();
-            auto value = parse_u64(token.value);
-            if (!value) {
-                error(reporter, token, "Integer literal is bigger than 18,446,744,073,709,551,615");
-                value = 0;
-            }
-            return New<IntegerLiteralExpression>(token, *value);
+            return New<IntegerLiteralExpression>(token);
         }
 
         case float_literal: {
-            auto parse_f64 = [](std::string_view str) -> f64 {
-                // TODO: Figure out how this approach affects precision
-                f64 integer_part = 0;
-                f64 decimal_part = 0;
-                f64 decimal_divider = 1;
-                bool encountered_dot = false;
-                for (auto digit : str) {
-                    if (digit == '.') {
-                        encountered_dot = true;
-                        continue;
-                    }
-                    auto digit_value = digit - '0';
-                    if (!encountered_dot) {
-                        integer_part = integer_part * 10 + digit_value;
-                    } else {
-                        decimal_divider *= 10;
-                        decimal_part = decimal_part * 10 + digit_value;
-                    }
-                }
-                return integer_part + decimal_part / decimal_divider;
-            };
-
             lexer.eat_token();
-            auto value = parse_f64(token.value);
-            return New<FloatLiteralExpression>(token, value);
+            return New<FloatLiteralExpression>(token);
         }
 
         case keyword_true:
         case keyword_false: {
             lexer.eat_token();
-            auto value = (token.type == keyword_true);
-            return New<BoolLiteralExpression>(token, value);
+            return New<BoolLiteralExpression>(token);
         }
 
         case string: {
@@ -614,15 +565,6 @@ Expression *Parser::parse_unary_expression(bool lhs) {
             return New<BadExpression>(token);
         }
     }
-}
-
-static Maybe<TypePath> expression_to_type_path(Parser &parser, const Expression *expression) {
-    auto type_path_storage = create_temp_vector<Identifier *>(16);
-    auto type_path = expression_to_type_path(expression, type_path_storage);
-    if (type_path) {
-        return parser.NewArray(*type_path);
-    }
-    return {};
 }
 
 CompoundExpression *Parser::parse_compound_expression(Maybe<Type *> type) {
@@ -726,10 +668,7 @@ Expression *Parser::parse_binary_expression(Expression *left, bool lhs) {
 
         Type *type = nullptr;
         if (left->is<IdentifierExpression>() || left->is<SelectorExpression>()) {
-            auto type_path = expression_to_type_path(*this, left);
-            if (type_path) {
-                type = New<IdentifierType>(*type_path);
-            }
+            type = New<IdentifierType>(left);
         } else if (left->is<TypeExpression>()) {
             type = left->as<TypeExpression>()->type;
         }

@@ -18,6 +18,12 @@ struct Entity {
         NAMED_TYPE,
     };
 
+    enum class State : u8 {
+        UNRESOLVED,
+        IN_PROGRESS,
+        RESOLVED,
+    };
+
     enum class Flags : u8 {
         NONE,
         RESOLVED = 1<<0,
@@ -31,7 +37,10 @@ struct Entity {
         : kind{kind}, scope{scope}, declaration{declaration}, ast_type{ast_type} {
     }
 
+    std::string_view name() const;
+
     Kind kind;
+    State state = State::UNRESOLVED;
     Flags flags = Flags::NONE;
     Scope *scope;
 
@@ -39,7 +48,8 @@ struct Entity {
     Ast::Declaration *declaration;
     Ast::Type *ast_type;
 
-    Type *type = nullptr; // NamedType for NamedTypeEntity
+    // NamedType or BasicType for NamedTypeEntity
+    Type *type = nullptr;
     Entity *aliased_of = nullptr;
 };
 
@@ -77,6 +87,7 @@ struct ConstantEntity : public Entity {
           init_expression{init_expression} {
     }
 
+    Value value;
     Ast::Expression *init_expression;
 };
 
@@ -96,12 +107,11 @@ struct NamedTypeEntity : public Entity {
     static constexpr auto KIND = Kind::NAMED_TYPE;
 
     constexpr NamedTypeEntity(Scope *scope, Ast::TypeDeclaration *declaration,
-                              Ast::Type *ast_type, Maybe<Scope *> inner_scope)
-        : Entity{KIND, scope, declaration, ast_type}, inner_scope{inner_scope} {
+                              Ast::Type *ast_type)
+        : Entity{KIND, scope, declaration, ast_type} {
     }
 
-    // Set olny for structs
-    Maybe<Scope *> inner_scope;
+    bool is_alias = false;
 };
 
 } // namespace Typing

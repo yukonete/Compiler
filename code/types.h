@@ -3,6 +3,8 @@
 
 #include <string_view>
 #include <span>
+#include <array>
+#include <cassert>
 
 #include "base/types.h"
 #include "base/down_cast.h"
@@ -17,12 +19,7 @@ struct VariableEntity;
 
 struct Type {
     enum class Kind : u8 {
-        BAD,
-        ANY, // Pointer to anything
-        INT,
-        BOOL,
-        FLOAT,
-        STRING,
+        BASIC,
         POINTER,
         ARRAY,
         SLICE,
@@ -32,14 +29,35 @@ struct Type {
     };
 
     enum class Flags : u8 {
-        NONE,
-        SIZED,  
+        NONE = 0,
+        SIZED = 1 << 0,  
     };
 
     DEFINE_DOWNCAST_FUNCTIONS_FOR(Type, kind, KIND);
 
     constexpr Type(Kind kind) : kind{kind} {
     }
+
+    void dump(std::string &out) const;
+
+    Type *get_base_type();
+    const Type *get_base_type() const;
+    Type *get_core_type();
+    const Type *get_core_type() const;
+
+
+    bool is_integer() const;
+    bool is_unsigned() const;
+    bool is_float() const;
+    bool is_numeric() const;
+    bool is_bool() const;
+    bool is_convertible_to(const Type *type) const;
+    bool is_bad() const;
+    bool is_basic() const;
+    bool is_string() const;
+    bool is_pointer() const;
+    bool is_array() const;
+    bool is_slice() const;
 
     Kind kind;
     Flags flags = Flags::NONE;
@@ -50,62 +68,26 @@ struct Type {
 
 DEFINE_ENUM_FLAG_OPERATORS(Type::Flags);
 
-struct AnyType : public Type {
-    static constexpr auto KIND = Kind::ANY;
+struct BasicType : public Type {
+    static constexpr auto KIND = Kind::BASIC;
 
-    constexpr AnyType() : Type{KIND} {
-        flags |= Flags::SIZED;
-        size = 8;
-        align = 8;
-    }
-};
+    enum class BasicFlags {
+        BAD = 0,
+        BOOL = 1 << 0,
+        INTEGER = 1 << 1,
+        UNSIGNED = 1 << 2,
+        FLOAT = 1 << 3,
+        STRING = 1 << 4,
+    };
 
-struct BadType : public Type {
-    static constexpr auto KIND = Kind::BAD;
-
-    constexpr BadType() : Type{KIND} {
-        flags |= Flags::SIZED;
-    }
-};
-
-struct IntType : public Type {
-    static constexpr auto KIND = Kind::INT;
-
-    constexpr IntType(u64 size_in, u64 align_in, bool no_sign = false) : Type{KIND}, no_sign{no_sign} {
-        flags |= Flags::SIZED;
-        size = size_in;
-        align = align_in;
+    constexpr BasicType() : Type{KIND} {
     }
 
-    bool no_sign;
+    BasicFlags basic_flags = BasicFlags::BAD;
+    std::string_view name;
 };
 
-struct BoolType : public Type {
-    static constexpr auto KIND = Kind::BOOL;
-
-    constexpr BoolType() : Type{KIND} {
-        flags |= Flags::SIZED;
-        size = 1;
-        align = 1;
-    }
-};
-
-struct FloatType : public Type {
-    static constexpr auto KIND = Kind::FLOAT;
-
-    constexpr FloatType(u64 size_in, u64 align_in) : Type{KIND} {
-        flags |= Flags::SIZED;
-        size = size_in;
-        align = align_in;
-    }
-};
-
-struct StringType : public Type {
-    static constexpr auto KIND = Kind::STRING;
-
-    constexpr StringType() : Type{KIND} {
-    } 
-};
+DEFINE_ENUM_FLAG_OPERATORS(BasicType::BasicFlags);
 
 struct PointerType : public Type {
     static constexpr auto KIND = Kind::POINTER;
@@ -122,14 +104,12 @@ struct PointerType : public Type {
 struct ArrayType : public Type {
     static constexpr auto KIND = Kind::ARRAY;
 
-    constexpr ArrayType(Type *type, u64 count,
-                        Ast::Expression *count_expression, Scope *scope)
-        : Type{KIND}, type{type}, count{count}, count_expression{count_expression}, scope{scope} {
+    constexpr ArrayType(Type *type, u64 count, Scope *scope)
+        : Type{KIND}, type{type}, count{count}, scope{scope} {
     }
 
     Type *type;
     u64 count;
-    Ast::Expression *count_expression;
     Scope *scope;
 };
 
@@ -164,6 +144,8 @@ struct ProcedureType : public Type {
                             Maybe<Type *> return_type)
         : Type{KIND}, parameters{parameters}, return_type{return_type} {
         flags = Flags::SIZED;
+        size = 8;
+        align = 8;
     }
 
     std::span<Type*> parameters;
@@ -180,20 +162,61 @@ struct NamedType : public Type {
 
     std::string_view name;
     NamedTypeEntity *entity;
-
     Type *type = nullptr;
 };
 
-constexpr bool is_integer(const Type *type) {
-    if (type->is<IntType>()) {
-        return true;
-    }
-    if (type->is<NamedType>()) {
-        auto named_type = type->as<NamedType>();
-        return is_integer(named_type->type);
-    }
-    return false;
+constexpr BasicType create_basic_type(BasicType::BasicFlags flags, u64 size, std::string_view name) {
+    auto basic_type = BasicType{};
+    basic_type.flags = Type::Flags::SIZED;
+    basic_type.basic_flags = flags;
+    basic_type.size = size;
+    basic_type.align = size;
+    basic_type.name = name;
+    return basic_type;
 }
+
+// Do not reorder
+inline std::array basic_types = {
+    create_basic_type(BasicType::BasicFlags::BAD, 0, "bad type"),
+    create_basic_type(BasicType::BasicFlags::BOOL, 1, "bool"),
+
+    create_basic_type(BasicType::BasicFlags::INTEGER, 1, "s8"),
+    create_basic_type(BasicType::BasicFlags::INTEGER, 2, "s16"),
+    create_basic_type(BasicType::BasicFlags::INTEGER, 4, "s32"),
+    create_basic_type(BasicType::BasicFlags::INTEGER, 8, "s64"),
+    create_basic_type(BasicType::BasicFlags::INTEGER, 8, "int"),
+
+    create_basic_type(BasicType::BasicFlags::INTEGER | BasicType::BasicFlags::UNSIGNED, 1, "u8"),
+    create_basic_type(BasicType::BasicFlags::INTEGER | BasicType::BasicFlags::UNSIGNED, 2, "u16"),
+    create_basic_type(BasicType::BasicFlags::INTEGER | BasicType::BasicFlags::UNSIGNED, 4, "u32"),
+    create_basic_type(BasicType::BasicFlags::INTEGER | BasicType::BasicFlags::UNSIGNED, 8, "u64"),
+    create_basic_type(BasicType::BasicFlags::INTEGER | BasicType::BasicFlags::UNSIGNED, 8, "uint"),
+
+    create_basic_type(BasicType::BasicFlags::FLOAT, 4, "f32"),
+    create_basic_type(BasicType::BasicFlags::FLOAT, 8, "f64"),
+
+    create_basic_type(BasicType::BasicFlags::STRING, 16, "string"),
+};
+
+inline  BasicType * const bad_t = &basic_types[0];
+inline  BasicType * const bool_t = &basic_types[1];
+inline  BasicType * const s8_t = &basic_types[2];
+inline  BasicType * const s16_t = &basic_types[3];
+inline  BasicType * const s32_t = &basic_types[4];
+inline  BasicType * const s64_t = &basic_types[5];
+inline  BasicType * const int_t = &basic_types[6];
+inline  BasicType * const u8_t = &basic_types[7];
+inline  BasicType * const u16_t = &basic_types[8];
+inline  BasicType * const u32_t = &basic_types[9];
+inline  BasicType * const u64_t = &basic_types[10];
+inline  BasicType * const uint_t = &basic_types[11];
+inline  BasicType * const f32_t = &basic_types[12];
+inline  BasicType * const f64_t = &basic_types[13];
+inline  BasicType * const string_t = &basic_types[14];
+
+bool are_types_the_same(const Type *a, const Type *b);
+
+std::string type_to_string(const Type *type);
 
 }
 

@@ -149,6 +149,21 @@ constexpr std::string_view token_type_to_string(TokenType type) {
     return "unknown";
 }
 
+constexpr bool is_comparison_operator(TokenType type) {
+    switch (type) {
+        using enum TokenType;
+        case equals:
+        case not_equals:
+        case less: 
+        case greater: 
+        case less_equals: 
+        case greater_equals:
+            return true;
+        default:
+            return false; 
+    }
+}
+
 template <>
 struct std::formatter<TokenType> : public std::formatter<std::string_view> {
     template <class FmtContext>

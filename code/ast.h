@@ -13,6 +13,7 @@
 #include "base/down_cast.h"
 #include "base/types.h"
 #include "token.h"
+#include "value.h"
 
 namespace Typing {
     struct Scope;
@@ -76,9 +77,10 @@ struct Identifier {
     }
 
     Token token;
-};
 
-using TypePath = std::span<Identifier *>;
+    // Set in typer
+    Typing::Entity *entity = nullptr; 
+};
 
 struct Statement {
     enum class Kind : u8 {
@@ -380,6 +382,10 @@ struct Expression {
     void dump(std::string& out, u32 indent_level) const;
 
     Kind kind;
+
+    // Set in typer
+    Typing::Type *type = nullptr;
+    Value value;
 };
 
 struct BadExpression : public Expression {
@@ -395,12 +401,11 @@ struct BadExpression : public Expression {
 struct IntegerLiteralExpression : public Expression {
     static constexpr auto KIND = Kind::INTEGER_LITERAL;
 
-    constexpr IntegerLiteralExpression(const Token &token, u64 value)
-        : Expression{KIND}, token{token}, value{value} {
+    constexpr IntegerLiteralExpression(const Token &token)
+        : Expression{KIND}, token{token} {
     }
 
     Token token;
-    u64 value;
 };
 
 struct IdentifierExpression : public Expression {
@@ -429,11 +434,11 @@ struct CastOperatorExpression : public Expression {
 
     constexpr CastOperatorExpression(const Token &cast, Type *type,
                                      Expression *expression)
-        : Expression{KIND}, cast{cast}, type{type}, expression{expression} {
+        : Expression{KIND}, cast{cast}, cast_type{type}, expression{expression} {
     }
 
     Token cast;
-    Type *type;
+    Type *cast_type;
     Expression *expression;
 };
 
@@ -453,12 +458,11 @@ struct BinaryOperatorExpression : public Expression {
 struct BoolLiteralExpression : public Expression {
     static constexpr auto KIND = Kind::BOOL_LITERAL;
 
-    constexpr BoolLiteralExpression(const Token &token, bool value)
-        : Expression{KIND}, token{token}, value{value} {
+    constexpr BoolLiteralExpression(const Token &token)
+        : Expression{KIND}, token{token} {
     }
 
     Token token;
-    bool value;
 };
 
 struct SliceExpression : public Expression {
@@ -522,12 +526,11 @@ struct StringLiteralExpression : public Expression {
 struct FloatLiteralExpression : public Expression {
     static constexpr auto KIND = Kind::FLOAT_LITERAL;
 
-    constexpr FloatLiteralExpression(const Token &token, f64 value)
-        : Expression{KIND}, token{token}, value{value} {
+    constexpr FloatLiteralExpression(const Token &token)
+        : Expression{KIND}, token{token} {
     }
 
     Token token;
-    f64 value;
 };
 
 struct IndexExpression : public Expression {
@@ -615,19 +618,6 @@ struct Type {
     Typing::Type *type = nullptr;
 };
 
-inline AllocatorString type_path_to_string(TypePath path) {
-    assert(path.size() > 0);
-    auto result = create_temp_string();
-    for (auto i : indices(path.size())) {
-        if (i != 0) {
-            result += '.';
-        }
-        auto identifier = path[i];
-        result += identifier->token.value;
-    }
-    return result;
-}
-
 struct BadType : public Type {
     static constexpr auto KIND = Kind::BAD;
 
@@ -641,15 +631,11 @@ struct BadType : public Type {
 struct IdentifierType : public Type {
     static constexpr auto KIND = Kind::IDENTIFIER;
 
-    constexpr IdentifierType(TypePath path) : Type{KIND}, path{path} {
+    constexpr IdentifierType(Expression *expression) : Type{KIND}, expression{expression} {
     }
 
-    AllocatorString get_full_type_name() const {
-        return type_path_to_string(path);
-    }
-
-    // Path should always have at least one identifier
-    TypePath path;
+    // Identifier or Selector
+    Expression *expression;
 };
 
 struct PointerType : public Type {
@@ -727,13 +713,18 @@ struct StructType : public Type {
 
     std::span<Field *> members;
     std::span<DeclarationStatement *> declarations;
+
+    // Set in typer
+    Typing::Scope *scope = nullptr;
 };
 
 template <typename T>
 concept Node = std::derived_from<T, Statement> || std::derived_from<T, Declaration> ||
                std::derived_from<T, Type> || std::derived_from<T, Expression>;
-
-Maybe<TypePath> expression_to_type_path(const Expression *expression, AllocatorVector<Identifier *> &out);
+               
+std::string expression_to_string(Expression *expression);
 
 }; // namespace Ast
+
+
 #endif // #ifndef AST_H

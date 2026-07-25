@@ -93,12 +93,4 @@ void warning(Reporter &reporter, Ast::Node auto const *node,
     warning(reporter, start_pos, end_pos, fmt, std::forward<Args>(args)...);
 }
 
-template <typename... Args>
-void error(Reporter &reporter, Ast::TypePath path, std::format_string<Args...> fmt,
-           Args &&...args) {
-    assert(path.size() > 0);
-    error(reporter, path.front()->token.start, path.back()->token.end, fmt,
-          std::forward<Args>(args)...);
-}
-
 #endif

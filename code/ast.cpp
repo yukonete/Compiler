@@ -154,7 +154,7 @@ Token Type::start_token() const {
         using enum Type::Kind;
 
         case BAD: return as<BadType>()->token;
-        case IDENTIFIER: return as<IdentifierType>()->path[0]->token;
+        case IDENTIFIER: return as<IdentifierType>()->expression->start_token();
         case STRUCT: return as<StructType>()->token;
         case POINTER: return as<PointerType>()->token;
         case PROCEDURE: return as<ProcedureType>()->token;
@@ -169,10 +169,7 @@ Token Type::end_token() const {
         using enum Type::Kind;
 
         case BAD: return as<BadType>()->token;
-        case IDENTIFIER: {
-            auto identifier = as<IdentifierType>();
-            return identifier->path[identifier->path.size() - 1]->token;
-        }
+        case IDENTIFIER: return as<IdentifierType>()->expression->end_token();
         case STRUCT: return as<StructType>()->close;
         case POINTER: return as<PointerType>()->type->end_token();
         case PROCEDURE: return as<ProcedureType>()->close;
@@ -180,44 +177,6 @@ Token Type::end_token() const {
         case SLICE: return as<SliceType>()->element_type->end_token();
     }
     panic("type.kind is not Type::Kind");
-}
-
-Maybe<TypePath>
-expression_to_type_path(const Expression *expression,
-                        AllocatorVector<Identifier*> &out) {
-    auto type_path_from_expression =
-        [&out](this auto &&self,
-                     const Ast::Expression *expression) -> bool {
-        switch (expression->kind) {
-            using enum Expression::Kind;
-
-            case IDENTIFIER: {
-                auto identifier =
-                    expression->as<Ast::IdentifierExpression>()
-                        ->identifier;
-                out.push_back(identifier);
-                return true;
-            }
-
-            case SELECTOR: {
-                auto selector =
-                    expression->as<Ast::SelectorExpression>();
-                if (!self(selector->expression)) {
-                    return false;
-                }
-                out.push_back(selector->identifier);
-                return true;
-            }
-
-            default: return false;
-        }
-    };
-
-    if (type_path_from_expression(expression)) {
-        assert(!out.empty());
-        return std::span{out};
-    }
-    return {};
 }
 
 static void append(std::string &out, std::string_view str) {
@@ -346,13 +305,13 @@ void Expression::dump(std::string& out, u32 indent_level) const {
 
         case INTEGER_LITERAL: {
             auto integer_literal = as<IntegerLiteralExpression>();
-            appendf(out, integer_literal->value);
+            append(out, integer_literal->token.value);
             return;
         }
 
         case BOOL_LITERAL: {
             auto bool_literal = as<BoolLiteralExpression>();
-            appendf(out, bool_literal->value);
+            append(out, bool_literal->token.value);
             return;
         }
 
@@ -450,22 +409,22 @@ void Expression::dump(std::string& out, u32 indent_level) const {
 
         case FLOAT_LITERAL: {
             auto float_literal = as<FloatLiteralExpression>();
-            appendf(out, float_literal->value);
+            append(out, float_literal->token.value);
             return;
         }
 
         case CAST_OPERATOR: {
             auto cast = as<CastOperatorExpression>();
             append(out, "cast(");
-            cast->type->dump(out, indent_level);
+            cast->cast_type->dump(out, indent_level);
             append(out, ")");
             cast->expression->dump(out, indent_level);
             return;
         }
 
         case TYPE: {
-            auto type = as<TypeExpression>();
-            type->type->dump(out, indent_level);
+            auto t = as<TypeExpression>();
+            t->type->dump(out, indent_level);
             return;
         }
 
@@ -572,14 +531,7 @@ void Type::dump(std::string &out, u32 indent_level, bool include_fn) const {
 
         case IDENTIFIER: {
             auto type_ident = as<IdentifierType>();
-            for (auto i : indices(type_ident->path.size())) {
-                if (i != 0) {
-                    append(out, ".");
-                }
-
-                auto ident = type_ident->path[i];
-                append(out, ident->token.value);
-            }
+            type_ident->expression->dump(out, indent_level);
             return;
         }
 
@@ -650,6 +602,12 @@ void Type::dump(std::string &out, u32 indent_level, bool include_fn) const {
         }
     }
     panic("type.kind is not Type::Kind");
+}
+
+std::string expression_to_string(Expression *expression) {
+    auto result = std::string{};
+    expression->dump(result, 0);
+    return result;
 }
 
 } // namespace Ast

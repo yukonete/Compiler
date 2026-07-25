@@ -21,6 +21,7 @@ template <typename... Args>
                  "Stacktrace:\n"
                  "{}",
                  msg, loc.file_name(), loc.line(), std::stacktrace::current());
+    assert(false);
     std::exit(1);
 }
 
