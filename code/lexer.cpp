@@ -353,7 +353,6 @@ void Lexer::tokenize() {
         }
     }
 
-    assert(input_cursor_ != 0);
     token.end = input_cursor_ - 1;
     tokens_.push_back(token);
 }

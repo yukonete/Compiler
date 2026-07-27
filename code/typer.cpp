@@ -15,7 +15,7 @@ namespace Typing {
 // Which is not perfect but fine for now
 static Value create_default_value_for_type(Ast::Parser &parser, Type *type) {
     auto base = type->get_base_type();   
-    if (base->is_array() || base->is_struct()) {
+    if (base->is_array() || base->is_struct() || base->is_slice()) {
         auto new_compound_node = parser.New<Ast::CompoundExpression>();
         new_compound_node->type = type;
         auto new_compound_value = create_value_compound(new_compound_node);
@@ -1084,7 +1084,97 @@ void Typer::check_compound_expr(TyperContext &context, Operand &operand, Ast::Co
 }
 
 void Typer::check_slice_expr(TyperContext &context, Operand &operand, Ast::SliceExpression *expression) {
-    panic("TODO");
+    auto operand_slice = Operand{};
+    check_expr(context, operand_slice, expression->expression, nullptr);
+    if (operand_slice.kind == Operand::Kind::INVALID) {
+        operand = Operand{};
+        return;
+    }
+
+    if (!operand_slice.type->is_array() && operand_slice.type->is_slice()) {
+        error(reporter, expression->expression, "Expression is not an array or slice");
+        operand = Operand{};
+        return;
+    } 
+
+    auto operand_open = Maybe<Operand>{};
+    auto operand_close = Maybe<Operand>{};
+    if (expression->interval_open) {
+        auto temp = Operand{};
+        check_expr(context, temp, *expression->interval_open);
+        operand_open = temp;
+    }
+    if (expression->interval_close) {
+        auto temp = Operand{};
+        check_expr(context, temp, *expression->interval_close);
+        operand_close = temp;
+    }
+
+    operand.kind = Operand::Kind::VALUE;
+    operand.type = create_type<SliceType>(operand_slice.type->get_core_type());
+
+    auto count = Maybe<u64>{};
+    if (operand_slice.kind == Operand::Kind::CONSTANT) {
+        count = operand_slice.type->get_base_type()->as<ArrayType>()->count;
+    }
+
+    auto open = Maybe<s64>{};
+    auto close = Maybe<s64>{};
+    bool err = false;
+    if (operand_open) {
+        if (!operand_open->type->is_integer()) {
+            error(reporter, *expression->interval_open, "Expected integer");
+            err = true;
+        }
+        if (operand_open->kind == Operand::Kind::CONSTANT) {
+            if (operand_open->value.as_int().kind == Value::Kind::INTEGER) {
+                open = operand_open->value.int_value;
+                if (*open < 0) {
+                    error(reporter, *expression->interval_open, "Integer for slicing can not be negative, got '{}'",
+                          *open);
+                    err = true;
+                } else if (count && static_cast<u64>(*open) > *count) {
+                    error(reporter, *expression->interval_open,
+                          "Index out of range, array count is '{}' but index is '{}'", *count, *open);
+                    err = true;
+                }
+            }
+        }
+    }
+    if (operand_close) {
+        if (!operand_close->type->is_integer()) {
+            error(reporter, *expression->interval_close, "Expected integer");
+            err = true;
+        }
+        if (operand_close->kind == Operand::Kind::CONSTANT) {
+            if (operand_close->value.as_int().kind == Value::Kind::INTEGER) {
+                close = operand_close->value.int_value;
+                if (*close < 0) {
+                    error(reporter, *expression->interval_close, "Integer for slicing can not be negative, got '{}'",
+                          *close);
+                    err = true;
+                } else if (count && static_cast<u64>(*close) > *count) {
+                    error(reporter, *expression->interval_close,
+                          "Index out of range, array count is '{}' but index is '{}'", *count, *close);
+                    err = true;
+                }
+            }
+        }
+    }
+
+    if (open && close) {
+        if (*open >= *close) {
+            error(reporter, expression, "Slice start has to be less than slice end, but {} >= {}", *open, *close);
+            err = true;
+        }
+    }
+
+    if (err) {
+        operand = Operand{};
+        return;
+    }
+    
+    set_type_and_value(expression, operand);
 }
 
 void Typer::check_init_variable(TyperContext &context, const Operand &operand, VariableEntity *entity) {
