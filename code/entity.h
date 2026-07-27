@@ -38,11 +38,14 @@ struct Entity {
     }
 
     std::string_view name() const;
+    std::string full_name() const;
 
     Kind kind;
     State state = State::UNRESOLVED;
     Flags flags = Flags::NONE;
     Scope *scope;
+
+    Maybe<Entity *> parent;
 
     // Those are nullptr for builtin types
     Ast::Declaration *declaration;

@@ -76,8 +76,8 @@ Token Expression::start_token() const {
         case CAST_OPERATOR: return as<CastOperatorExpression>()->cast;
         case COMPOUND: {
             auto compound =  as<CompoundExpression>();
-            if (compound->type) {
-                return compound->type->start_token();
+            if (compound->compound_type) {
+                return compound->compound_type->start_token();
             }
             return compound->open;
         }
@@ -338,8 +338,8 @@ void Expression::dump(std::string& out, u32 indent_level) const {
 
         case COMPOUND: {
             auto compound = as<CompoundExpression>();
-            if (compound->type) {
-                compound->type->dump(out, indent_level);
+            if (compound->compound_type) {
+                compound->compound_type->dump(out, indent_level);
             }
             append(out, "{");
             for (auto i : indices(compound->values.size())) {

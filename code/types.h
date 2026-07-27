@@ -58,6 +58,8 @@ struct Type {
     bool is_pointer() const;
     bool is_array() const;
     bool is_slice() const;
+    bool is_struct() const;
+
 
     Kind kind;
     Flags flags = Flags::NONE;
@@ -135,6 +137,15 @@ struct StructType : public Type {
 
     std::span<VariableEntity*> members;
     Scope *inner_scope;
+
+    Maybe<u64> index_of_field(const VariableEntity *entity) const {
+        for (auto i : indices(members.size())) {
+            if (members[i] == entity) {
+                return i;
+            }
+        }
+        return {};
+    }
 };
 
 struct ProcedureType : public Type {

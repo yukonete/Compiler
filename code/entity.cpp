@@ -23,4 +23,15 @@ std::string_view Entity::name() const {
     return NO_NAME;
 }
 
+std::string Entity::full_name() const {
+    auto result = std::string{};
+    if (parent) {
+        result = parent->full_name();
+        result += ".";
+    }
+    result += std::string{name()};
+    return result;
+}
+
+
 }

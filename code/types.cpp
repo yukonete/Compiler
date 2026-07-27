@@ -220,6 +220,11 @@ bool Type::is_array() const {
     return base->is<ArrayType>();
 }
 
+bool Type::is_struct() const {
+    auto base = get_base_type();
+    return base->is<StructType>();
+}
+
 bool Type::is_slice() const {
     auto base = get_base_type();
     return base->is<SliceType>();
@@ -284,6 +289,8 @@ bool are_types_the_same(const Type *a, const Type *b) {
         auto entity = named_type->entity;
         if (entity->is_alias) {
             a = named_type->type;
+        } else {
+            break;
         }
     }
 
@@ -292,6 +299,8 @@ bool are_types_the_same(const Type *a, const Type *b) {
         auto entity = named_type->entity;
         if (entity->is_alias) {
             b = named_type->type;
+        } else {
+            break;
         }
     }
 

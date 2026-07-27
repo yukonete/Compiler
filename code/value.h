@@ -16,6 +16,7 @@ struct Value {
         FLOAT,
         STRING,
         COMPOUND,
+        POINTER,
     };
 
     Value as_int() const {
@@ -66,6 +67,7 @@ struct Value {
         f64 float_value;
         std::string_view string_value = {};
         Ast::CompoundExpression *compound_value;
+        u64 pointer_value;
     };
 };
 
@@ -83,6 +85,14 @@ constexpr Value create_value_float(f64 value) {
 
 constexpr Value create_value_string(std::string_view value) {
     return Value{.kind = Value::Kind::STRING, .string_value = value};
+}
+
+constexpr Value create_value_compound(Ast::CompoundExpression *compound) {
+    return Value{.kind = Value::Kind::COMPOUND, .compound_value = compound};
+}
+
+constexpr Value create_value_pointer(u64 pointer) {
+    return Value{.kind = Value::Kind::POINTER, .pointer_value= pointer};
 }
 
 

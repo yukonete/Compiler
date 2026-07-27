@@ -28,13 +28,11 @@ struct Scope {
     Maybe<Entity *> entity;
     AllocatorUnorderedMap<std::string_view, Entity *> entities;
 
-
     Maybe<Entity *> look_up_current(std::string_view name) const;
     Maybe<Entity *> look_up(std::string_view name) const;
+    
     Maybe<Entity *> look_up_current(const Ast::Identifier *identifier) const;
     Maybe<Entity *> look_up(const Ast::Identifier *identifier) const;
-    
-    AllocatorString full_name() const;
 };
 
 struct TyperContext {

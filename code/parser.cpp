@@ -679,7 +679,7 @@ Expression *Parser::parse_binary_expression(Expression *left, bool lhs) {
 
         lexer.uneat_token();
         auto compound = parse_compound_expression(type);
-        assert(compound->type);
+        assert(compound->compound_type);
         return compound;
     }
 

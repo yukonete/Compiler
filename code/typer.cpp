@@ -11,9 +11,42 @@
 
 namespace Typing {
 
+// This will create new node each time there is access to a constant value that was created from empty literal and is not basic type
+// Which is not perfect but fine for now
+static Value create_default_value_for_type(Ast::Parser &parser, Type *type) {
+    auto base = type->get_base_type();   
+    if (base->is_array() || base->is_struct()) {
+        auto new_compound_node = parser.New<Ast::CompoundExpression>();
+        new_compound_node->type = type;
+        auto new_compound_value = create_value_compound(new_compound_node);
+        new_compound_node->value = new_compound_value;
+        return new_compound_value;
+    }
+    if (base->is_integer()) {
+        return create_value_int(0);
+    }
+    if (base->is_bool()) {
+        return create_value_bool(false);
+    }
+    if (base->is_float()) {
+        return create_value_float(0.0);
+    }
+    if (base->is_string()) {
+        return create_value_string("");
+    }
+    if (base->is_pointer()) {
+        return create_value_pointer(0);
+    }
+    return Value{};
+}
+
 static bool check_representable_as_constant_internal(Value &value, Type *to) {
     if (value.kind == Value::Kind::INVALID) {
         return false;
+    }
+
+    if (value.kind == Value::Kind::COMPOUND) {
+        return are_types_the_same(value.as_compound().compound_value->type, to);
     }
 
     if (!to->is_basic()) {
@@ -102,41 +135,6 @@ void Typer::close_scope(TyperContext &context) {
     context.scope = *context.scope->parent;
 }
 
-// resulting string is stored in temp_allocator
-static AllocatorString full_entity_name(const Entity *entity) {
-    std::string_view entity_name;
-    if (has_flag(entity->flags, Entity::Flags::BUILTIN)) {
-        entity_name = entity->type->as<NamedType>()->name;
-    } else {
-        entity_name = entity->declaration->identifier->token.value;
-    }
-
-    auto scope_name = entity->scope->full_name();
-    if (scope_name == "") {
-        return tformat("{}", entity_name);
-    }
-    return tformat("{}.{}", entity->scope->full_name(), entity_name);
-}
-
-// resulting string is stored in temp_allocator
-AllocatorString Scope::full_name() const {
-    if (!entity || !entity->is<NamedTypeEntity>()) {
-        return tformat("");
-    }
-
-    auto named_type = entity->type->as<NamedType>();
-    auto parent_scope_name =
-        parent
-            .expect("since entity is set and it is NamedType, there should be "
-                    "parent scope")
-            ->full_name();
-    if (parent_scope_name == "") {
-        return tformat("{}", named_type->name);
-    }
-
-    return tformat("{}.{}", parent_scope_name, named_type->name);
-}
-
 Maybe<Entity *> Scope::look_up_current(std::string_view name) const {
     auto search = entities.find(name);
     if (search != entities.end()) {
@@ -175,6 +173,7 @@ bool Typer::add_entity(Scope *scope, Entity *entity, std::string_view name) {
 
     entities_.push_back(entity);
     scope->entities[name] = entity;
+    entity->parent = scope->entity;
     return true;
 }
 
@@ -280,17 +279,17 @@ bool Typer::check_cycle(TyperContext &context, const Entity *entity) {
     auto path = std::span{*context.decl_path};
     for (auto i : indices(path.size())) {
         if (path[i] == entity) {
-            auto entity_name = full_entity_name(entity);
+            auto entity_name = entity->full_name();
             if (i == path.size() - 1) {
                 error(reporter, entity->declaration, "Declaration cycle of '{}': '{}' refers to itself", entity_name,
                       entity_name);
             } else {
                 error(reporter, entity->declaration, "Declaration cycle of '{}'", entity_name);
                 for (usize j = i; j < path.size() - 1; ++j) {
-                    error(reporter, path[j]->declaration, "'{}' refers to '{}'", full_entity_name(path[j]),
-                          full_entity_name(path[j + 1]));
+                    error(reporter, path[j]->declaration, "'{}' refers to '{}'", path[j]->full_name(),
+                          path[j + 1]->full_name());
                 }
-                error(reporter, path[path.size() - 1]->declaration, "'{}' refers to '{}'", full_entity_name(path[path.size() - 1]),
+                error(reporter, path[path.size() - 1]->declaration, "'{}' refers to '{}'", path[path.size() - 1]->full_name(),
                       entity_name);
             }
             return true;
@@ -523,7 +522,7 @@ void Typer::check_expr_internal(TyperContext &context, Operand &operand, Ast::Ex
     }
 } 
 
-bool Typer::check_unary_operator(TyperContext &context, const Operand &operand, const Token &token) {
+bool Typer::check_unary_operator(TyperContext &/*context*/, const Operand &operand, const Token &token) {
     if (operand.kind == Operand::Kind::INVALID) {
         return false;
     }
@@ -634,7 +633,7 @@ void Typer::check_unary_expr(TyperContext &context, Operand &operand, Ast::Unary
     set_type_and_value(expression, operand);
 }
 
-bool Typer::check_binary_operator(TyperContext &context, const Operand &left, const Operand &right, const Token &token) {
+bool Typer::check_binary_operator(TyperContext &/*context*/, const Operand &left, const Operand &right, const Token &token) {
     if (left.kind == Operand::Kind::INVALID || right.kind == Operand::Kind::INVALID) {
         return false;
     }
@@ -822,36 +821,56 @@ void Typer::check_deref_expr(TyperContext &context, Operand &operand, Ast::Deref
 
     if (!operand.type->is_pointer()) {
         error(reporter, expression, "Expression is not a pointer");
-        operand = Operand{}; 
+        operand = Operand{};
         return;
     }
+
+    operand.kind = Operand::Kind::VALUE;
+    operand.type = operand.type->get_core_type();
 
     set_type_and_value(expression, operand);
 }
 
-struct ApplyIndexOperatorResult {
-    Value value;
-    usize array_count = 0;
-    s64 index = 0;
-};
-
-static ApplyIndexOperatorResult apply_index_operator(const Value &array, const Value &index) {
+static Value apply_index_operator(Ast::Parser &parser, const Value &array, const Value &index) {
     auto a = array.as_compound();
     auto i = index.as_int();
     if (a.kind == Value::Kind::INVALID || i.kind == Value::Kind::INVALID) {
-        return ApplyIndexOperatorResult{};
+        return Value{};
     }
 
     auto compound = a.compound_value;
-    auto compound_index = i.int_value;
 
-    if (compound_index < 0 || static_cast<usize>(compound_index) >= compound->values.size()) {
-        return ApplyIndexOperatorResult{.value = {}, .array_count = compound->values.size(), .index = compound_index};
+    if (i.int_value < 0) {
+        return Value{};
     }
 
-    return ApplyIndexOperatorResult{.value = compound->values[compound_index]->value->value,
-                                    .array_count = compound->values.size(),
-                                    .index = compound_index};
+    auto compound_index = static_cast<u64>(i.int_value);
+
+    if (!compound->values.empty()) {
+        if (compound_index >= compound->values.size()) {
+            return Value{};
+        }
+        return compound->values[compound_index]->value->value;
+    }
+
+    auto type = compound->type->get_base_type();
+    if (type->is_array()) {
+        auto array_type = type->as<ArrayType>();
+        auto array_count = array_type->count;
+        if (compound_index >= array_count) {
+            return Value{};
+        }
+        return create_default_value_for_type(parser, array_type->get_core_type());
+    }
+    if (type->is_struct()) {
+        auto struct_type = type->as<StructType>();
+        auto member_count = struct_type->members.size();
+        if (compound_index >= member_count) {
+            return Value{};
+        }
+        return create_default_value_for_type(parser, struct_type->members[compound_index]->type);
+    }
+    return Value{};
 }
 
 void Typer::check_index_expr(TyperContext &context, Operand &operand, Ast::IndexExpression *expression) {
@@ -880,14 +899,24 @@ void Typer::check_index_expr(TyperContext &context, Operand &operand, Ast::Index
     bool is_const_expr = operand_expr.type->is_array() && operand_expr.kind == Operand::Kind::CONSTANT &&
                          operand_index.kind == Operand::Kind::CONSTANT;
     if (is_const_expr) {
-        operand.kind = Operand::Kind::CONSTANT;
-        auto result = apply_index_operator(operand_expr.value, operand_index.value);
-        operand.value = result.value;
-        if (operand.value.kind == Value::Kind::INVALID) {
-            error(reporter, operand_index.expr, "Index out of range, array count is '{}' but index is '{}'", result.array_count, result.index);
+        if (operand_index.value.as_int().kind == Value::Kind::INVALID) {
             operand = Operand{};
             return;
         }
+        auto array_type = operand_expr.type->get_base_type()->as<ArrayType>();
+        auto index = operand_index.value.int_value;
+        if (index < 0 || static_cast<u64>(index) >= array_type->count) {
+            if (index < 0) {
+                error(reporter, operand_index.expr, "Index is negative ('{}')", index);
+            } else {
+                error(reporter, operand_index.expr, "Index out of range, array count is '{}' but index is '{}'", array_type->count, index);
+            }
+            operand = Operand{};
+            return;
+        }
+        
+        operand.kind = Operand::Kind::CONSTANT;
+        operand.value = apply_index_operator(parser_, operand_expr.value, operand_index.value);
         if (!check_representable_as_constant(operand.value, operand.type, expression)) {
             operand = Operand{};
             return;
@@ -928,7 +957,130 @@ void Typer::check_cast_expr(TyperContext &context, Operand &operand, Ast::CastOp
 }
 
 void Typer::check_compound_expr(TyperContext &context, Operand &operand, Ast::CompoundExpression *expression, Type *type_hint) {
-    panic("TODO");
+    auto type = type_hint;
+    if (expression->compound_type) {
+        type = check_type(context, *expression->compound_type);
+    }
+
+    if (type == nullptr) {
+        error(reporter, expression, "Can not determine type of a compound");
+        operand = Operand{};
+        return;
+    }
+
+    if (type->is_bad()) {
+        operand = Operand{};
+        return;
+    }
+
+    bool err = false;
+    bool is_const = true;
+    auto base = type->get_base_type();
+    if (base->is_array()) {
+        auto array = base->as<ArrayType>();
+        auto core_type = array->get_core_type();
+        auto compound_count = expression->values.size();
+        if (compound_count != 0 && array->count != compound_count) {
+            error(reporter, expression, "Expected {} values for this array literal, got {}", array->count,
+                  compound_count);
+            err = true;
+        }
+        for (auto value : expression->values) {
+            if (value->identifier) {
+                error(reporter, value->identifier->token, "Did not expect field name for array literal");
+                err = true;
+            }
+
+            auto operand_value = Operand{};
+            check_expr(context, operand_value, value->value, core_type);
+            if (operand_value.kind == Operand::Kind::INVALID) {
+                err = true;
+            } else {
+                if (operand_value.kind != Operand::Kind::CONSTANT) {
+                    is_const = false;
+                }
+                check_assignment(context, operand_value, core_type);
+            }
+        }
+    } else if (base->is_struct()) {
+        auto struct_type = base->as<StructType>();
+        auto compound_count = expression->values.size();
+        auto struct_member_count = struct_type->members.size();
+        if (compound_count != 0 && struct_member_count != compound_count) {
+            error(reporter, expression, "Expected {} values for this struct literal, got {}", struct_member_count,
+                  compound_count);
+            err = true;
+        }
+        auto set_members = std::unordered_set<Entity *>{};
+        for (auto i : indices(compound_count)) {
+            auto value = expression->values[i];
+
+            Entity *member = nullptr;
+            // Only one path here will always be taken because of the check in parser
+            if (value->identifier) {
+                auto entity = lookup_field(struct_type, *value->identifier, false);
+                if (entity) {
+                    member = *entity;
+                    if (set_members.contains(member)) {
+                        error(reporter, value->identifier->token, "Duplicate field '{}' in struct literal",
+                              value->identifier->token.value);
+                        err = true;
+                    } else {
+                        set_members.insert(member);
+                    }
+                } else {
+                    error(reporter, value->identifier->token, "Unknown field '{}' in struct literal",
+                          value->identifier->token.value);
+                    err = true;
+                }
+            } else {
+                // If compound has more values than fields in a struct, we do not have a member, but still need to check expression
+                if (i < struct_member_count) {
+                    member = struct_type->members[i];
+                }
+            }
+
+            Type *member_type = bad_t;
+            if (member != nullptr) {
+                member_type = member->type;
+            }
+
+            auto operand_value = Operand{};
+            check_expr(context, operand_value, value->value, member_type);
+            if (operand_value.kind == Operand::Kind::INVALID) {
+                err = true;
+            } else {
+                if (operand_value.kind != Operand::Kind::CONSTANT) {
+                    is_const = false;
+                }
+                check_assignment(context, operand_value, member_type);
+            }
+        }
+    } else {
+        if (expression->values.size() != 0) {
+            error(reporter, expression, "{} can not be used as a compound literal with fields", type_to_string(type));
+            operand = Operand{};
+            return;
+        }
+        operand.kind = Operand::Kind::CONSTANT;
+        operand.value = create_default_value_for_type(parser_, type);
+        operand.type = type;
+        set_type_and_value(expression, operand);
+        return;
+    }
+
+    if (err) {
+        operand = Operand{};
+        return;
+    }
+
+    if (is_const) {
+        operand.kind = Operand::Kind::CONSTANT;
+        operand.value = create_value_compound(expression);
+        operand.type = type;
+    }
+
+    set_type_and_value(expression, operand);
 }
 
 void Typer::check_slice_expr(TyperContext &context, Operand &operand, Ast::SliceExpression *expression) {
@@ -970,7 +1122,7 @@ void Typer::check_init_constant(TyperContext &context, const Operand &operand, C
     entity->value = operand.value;
 }
 
-bool Typer::check_assignment(TyperContext &context, const Operand &operand, Type *type) {
+bool Typer::check_assignment(TyperContext &/*context*/, const Operand &operand, Type *type) {
     if (operand.kind == Operand::Kind::INVALID || type->is_bad()) {
         return false;
     }
@@ -981,7 +1133,7 @@ bool Typer::check_assignment(TyperContext &context, const Operand &operand, Type
     }
 
     if (!are_types_the_same(operand.type, type)) {
-        error(reporter, operand.expr, "Can not assign value '{}' of type '{}' to variable of type '{}'",
+        error(reporter, operand.expr, "Can not assign value '{}' of type '{}' to type '{}'",
               Ast::expression_to_string(operand.expr), type_to_string(operand.type), type_to_string(type));
         return false;
     }
@@ -1052,6 +1204,14 @@ Maybe<Entity *> Typer::check_selector(TyperContext &context, Operand &operand, A
             operand.kind = Operand::Kind::VALUE;
             break;
         }
+    }
+
+    if (operand_expr.kind == Operand::Kind::CONSTANT) {
+        auto index = operand_expr.type->get_base_type()->as<StructType>()->index_of_field(entity->as<VariableEntity>());
+        operand.kind = Operand::Kind::CONSTANT;
+        operand.value =
+            apply_index_operator(parser_, operand_expr.value,
+                                 create_value_int(index.expect("we found entity earlier, so it has to be there")));
     }
 
     operand.type = entity->type;
@@ -1227,7 +1387,7 @@ void Typer::check_entity_decl(TyperContext &context, Entity *entity) {
     }
 
     if (entity->state != Entity::State::UNRESOLVED) {
-        error(reporter, entity->declaration, "Declaration cycle of {}", full_entity_name(entity));
+        error(reporter, entity->declaration, "Declaration cycle of {}", entity->full_name());
         entity->state = Entity::State::RESOLVED;
         return;
     }
@@ -1250,6 +1410,7 @@ void Typer::check_entity_decl(TyperContext &context, Entity *entity) {
 
     auto new_context = context;
     new_context.scope = entity->scope;
+    new_context.entity = entity;
 
     entity->state = Entity::State::IN_PROGRESS;
     switch (entity->kind) {
@@ -1314,7 +1475,11 @@ void Typer::check_type_decl(TyperContext &context, NamedTypeEntity *entity) {
     auto declaration = entity->declaration->as<Ast::TypeDeclaration>();
     // Entity type should be set first
     entity->type = create_type<NamedType>(declaration->identifier->token.value, entity);
-    entity->type->as<NamedType>()->type = check_type(context, entity->ast_type);
+    auto type = check_type(context, entity->ast_type);
+    entity->type->as<NamedType>()->type = type;
+    if (type->is<NamedType>()) {
+        entity->is_alias = true;
+    }
 }
 
 bool Typer::do_typing() {

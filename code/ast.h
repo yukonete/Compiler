@@ -580,14 +580,16 @@ struct CompoundFields {
 struct CompoundExpression : public Expression {
     static constexpr auto KIND = Kind::COMPOUND;
 
+    constexpr CompoundExpression() : Expression{KIND} {
+    }
     constexpr CompoundExpression(Maybe<Type *> type, const Token &open, std::span<CompoundFields *> values, const Token &close)
-        : Expression{KIND}, open{open}, close{close}, type{type}, values{values} {
+        : Expression{KIND}, open{open}, close{close}, compound_type{type}, values{values} {
     }
 
     Token open;
     Token close;
 
-    Maybe<Type *> type;
+    Maybe<Type *> compound_type;
     // Mixture of 'field=value' and just value is not allowed
     // So either all values have identifier set or none (assuming no errors were reported)
     std::span<CompoundFields*> values;
