@@ -74,7 +74,7 @@ void Type::dump(std::string &out) const {
                 auto parameter = proc->parameters[i];
                 parameter->dump(out);
             }
-            append(out, "fn)");
+            append(out, ")");
             if (proc->return_type) {
                 append(out, " -> ");
                 proc->return_type->dump(out);
@@ -230,6 +230,11 @@ bool Type::is_slice() const {
     return base->is<SliceType>();
 }
 
+bool Type::is_procedure() const {
+    auto base = get_base_type();
+    return base->is<ProcedureType>();
+}
+
 bool Type::is_convertible_to(const Type *type) const {
     auto base = get_base_type();
     type = type->get_base_type();
@@ -375,7 +380,7 @@ bool are_types_the_same(const Type *a, const Type *b) {
             if (proc_a->return_type && proc_b->return_type) {
                 return are_types_the_same(*proc_a->return_type, *proc_b->return_type);
             }
-            return static_cast<bool>(proc_a->return_type) != static_cast<bool>(proc_b->return_type);
+            return static_cast<bool>(proc_a->return_type) == static_cast<bool>(proc_b->return_type);
         }
     }
     panic("Type is not handled");

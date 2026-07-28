@@ -929,13 +929,73 @@ void Typer::check_index_expr(TyperContext &context, Operand &operand, Ast::Index
 }
 
 void Typer::check_call_expr(TyperContext &context, Operand &operand, Ast::CallOperatorExpression *expression) {
-    panic("TODO");
+    auto operand_callable = Operand{};
+    check_expr(context, operand_callable, expression->expression);
+    if (operand_callable.kind == Operand::Kind::INVALID) {
+        operand = Operand{};
+        return;
+    }     
+
+    if (!operand_callable.type->is_procedure()) {
+        error(reporter, expression->expression, "Expression is not callable");
+        operand = Operand{};
+        return;
+    }
+
+    bool err = false;
+
+    auto proc_type = operand_callable.type->get_base_type()->as<ProcedureType>();
+    auto parameter_count = proc_type->parameters.size();
+    auto argument_count = expression->arguments.size();
+    if (parameter_count != argument_count) {
+        error(reporter, expression->expression, "Expected {} arguments for procedure call, got {}", parameter_count,
+              argument_count);
+        err = true;
+    }
+
+    for (auto i : indices(expression->arguments.size())) {
+        auto argument = expression->arguments[i];
+
+        Type *parameter_type = nullptr;
+        if (i < parameter_count) {
+            parameter_type = proc_type->parameters[i];
+        }
+
+        auto operand_argument = Operand{};
+        check_expr(context, operand_argument, argument, parameter_type);
+        if (operand_argument.kind == Operand::Kind::INVALID) {
+            err = true;
+            continue;
+        }
+
+        if (parameter_type != nullptr) {
+            if (!are_types_the_same(operand_argument.type, parameter_type)) {
+                error(reporter, argument, "Procedure takes parameter of type {}, got argument of type {}",
+                      type_to_string(parameter_type), type_to_string(operand_argument.type));
+                err = true;
+            }
+        }
+    }
+
+    if (err) {
+        operand = Operand{};
+        return;
+    }
+
+    operand.kind = Operand::Kind::NO_VALUE;
+    if (proc_type->return_type) {
+        operand.type = *proc_type->return_type;
+    } else {
+        operand.type = void_t;
+    }
+    set_type_and_value(expression, operand);
 }
 
 void Typer::check_cast_expr(TyperContext &context, Operand &operand, Ast::CastOperatorExpression *expression) {
     auto type = check_type(context, expression->cast_type);
     check_expr(context, operand, expression->expression);
-    if (operand.kind == Operand::Kind::INVALID || type->is_bad()) {
+    if (operand.kind == Operand::Kind::INVALID) {
+        operand = Operand{};
         return; 
     }
 

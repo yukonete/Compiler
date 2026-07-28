@@ -59,7 +59,7 @@ struct Type {
     bool is_array() const;
     bool is_slice() const;
     bool is_struct() const;
-
+    bool is_procedure() const;
 
     Kind kind;
     Flags flags = Flags::NONE;
@@ -80,6 +80,7 @@ struct BasicType : public Type {
         UNSIGNED = 1 << 2,
         FLOAT = 1 << 3,
         STRING = 1 << 4,
+        VOID = 1 << 5,
     };
 
     constexpr BasicType() : Type{KIND} {
@@ -207,6 +208,7 @@ inline std::array basic_types = {
     create_basic_type(BasicType::BasicFlags::FLOAT, 8, "f64"),
 
     create_basic_type(BasicType::BasicFlags::STRING, 16, "string"),
+    create_basic_type(BasicType::BasicFlags::VOID, 0, "void"),
 };
 
 inline  BasicType * const bad_t = &basic_types[0];
@@ -224,6 +226,7 @@ inline  BasicType * const uint_t = &basic_types[11];
 inline  BasicType * const f32_t = &basic_types[12];
 inline  BasicType * const f64_t = &basic_types[13];
 inline  BasicType * const string_t = &basic_types[14];
+inline  BasicType * const void_t = &basic_types[15];
 
 bool are_types_the_same(const Type *a, const Type *b);
 
