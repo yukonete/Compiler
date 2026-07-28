@@ -143,7 +143,7 @@ struct IfStatement : public Statement {
     };
 
     constexpr IfStatement(const Token &token, Expression *condition,
-                          Statement *body,
+                          BlockStatement *body,
                           const Maybe<ElseBranch> &else_branch)
         : Statement{KIND}, token{token}, condition{condition}, body{body},
           else_branch{else_branch} {
@@ -151,7 +151,7 @@ struct IfStatement : public Statement {
 
     Token token;
     Expression *condition;
-    Statement *body;
+    BlockStatement *body;
     Maybe<ElseBranch> else_branch;
 
     // Set in Typer
@@ -162,13 +162,13 @@ struct WhileStatement : public Statement {
     static constexpr auto KIND = Kind::WHILE;
 
     constexpr WhileStatement(const Token &token, Expression *condition,
-                             Statement *body)
+                             BlockStatement *body)
         : Statement{KIND}, token{token}, condition{condition}, body{body} {
     }
 
     Token token;
     Expression *condition;
-    Statement *body;
+    BlockStatement *body;
 
     // Set in Typer
     Typing::Scope *scope = nullptr;

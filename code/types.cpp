@@ -235,6 +235,14 @@ bool Type::is_procedure() const {
     return base->is<ProcedureType>();
 }
 
+bool Type::is_void() const {
+    auto base = get_base_type();
+    if (base->is<BasicType>()) {
+        return has_flag(base->as<BasicType>()->basic_flags, BasicType::BasicFlags::VOID);
+    }
+    return false;
+}
+
 bool Type::is_convertible_to(const Type *type) const {
     auto base = get_base_type();
     type = type->get_base_type();
@@ -269,7 +277,9 @@ bool Type::is_convertible_to(const Type *type) const {
             return false;
         }
 
-        case POINTER:
+        case POINTER: {
+            return base->get_core_type()->is_void() || type->get_core_type()->is_void();
+        }
         case ARRAY:
         case SLICE:
         case STRUCT:
@@ -377,10 +387,7 @@ bool are_types_the_same(const Type *a, const Type *b) {
                     return false;
                 }
             }
-            if (proc_a->return_type && proc_b->return_type) {
-                return are_types_the_same(*proc_a->return_type, *proc_b->return_type);
-            }
-            return static_cast<bool>(proc_a->return_type) == static_cast<bool>(proc_b->return_type);
+            return are_types_the_same(proc_a->return_type, proc_b->return_type);
         }
     }
     panic("Type is not handled");

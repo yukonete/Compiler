@@ -123,11 +123,11 @@ bool Typer::check_representable_as_constant(Value &value, Type *to, Ast::Express
     return true;
 }
 
-void Typer::open_scope(TyperContext &context, Ast::StructType *ast_struct) {
+void Typer::open_scope(TyperContext &context, Scope *&out_scope) {
     auto scope = create_scope(context.scope);
     scope->entity = context.entity;
     
-    ast_struct->scope = scope;
+    out_scope = scope;
     context.scope = scope;
 }
 
@@ -186,26 +186,32 @@ Scope *Typer::create_scope(Scope *parent) {
     return scope;
 }
 
-bool Typer::collect_entity(TyperContext &context, Ast::Declaration *declaration) {
+VariableEntity *Typer::create_entity_variable(TyperContext &context, Ast::VariableDeclaration *ast_variable) {
+    Ast::Type *type = nullptr;
+    if (ast_variable->type) {
+        type = *ast_variable->type;
+    }
+    auto entity = create_entity<VariableEntity>(context.scope, ast_variable, type, ast_variable->value);
+    ast_variable->entity = entity;
+    return entity;
+}
+
+Entity *Typer::collect_entity(TyperContext &context, Ast::Declaration *declaration) {
     if ((declaration->flags & Ast::Declaration::Flags::HANDLED) ==
-        Ast::Declaration::Flags::HANDLED) {
-        return false;
+    Ast::Declaration::Flags::HANDLED) {
+        return declaration->entity;
     }
     declaration->flags |= Ast::Declaration::Flags::HANDLED;
-
+    
     switch (declaration->kind) {
         using enum Ast::Declaration::Kind;
-
+        
         case VARIABLE: {
             auto ast_variable = declaration->as<Ast::VariableDeclaration>();
-            Ast::Type *type = nullptr;
-            if (ast_variable->type) {
-                type = *ast_variable->type;
-            }
-            auto entity = create_entity<VariableEntity>(context.scope, ast_variable, type, ast_variable->value);
-            declaration->entity = entity;
+            auto entity = create_entity_variable(context, ast_variable);
+            entity->is_global = true;
             add_entity(context.scope, entity);
-            return true;
+            return entity;
         }
 
         case CONSTANT: {
@@ -217,7 +223,7 @@ bool Typer::collect_entity(TyperContext &context, Ast::Declaration *declaration)
             auto entity = create_entity<ConstantEntity>(context.scope, ast_constant, type, ast_constant->value);
             declaration->entity = entity;
             add_entity(context.scope, entity);
-            return true;
+            return entity;
         }
 
         case PROCEDURE: {
@@ -226,7 +232,7 @@ bool Typer::collect_entity(TyperContext &context, Ast::Declaration *declaration)
                 create_entity<ProcedureEntity>(context.scope, ast_proc, ast_proc->type, create_scope(context.scope));
             declaration->entity = entity;
             add_entity(context.scope, entity);
-            return true;
+            return entity;
         }
 
         case TYPE: {
@@ -234,7 +240,7 @@ bool Typer::collect_entity(TyperContext &context, Ast::Declaration *declaration)
             auto entity = create_entity<NamedTypeEntity>(context.scope, ast_type, ast_type->type);
             declaration->entity = entity;
             add_entity(context.scope, entity);
-            return true;
+            return entity;
         }
 
         case FIELD: panic("Should be caught in parser");
@@ -242,24 +248,20 @@ bool Typer::collect_entity(TyperContext &context, Ast::Declaration *declaration)
     panic("Ast::Declaration is not handled");
 }
 
-bool Typer::collect_entities(TyperContext &context, std::span<Ast::Statement *> statements) {
-    auto collected = false; 
+void Typer::collect_entities(TyperContext &context, std::span<Ast::Statement *> statements) {
     for (auto statement : statements) {
         if (statement->is<Ast::DeclarationStatement>()) {
-            collected |= collect_entity(context, statement->as<Ast::DeclarationStatement>()->declaration);
+            collect_entity(context, statement->as<Ast::DeclarationStatement>()->declaration);
         } else {
             error(reporter, statement, "Expected declaration");
         }
     }
-    return collected;
 }
 
-bool Typer::collect_entities(TyperContext &context, std::span<Ast::DeclarationStatement *> statements) {
-    auto collected = false; 
+void Typer::collect_entities(TyperContext &context, std::span<Ast::DeclarationStatement *> statements) {
     for (auto statement : statements) {
-        collected |= collect_entity(context, statement->as<Ast::DeclarationStatement>()->declaration);
+        collect_entity(context, statement->as<Ast::DeclarationStatement>()->declaration);
     }
-    return collected;
 }
 
 void Typer::not_declared_error(const Ast::Identifier *identifier) {
@@ -338,6 +340,16 @@ Maybe<Entity *> Typer::check_identifier(TyperContext &context, Operand &operand,
             break;
         }
         case VARIABLE: {
+            auto variable = entity->as<VariableEntity>();
+            // If the variable is local then entity has to be the same, which means we can only access it from the
+            // procedure where it is declared
+            if (!variable->is_global) {
+                if (context.entity != entity->parent.expect("since variable is local there has to be a parent")) {
+                    not_declared_error(identifier);
+                    operand = Operand{};
+                    return {};
+                }
+            }
             operand.kind = Operand::Kind::VARIABLE;
             break;
         }
@@ -670,6 +682,12 @@ bool Typer::check_binary_operator(TyperContext &/*context*/, const Operand &left
                   type_to_string(left.type), type_to_string(right.type));
             return false;
         }
+
+        case plus_assign:
+        case minus_assign:
+        case multiply_assign:
+        case divide_assign:
+        case modulo_assign:
         case less:
         case greater:
         case less_equals:
@@ -825,7 +843,7 @@ void Typer::check_deref_expr(TyperContext &context, Operand &operand, Ast::Deref
         return;
     }
 
-    operand.kind = Operand::Kind::VALUE;
+    operand.kind = Operand::Kind::VARIABLE;
     operand.type = operand.type->get_core_type();
 
     set_type_and_value(expression, operand);
@@ -922,7 +940,12 @@ void Typer::check_index_expr(TyperContext &context, Operand &operand, Ast::Index
             return;
         } 
     } else {
-        operand.kind = Operand::Kind::VALUE;
+        if (operand_expr.kind == Operand::Kind::CONSTANT) {
+            // Array is constant, but index is not
+            operand.kind = Operand::Kind::VALUE;
+        } else {
+            operand.kind = operand_expr.kind;
+        }
     }
 
     set_type_and_value(expression, operand);
@@ -984,7 +1007,7 @@ void Typer::check_call_expr(TyperContext &context, Operand &operand, Ast::CallOp
 
     operand.kind = Operand::Kind::NO_VALUE;
     if (proc_type->return_type) {
-        operand.type = *proc_type->return_type;
+        operand.type = proc_type->return_type;
     } else {
         operand.type = void_t;
     }
@@ -1151,7 +1174,7 @@ void Typer::check_slice_expr(TyperContext &context, Operand &operand, Ast::Slice
         return;
     }
 
-    if (!operand_slice.type->is_array() && operand_slice.type->is_slice()) {
+    if (!operand_slice.type->is_array() && !operand_slice.type->is_slice()) {
         error(reporter, expression->expression, "Expression is not an array or slice");
         operand = Operand{};
         return;
@@ -1494,7 +1517,7 @@ Type *Typer::check_type(TyperContext &context, Ast::Type *ast_type) {
                 parameters_temp.push_back(type);
             }
             auto parameters = create_array(std::span{parameters_temp});
-            auto return_type = Maybe<Type*>();
+            Type *return_type = void_t;
             if (ast_proc->return_type) {
                 return_type = check_type(context, *ast_proc->return_type);
             }
@@ -1505,11 +1528,10 @@ Type *Typer::check_type(TyperContext &context, Ast::Type *ast_type) {
         case STRUCT: {
             auto ast_struct = ast_type->as<Ast::StructType>();
             auto members_temp = create_temp_vector<VariableEntity *>(ast_struct->members.size());
-            open_scope(context, ast_struct);
+            open_scope(context, ast_struct->scope);
             for (auto ast_member : ast_struct->members) {
                 auto member_entity = create_entity<VariableEntity>(context.scope, ast_member, ast_member->type,
                                                                    Maybe<Ast::Expression *>{});
-                member_entity->variable_kind = VariableEntity::VariableKind::STRUCT_MEMBER;
                 member_entity->flags |= Entity::Flags::RESOLVED;
                 member_entity->type = check_type(context, ast_member->type);
                 members_temp.push_back(member_entity);
@@ -1542,21 +1564,7 @@ void Typer::check_entity_decl(TyperContext &context, Entity *entity) {
         return;
     }
     
-    bool push_decl_path = false;
-    switch (entity->kind) {
-        using enum Entity::Kind;
-        
-        case CONSTANT:
-        case VARIABLE:
-        case NAMED_TYPE: {
-            push_decl_path = true;
-            break;
-        }
-        default: break;
-    }
-    if (push_decl_path) {
-        context.decl_path->push_back(entity);
-    }
+    context.decl_path->push_back(entity);
 
     auto new_context = context;
     new_context.scope = entity->scope;
@@ -1567,7 +1575,9 @@ void Typer::check_entity_decl(TyperContext &context, Entity *entity) {
         using enum Entity::Kind;
 
         case VARIABLE: {
-            check_global_variable_decl(new_context, entity->as<VariableEntity>());
+            auto variable = entity->as<VariableEntity>();
+            assert(variable->is_global);
+            check_variable_decl(new_context, variable);
             break;
         }
         case CONSTANT: {
@@ -1584,14 +1594,11 @@ void Typer::check_entity_decl(TyperContext &context, Entity *entity) {
         }
     }
 
-    if (push_decl_path) {
-        context.decl_path->pop_back();
-    }
-
+    context.decl_path->pop_back();
     entity->state = Entity::State::RESOLVED;
 }
 
-void Typer::check_global_variable_decl(TyperContext &context, VariableEntity *entity) {    
+void Typer::check_variable_decl(TyperContext &context, VariableEntity *entity) {    
     if (entity->ast_type != nullptr) {
         entity->type = check_type(context, entity->ast_type);
     }
@@ -1632,6 +1639,191 @@ void Typer::check_type_decl(TyperContext &context, NamedTypeEntity *entity) {
     }
 }
 
+void Typer::collect_and_check_local_entities(TyperContext &context, std::span<Ast::Statement *> statements) {
+    auto entities = create_temp_vector<Entity *>(16);
+    for (auto statement : statements) {
+        if (statement->is<Ast::DeclarationStatement>()) {
+            auto decl = statement->as<Ast::DeclarationStatement>()->declaration;
+            switch (decl->kind) {
+                using enum Ast::Declaration::Kind;
+
+                case VARIABLE: break;
+
+                case PROCEDURE:
+                case CONSTANT:
+                case TYPE: {
+                    entities.push_back(collect_entity(context, decl));
+                    break;
+                }
+
+                case FIELD: panic("Should not have a field here"); 
+            }
+        }
+    }
+
+    for (auto entity : entities) {
+        check_entity_decl(context, entity);
+    }
+}
+
+void Typer::check_procedure_body(TyperContext &context, ProcedureEntity *proc) {
+    auto new_context = context;
+    new_context.entity = proc;
+    new_context.scope = proc->inner_scope;
+
+    auto ast_proc = proc->ast_type;
+    for (auto ast_parameter : ast_proc->as<Ast::ProcedureType>()->parameters) {
+        if (ast_parameter->identifier != nullptr) {
+            auto variable = create_entity<VariableEntity>(new_context.scope, ast_parameter, ast_parameter->type,
+                                                          Maybe<Ast::Expression *>{});
+            variable->type = check_type(new_context, ast_parameter->type);
+            add_entity(new_context.scope, variable); 
+        }
+    }
+    
+    auto body = proc->declaration->as<Ast::ProcedureDeclaration>()->body;
+    check_statement(new_context, body);
+    // TODO: Check that the procedure returns (if it has to)
+}
+
+void Typer::check_statement(TyperContext &context, Ast::Statement *statement, Scope *block_scope) {
+    switch (statement->kind) {
+        using enum Ast::Statement::Kind;
+        
+        case BAD:
+        case EMPTY:
+            return;
+        
+        case IF: {
+            auto if_statement = statement->as<Ast::IfStatement>();
+            open_scope(context, if_statement->scope);
+            check_statement(context, if_statement->body, if_statement->scope);
+            close_scope(context);
+            if (if_statement->else_branch) {
+                auto &else_branch = *if_statement->else_branch;
+                open_scope(context, else_branch.scope);
+                check_statement(context, else_branch.body, else_branch.scope);
+                close_scope(context);
+            }
+            return;
+        }
+        case WHILE: {
+            auto while_statement = statement->as<Ast::WhileStatement>();
+            open_scope(context, while_statement->scope);
+            while_statement->scope->is_loop = true;
+            check_statement(context, while_statement->body, while_statement->scope);
+            close_scope(context);
+            return;
+        }
+        case BLOCK: {
+            auto block = statement->as<Ast::BlockStatement>();
+            if (block_scope == nullptr) {
+                open_scope(context, block->scope);
+            } else {
+                block->scope = block_scope;
+            }
+
+            collect_and_check_local_entities(context, block->body);
+            for (auto s : block->body) {
+                check_statement(context, s);
+            }
+
+            if (block_scope == nullptr) {
+                close_scope(context);
+            }
+            return;
+        }
+        
+        case DECLARATION: {
+            auto decl = statement->as<Ast::DeclarationStatement>()->declaration;
+            switch (decl->kind) {
+                using enum Ast::Declaration::Kind;
+
+                case VARIABLE: {
+                    auto ast_variable = decl->as<Ast::VariableDeclaration>();                    
+                    auto entity = create_entity_variable(context, ast_variable);
+                    check_variable_decl(context, entity);
+                    entity->state = Entity::State::RESOLVED;
+                    add_entity(context.scope, entity);
+                    return;   
+                }
+
+                case PROCEDURE:
+                case CONSTANT:
+                case TYPE: return;
+
+                case FIELD: panic("Should not have a field here");
+            }
+            panic("Declaration not handled");
+        }
+
+        case ASSIGNMENT: {
+            auto assignment = statement->as<Ast::AssignmentStatement>();
+
+            auto operand_left = Operand{};
+            auto operand_right = Operand{};
+            check_expr(context, operand_left, assignment->expression);
+            check_expr(context, operand_right, assignment->value, operand_left.type);
+            if (operand_left.kind == Operand::Kind::INVALID || operand_right.kind == Operand::Kind::INVALID) {
+                return;
+            } 
+
+            if (operand_left.kind == Operand::Kind::CONSTANT) {
+                error(reporter, assignment->expression, "Can not assign to a constant");
+            }
+            if (operand_left.kind == Operand::Kind::VALUE) {
+                error(reporter, assignment->expression, "Can not assign to an rvalue");
+            }
+
+            if (assignment->assign.type != TokenType::assign) {
+                if (!check_binary_operator(context, operand_left, operand_right, assignment->assign)) {
+                    return;
+                }
+            }
+
+            check_assignment(context, operand_right, operand_left.type);
+            return;
+        }
+        
+        case RETURN: {
+            auto return_statement = statement->as<Ast::ReturnStatement>();
+            auto current_proc = context.entity->as<ProcedureEntity>();
+            auto current_proc_return_type = current_proc->type->get_base_type()->as<ProcedureType>()->return_type;
+
+            Type *return_type = void_t;
+            if (return_statement->value) {
+                auto operand = Operand{};
+                check_expr(context, operand, *return_statement->value, current_proc_return_type);
+                if (operand.kind == Operand::Kind::INVALID) {
+                    return;
+                }
+                return_type = operand.type;
+            }
+            if (!are_types_the_same(return_type, current_proc_return_type)) {
+                error(reporter, return_statement, "Procedure returns value of type {}, got value of type {}",
+                      type_to_string(current_proc_return_type), type_to_string(return_type));
+            }
+            return;
+        }
+
+        case EXPRESSION: {
+            auto expression = statement->as<Ast::ExpressionStatement>()->expression;
+            auto operand = Operand{};
+            check_expr(context, operand, expression);
+            return;
+        }
+        
+        case CONTINUE: 
+        case BREAK: {
+            if (!context.scope->is_loop) {
+                error(reporter, statement, "{} is not allowed outside of a loop", statement->start_token().type); 
+            }
+            return;
+        }
+    }
+}
+
+
 bool Typer::do_typing() {
     auto decl_path = std::vector<const Entity*>{};
 
@@ -1664,6 +1856,11 @@ bool Typer::do_typing() {
 
     if (parser_.reporter.any_errors()) {
         return false;
+    }
+
+    for (usize i = 0; i < procedure_bodies_to_check_.size(); ++i) {
+        auto proc = procedure_bodies_to_check_[i];
+        check_procedure_body(context, proc);        
     }
 
     return parser_.reporter.any_errors();

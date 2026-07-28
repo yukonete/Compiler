@@ -28,6 +28,8 @@ struct Scope {
     Maybe<Entity *> entity;
     AllocatorUnorderedMap<std::string_view, Entity *> entities;
 
+    bool is_loop = false;
+
     Maybe<Entity *> look_up_current(std::string_view name) const;
     Maybe<Entity *> look_up(std::string_view name) const;
     
@@ -101,20 +103,21 @@ struct Typer {
     bool add_entity(Scope *scope, Entity *entity);
     bool add_entity(Scope *scope, Entity *entity, std::string_view name);
 
-    void open_scope(TyperContext &context, Ast::StructType *ast_struct);
+    void open_scope(TyperContext &context, Scope *&out_scope);
     void close_scope(TyperContext &context);
 
-    bool collect_entities(TyperContext &context, std::span<Ast::Statement *> statements);
-    bool collect_entities(TyperContext &context, std::span<Ast::DeclarationStatement *> statements);
-    bool collect_entity(TyperContext &context, Ast::Declaration *declaration);
-    
+    void collect_entities(TyperContext &context, std::span<Ast::Statement *> statements);
+    void collect_entities(TyperContext &context, std::span<Ast::DeclarationStatement *> statements);
+    Entity *collect_entity(TyperContext &context, Ast::Declaration *declaration);
+    VariableEntity *create_entity_variable(TyperContext &context, Ast::VariableDeclaration *ast_variable);
+
     void not_declared_error(const Ast::Identifier *identifier);
     void redeclaration_error(const Entity *old_entity, const Entity *new_entity);
 
     bool check_cycle(TyperContext &context, const Entity *entity);
 
     void check_entity_decl(TyperContext &context, Entity *entity);
-    void check_global_variable_decl(TyperContext &context, VariableEntity *entity);
+    void check_variable_decl(TyperContext &context, VariableEntity *entity);
     void check_constant_decl(TyperContext &context, ConstantEntity *entity);
     void check_proc_decl(TyperContext &context, ProcedureEntity *entity);
     void check_type_decl(TyperContext &context, NamedTypeEntity *entity);
@@ -126,7 +129,6 @@ struct Typer {
     Maybe<Entity*> check_identifier_or_selector(TyperContext &context, Operand &operand, Ast::Expression *expression);
     Maybe<Entity *> lookup_field(Type *type, Ast::Identifier *identifier, bool is_type);
 
-    // TODO: Consider taking operand as a parameter instead of value, to and expression
     bool check_representable_as_constant(Value &value, Type *to, Ast::Expression *expression);
 
     void check_expr_internal(TyperContext &context, Operand &operand, Ast::Expression *expression, Type *type_hint);
@@ -149,7 +151,9 @@ struct Typer {
     void check_init_constant(TyperContext &context, const Operand &operand, ConstantEntity *entity);
 
     bool check_assignment(TyperContext &context, const Operand &operand, Type *type);
-
+    void check_procedure_body(TyperContext &context, ProcedureEntity *proc);
+    void collect_and_check_local_entities(TyperContext &context, std::span<Ast::Statement *> statements);
+    void check_statement(TyperContext &context, Ast::Statement *statement, Scope *block_scope = nullptr);
 private:
     DynamicArena entities_storage_;
     DynamicArena scopes_storage_;

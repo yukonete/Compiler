@@ -60,6 +60,7 @@ struct Type {
     bool is_slice() const;
     bool is_struct() const;
     bool is_procedure() const;
+    bool is_void() const;
 
     Kind kind;
     Flags flags = Flags::NONE;
@@ -152,24 +153,21 @@ struct StructType : public Type {
 struct ProcedureType : public Type {
     static constexpr auto KIND = Kind::PROCEDURE;
 
-    constexpr ProcedureType(std::span<Type*> parameters,
-                            Maybe<Type *> return_type)
+    constexpr ProcedureType(std::span<Type *> parameters, Type *return_type)
         : Type{KIND}, parameters{parameters}, return_type{return_type} {
         flags = Flags::SIZED;
         size = 8;
         align = 8;
     }
 
-    std::span<Type*> parameters;
-    Maybe<Type *> return_type;
+    std::span<Type *> parameters;
+    Type *return_type;
 };
 
 struct NamedType : public Type {
     static constexpr auto KIND = Kind::NAMED;
 
-    constexpr NamedType(std::string_view name,
-                        NamedTypeEntity *entity)
-        : Type{KIND}, name{name}, entity{entity} {
+    constexpr NamedType(std::string_view name, NamedTypeEntity *entity) : Type{KIND}, name{name}, entity{entity} {
     }
 
     std::string_view name;
