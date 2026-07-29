@@ -1,7 +1,7 @@
 // Types
 type Vec2 = struct {
-    x: f32;
-    y: f32;
+    x: int;
+    y: int;
 
     type NestedType = int;
     fn nested_proc() {
@@ -24,6 +24,10 @@ const русский = "тест";
 const 日本語 = "試し";
 
 fn main() -> int {
+    Vec2.nested_variable = {};
+
+    var a: bool;
+    var b: bool;
     if a {
     } else if b {
     }
@@ -50,10 +54,10 @@ fn main() -> int {
     var v = Vec2{x=0, y=1};
     var v1 = Vec2{-1, -1};
     var v3 = Vec2{};
-    var i3 = +size_of(i) + cast(f32)i2 + -3.0 * (i + 4) / i;
+    var i3 = i + i2 + cast(int)-3.0 * (i + 4) / i;
     var array: [100]int;
-    var f32_slice = []f32;
-    var f32_array = [CONSTANT]f32;
+    var f32_slice = []f32{};
+    var f32_array = [CONSTANT]f32{};
     var slice = array[:];
     slice = slice[1:];
     slice = slice[:2];
@@ -67,4 +71,5 @@ fn main() -> int {
 }
 
 fn test() -> (index: int) {
+    return Vec2.NESTED_CONSTANT;
 }

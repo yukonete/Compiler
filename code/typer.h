@@ -59,12 +59,6 @@ struct Operand {
     Ast::Expression *expr = nullptr;
 };
 
-inline void set_type_and_value(Ast::Expression *expression, Operand &operand) {
-    expression->type = operand.type;
-    expression->value = operand.value;
-    operand.expr = expression;
-}
-
 struct Typer {
     constexpr Typer(Ast::Parser &parser, Allocator allocator)
         : entities_storage_{allocator}, scopes_storage_{allocator},
@@ -106,7 +100,6 @@ struct Typer {
     void open_scope(TyperContext &context, Scope *&out_scope);
     void close_scope(TyperContext &context);
 
-    void collect_entities(TyperContext &context, std::span<Ast::Statement *> statements);
     void collect_entities(TyperContext &context, std::span<Ast::DeclarationStatement *> statements);
     Entity *collect_entity(TyperContext &context, Ast::Declaration *declaration);
     VariableEntity *create_entity_variable(TyperContext &context, Ast::VariableDeclaration *ast_variable);
@@ -153,7 +146,7 @@ struct Typer {
     bool check_assignment(TyperContext &context, const Operand &operand, Type *type);
     void check_procedure_body(TyperContext &context, ProcedureEntity *proc);
     void collect_and_check_local_entities(TyperContext &context, std::span<Ast::Statement *> statements);
-    void check_statement(TyperContext &context, Ast::Statement *statement, Scope *block_scope = nullptr);
+    bool check_statement(TyperContext &context, Ast::Statement *statement, Scope *block_scope = nullptr);
 private:
     DynamicArena entities_storage_;
     DynamicArena scopes_storage_;

@@ -11,6 +11,12 @@
 
 namespace Typing {
 
+static void set_type_and_value(Ast::Expression *expression, Operand &operand) {
+    expression->type = operand.type;
+    expression->value = operand.value;
+    operand.expr = expression;
+}
+
 // This will create new node each time there is access to a constant value that was created from empty literal and is not basic type
 // Which is not perfect but fine for now
 static Value create_default_value_for_type(Ast::Parser &parser, Type *type) {
@@ -230,6 +236,7 @@ Entity *Typer::collect_entity(TyperContext &context, Ast::Declaration *declarati
             auto ast_proc = declaration->as<Ast::ProcedureDeclaration>();
             auto entity =
                 create_entity<ProcedureEntity>(context.scope, ast_proc, ast_proc->type, create_scope(context.scope));
+            entity->inner_scope->entity = entity;
             declaration->entity = entity;
             add_entity(context.scope, entity);
             return entity;
@@ -246,16 +253,6 @@ Entity *Typer::collect_entity(TyperContext &context, Ast::Declaration *declarati
         case FIELD: panic("Should be caught in parser");
     }
     panic("Ast::Declaration is not handled");
-}
-
-void Typer::collect_entities(TyperContext &context, std::span<Ast::Statement *> statements) {
-    for (auto statement : statements) {
-        if (statement->is<Ast::DeclarationStatement>()) {
-            collect_entity(context, statement->as<Ast::DeclarationStatement>()->declaration);
-        } else {
-            error(reporter, statement, "Expected declaration");
-        }
-    }
 }
 
 void Typer::collect_entities(TyperContext &context, std::span<Ast::DeclarationStatement *> statements) {
@@ -1532,7 +1529,7 @@ Type *Typer::check_type(TyperContext &context, Ast::Type *ast_type) {
             for (auto ast_member : ast_struct->members) {
                 auto member_entity = create_entity<VariableEntity>(context.scope, ast_member, ast_member->type,
                                                                    Maybe<Ast::Expression *>{});
-                member_entity->flags |= Entity::Flags::RESOLVED;
+                member_entity->state = Entity::State::RESOLVED;
                 member_entity->type = check_type(context, ast_member->type);
                 members_temp.push_back(member_entity);
             }
@@ -1682,38 +1679,62 @@ void Typer::check_procedure_body(TyperContext &context, ProcedureEntity *proc) {
     }
     
     auto body = proc->declaration->as<Ast::ProcedureDeclaration>()->body;
-    check_statement(new_context, body);
-    // TODO: Check that the procedure returns (if it has to)
+    auto always_returns = check_statement(new_context, body, proc->inner_scope);
+    if (!are_types_the_same(proc->type->get_base_type()->as<ProcedureType>()->return_type, void_t)) {
+        if (!always_returns) {
+            error(reporter, proc->declaration, "Procedure not always returns");
+        }
+    }
 }
 
-void Typer::check_statement(TyperContext &context, Ast::Statement *statement, Scope *block_scope) {
+// Returns whether statement always returns
+bool Typer::check_statement(TyperContext &context, Ast::Statement *statement, Scope *block_scope) {
     switch (statement->kind) {
         using enum Ast::Statement::Kind;
         
         case BAD:
         case EMPTY:
-            return;
+            return false;
         
         case IF: {
             auto if_statement = statement->as<Ast::IfStatement>();
+            
             open_scope(context, if_statement->scope);
-            check_statement(context, if_statement->body, if_statement->scope);
+            auto operand_if_condition = Operand{};
+            check_expr(context, operand_if_condition, if_statement->condition);
+            if (operand_if_condition.kind != Operand::Kind::INVALID) {
+                if (!are_types_the_same(operand_if_condition.type, bool_t)) {
+                    error(reporter, if_statement->condition, "Expression does not evaluate to bool");
+                }
+            }
+            auto true_branch_always_returns = check_statement(context, if_statement->body, if_statement->scope);
             close_scope(context);
+            
+            auto false_branch_always_returns = false;
             if (if_statement->else_branch) {
                 auto &else_branch = *if_statement->else_branch;
                 open_scope(context, else_branch.scope);
-                check_statement(context, else_branch.body, else_branch.scope);
+                false_branch_always_returns = check_statement(context, else_branch.body, else_branch.scope);
                 close_scope(context);
             }
-            return;
+            return true_branch_always_returns && false_branch_always_returns;
         }
         case WHILE: {
             auto while_statement = statement->as<Ast::WhileStatement>();
+            
             open_scope(context, while_statement->scope);
             while_statement->scope->is_loop = true;
-            check_statement(context, while_statement->body, while_statement->scope);
+            auto operand_while_condition = Operand{};
+            check_expr(context, operand_while_condition, while_statement->condition);
+            if (operand_while_condition.kind != Operand::Kind::INVALID) {
+                if (!are_types_the_same(operand_while_condition.type, bool_t)) {
+                    error(reporter, while_statement->condition, "Expression does not evaluate to bool");
+                }
+            }
+            auto always_returns = check_statement(context, while_statement->body, while_statement->scope);
             close_scope(context);
-            return;
+            
+            return always_returns;
         }
         case BLOCK: {
             auto block = statement->as<Ast::BlockStatement>();
@@ -1724,14 +1745,16 @@ void Typer::check_statement(TyperContext &context, Ast::Statement *statement, Sc
             }
 
             collect_and_check_local_entities(context, block->body);
+            auto always_returns = false;
             for (auto s : block->body) {
-                check_statement(context, s);
+                always_returns |= check_statement(context, s);
+                // TODO: if we found a statement that always returns and there are more statements produce warning
             }
 
             if (block_scope == nullptr) {
                 close_scope(context);
             }
-            return;
+            return always_returns;
         }
         
         case DECLARATION: {
@@ -1745,12 +1768,12 @@ void Typer::check_statement(TyperContext &context, Ast::Statement *statement, Sc
                     check_variable_decl(context, entity);
                     entity->state = Entity::State::RESOLVED;
                     add_entity(context.scope, entity);
-                    return;   
+                    return false;   
                 }
 
                 case PROCEDURE:
                 case CONSTANT:
-                case TYPE: return;
+                case TYPE: return false;
 
                 case FIELD: panic("Should not have a field here");
             }
@@ -1765,7 +1788,7 @@ void Typer::check_statement(TyperContext &context, Ast::Statement *statement, Sc
             check_expr(context, operand_left, assignment->expression);
             check_expr(context, operand_right, assignment->value, operand_left.type);
             if (operand_left.kind == Operand::Kind::INVALID || operand_right.kind == Operand::Kind::INVALID) {
-                return;
+                return false;
             } 
 
             if (operand_left.kind == Operand::Kind::CONSTANT) {
@@ -1777,12 +1800,12 @@ void Typer::check_statement(TyperContext &context, Ast::Statement *statement, Sc
 
             if (assignment->assign.type != TokenType::assign) {
                 if (!check_binary_operator(context, operand_left, operand_right, assignment->assign)) {
-                    return;
+                    return false;
                 }
             }
 
             check_assignment(context, operand_right, operand_left.type);
-            return;
+            return false;
         }
         
         case RETURN: {
@@ -1795,7 +1818,7 @@ void Typer::check_statement(TyperContext &context, Ast::Statement *statement, Sc
                 auto operand = Operand{};
                 check_expr(context, operand, *return_statement->value, current_proc_return_type);
                 if (operand.kind == Operand::Kind::INVALID) {
-                    return;
+                    return true;
                 }
                 return_type = operand.type;
             }
@@ -1803,14 +1826,14 @@ void Typer::check_statement(TyperContext &context, Ast::Statement *statement, Sc
                 error(reporter, return_statement, "Procedure returns value of type {}, got value of type {}",
                       type_to_string(current_proc_return_type), type_to_string(return_type));
             }
-            return;
+            return true;
         }
 
         case EXPRESSION: {
             auto expression = statement->as<Ast::ExpressionStatement>()->expression;
             auto operand = Operand{};
             check_expr(context, operand, expression);
-            return;
+            return false;
         }
         
         case CONTINUE: 
@@ -1818,9 +1841,10 @@ void Typer::check_statement(TyperContext &context, Ast::Statement *statement, Sc
             if (!context.scope->is_loop) {
                 error(reporter, statement, "{} is not allowed outside of a loop", statement->start_token().type); 
             }
-            return;
+            return false;
         }
     }
+    panic("Statement not handled");
 }
 
 
@@ -1845,7 +1869,13 @@ bool Typer::do_typing() {
 
     assert(!parser_.reporter.any_errors());
 
-    collect_entities(context, parser_.ast);
+    for (auto statement : parser_.ast) {
+        if (statement->is<Ast::DeclarationStatement>()) {
+            collect_entity(context, statement->as<Ast::DeclarationStatement>()->declaration);
+        } else {
+            error(reporter, statement, "Expected declaration");
+        }
+    }
     if (parser_.reporter.any_errors()) {
         return false;
     }

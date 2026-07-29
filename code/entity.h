@@ -24,12 +24,6 @@ struct Entity {
         RESOLVED,
     };
 
-    enum class Flags : u8 {
-        NONE,
-        RESOLVED = 1<<0,
-        BUILTIN = 1<<1,
-    };
-
     DEFINE_DOWNCAST_FUNCTIONS_FOR(Entity, kind, KIND);
 
     constexpr Entity(Kind kind, Scope *scope, Ast::Declaration *declaration,
@@ -42,7 +36,6 @@ struct Entity {
 
     Kind kind;
     State state = State::UNRESOLVED;
-    Flags flags = Flags::NONE;
     Scope *scope;
 
     Maybe<Entity *> parent;
@@ -55,8 +48,6 @@ struct Entity {
     Type *type = nullptr;
     Entity *aliased_of = nullptr;
 };
-
-DEFINE_ENUM_FLAG_OPERATORS(Entity::Flags);
 
 struct VariableEntity : public Entity {
     static constexpr auto KIND = Kind::VARIABLE;
