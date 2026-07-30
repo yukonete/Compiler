@@ -86,6 +86,9 @@ void Type::dump(std::string &out) const {
 
 
 Type *Type::get_base_type() {
+    if (this == nullptr) {
+        return nullptr;
+    } 
     if (is<NamedType>()) {
         return as<NamedType>()->type->get_base_type();
     }
@@ -93,6 +96,9 @@ Type *Type::get_base_type() {
 }
 
 const Type *Type::get_base_type() const {
+    if (this == nullptr) {
+        return nullptr;
+    } 
     if (is<NamedType>()) {
         return as<NamedType>()->type->get_base_type();
     }

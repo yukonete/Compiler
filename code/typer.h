@@ -108,6 +108,7 @@ struct Typer {
     void redeclaration_error(const Entity *old_entity, const Entity *new_entity);
 
     bool check_cycle(TyperContext &context, const Entity *entity);
+    bool check_cycle_alias(TyperContext &context, const Type *type);
 
     void check_entity_decl(TyperContext &context, Entity *entity);
     void check_variable_decl(TyperContext &context, VariableEntity *entity);

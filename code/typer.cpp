@@ -324,15 +324,15 @@ Maybe<Entity *> Typer::check_identifier(TyperContext &context, Operand &operand,
         case VARIABLE:
         case NAMED_TYPE: {
             if (check_cycle(context, *entity)) {
-                assert(operand.kind == Operand::Kind::INVALID);
-                return entity;
+                operand = Operand{};
+                return {};
             }
             break;
         }
         default: break;
     }
 
-    if (entity->type->is_bad()) {
+    if (entity->type->get_base_type() != nullptr && entity->type->is_bad()) {
         return entity;
     }
 
@@ -1648,14 +1648,55 @@ void Typer::check_proc_decl(TyperContext &context, ProcedureEntity *entity) {
     procedure_bodies_to_check_.push_back(entity);
 }
 
+bool Typer::check_cycle_alias(TyperContext &context, const Type *type) {
+    if (type == nullptr) {
+        return false;
+    }
+    switch (type->kind) {
+        using enum Type::Kind;
+        
+        case STRUCT:
+        case PROCEDURE:
+        case BASIC: return false;
+        
+        case NAMED: {
+            auto named = type->as<NamedType>();
+            if (check_cycle(context, named->entity)) {
+                return true;
+            }
+            context.decl_path->push_back(named->entity);
+            auto found = check_cycle_alias(context, named->type);
+            context.decl_path->pop_back();
+            return found;
+        }
+        case ARRAY: {
+            auto array = type->as<ArrayType>();
+            return check_cycle_alias(context, array->type);
+        }
+        case SLICE: {
+            auto slice = type->as<SliceType>();
+            return check_cycle_alias(context, slice->type);
+        }
+        case POINTER: {
+            auto pointer = type->as<PointerType>();
+            return check_cycle_alias(context, pointer->type);
+        }
+    }
+    panic("Type not handled");
+}
+
 void Typer::check_type_decl(TyperContext &context, NamedTypeEntity *entity) {
     auto declaration = entity->declaration->as<Ast::TypeDeclaration>();
     // Entity type should be set first
     entity->type = create_type<NamedType>(declaration->identifier->token.value, entity);
     auto type = check_type(context, entity->ast_type);
-    entity->type->as<NamedType>()->type = type;
-    if (type->is<NamedType>()) {
+    auto named_type = entity->type->as<NamedType>();
+    named_type->type = type;
+    if (!type->is<StructType>()) {
         entity->is_alias = true;
+        if (check_cycle_alias(context, named_type->type)) {
+            named_type->type = bad_t;
+        }
     }
 }
 
@@ -1709,6 +1750,74 @@ void Typer::check_procedure_body(TyperContext &context, ProcedureEntity *proc) {
         }
     }
 }
+
+
+static void calculate_size_and_alignment(Type *type) {
+    if (has_flag(type->flags, Type::Flags::SIZED)) {
+        return;
+    }
+
+    type->flags |= Type::Flags::SIZED;
+    switch (type->kind) {
+        using enum Type::Kind;
+        
+        case BASIC:
+        case PROCEDURE:
+        case POINTER:
+        case SLICE: panic("Size should be known");
+
+        case NAMED: {
+            auto named = type->as<NamedType>();
+            calculate_size_and_alignment(named->type);
+            named->size = named->type->size;
+            named->align = named->type->align;
+            return;
+        } 
+        case ARRAY: {
+            auto array = type->as<ArrayType>();
+            calculate_size_and_alignment(array->type);
+            array->size = array->type->size;
+            array->align = array->type->align;
+            return;
+        }
+        case STRUCT: {
+            auto struct_type = type->as<StructType>();
+            u64 size = 0;
+            u64 max_align = 0;
+            for (auto member : struct_type->members) {
+                calculate_size_and_alignment(member->type);
+                if (member->type->align != 0) {
+                    if (type->align > max_align) {
+                        max_align = type->align;
+                    }
+                    size = align_forward(size, member->type->align);
+                    size += member->type->size;
+                }
+            }
+            struct_type->size = size;
+            struct_type->align = max_align;
+            return;
+        }
+    }
+    panic("Type not handled");
+}
+
+static u64 size_of_type(Type *type) {
+    if (has_flag(type->flags, Type::Flags::SIZED)) {
+        return type->size;
+    }
+    calculate_size_and_alignment(type);
+    return type->size;
+}
+
+static u64 align_of_type(Type *type) {
+    if (has_flag(type->flags, Type::Flags::SIZED)) {
+        return type->align;
+    }
+    calculate_size_and_alignment(type);
+    return type->align;
+}
+
 
 // Returns whether statement always returns
 bool Typer::check_statement(TyperContext &context, Ast::Statement *statement, Scope *block_scope) {

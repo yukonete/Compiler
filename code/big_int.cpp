@@ -1,10 +1,33 @@
 #include <cassert>
+#include <cstring>
+#include <utility>
 
 #include "libtommath/tommath.h"
 #include "big_int.h"
 #include "base/arena.h"
 
 static DynamicArena big_ints_arena = {NEW_ALLOCATOR};
+
+extern void *MP_MALLOC(size_t size) {
+    return big_ints_arena.alloc(size);
+}
+
+extern void *MP_REALLOC(void *mem, size_t oldsize, size_t newsize) {
+    if (oldsize >= newsize) {
+        return mem;
+    }
+    auto new_mem = big_ints_arena.alloc(newsize);
+    std::memcpy(new_mem, mem, oldsize);
+    return new_mem;
+}
+
+extern void *MP_CALLOC(size_t nmemb, size_t size) {
+    return big_ints_arena.alloc(nmemb * size);
+}
+
+extern void MP_FREE(void *mem, size_t size) {
+    big_ints_arena.free(mem, size);
+}
 
 void big_int_init(BigInt *value) {
     mp_init(value);
