@@ -7,6 +7,6 @@ set my_include=-I../code/
 
 pushd build
 @echo on
-%cc% %opts% ../unity.cpp %my_include% -Fe:compiler.exe %libs%
+%cc% %opts% ../unity.cpp ../code/libtommath.cpp %my_include% -Fe:compiler.exe %libs%
 @echo off
 popd

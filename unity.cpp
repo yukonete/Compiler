@@ -4,6 +4,8 @@
 
 #include "code/utf8proc/utf8proc.c"
 
+#include "code/value.cpp"
+#include "code/big_int.cpp"
 #include "code/ast.cpp"
 #include "code/error.cpp"
 #include "code/lexer.cpp"
@@ -11,7 +13,7 @@
 #include "code/types.cpp"
 #include "code/typer.cpp"
 #include "code/entity.cpp"
-#if defined(_WIN32) || defined(_WIN64)
+#if defined(_WIN64)
     #include "terminal_windows.cpp"
 #else
     #include "terminal_linux.cpp"

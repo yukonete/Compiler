@@ -2,7 +2,9 @@
 #define VALUE_H
 
 #include <string_view>
+
 #include "base/types.h"
+#include "big_int.h"
 
 namespace Ast {
     struct CompoundExpression;  
@@ -19,51 +21,21 @@ struct Value {
         POINTER,
     };
 
-    Value as_int() const {
-        switch (kind) {
-            using enum Value::Kind;
-            
-            case INTEGER: {
-                return *this;
-            }
-            case FLOAT: {
-                // TODO: f64 might not be representable by s64
-                return Value{.kind = Value::Kind::INTEGER, .int_value = static_cast<s64>(float_value)};
-            }
-            default: return Value{};
-        }
-    }
+    Value as_int() const;
+    Value as_int_or_invalid() const;
+    Value try_convert_to_int() const;
 
-    Value as_float() const {
-        switch (kind) {
-            using enum Value::Kind;
+    Value as_float() const;
+    Value as_float_or_invalid() const;
+    Value try_convert_to_float() const;
 
-            case INTEGER: {
-                return Value{.kind = Value::Kind::FLOAT, .float_value = static_cast<f64>(int_value)};
-            }
-            case FLOAT: {
-                return *this;
-            }
-            default: return Value{};
-        }
-    }
-
-    Value as_compound() const {
-        switch (kind) {
-            using enum Value::Kind;
-
-            case COMPOUND: {
-                return *this;
-            }
-            default: return Value{};
-        }
-    }
+    Value as_compound() const;
+    Value as_compound_or_invalid() const;
 
     Kind kind = Kind::INVALID;
     union {
         bool bool_value;
-        // TODO: Use unsized integer
-        s64 int_value;
+        BigInt int_value;
         f64 float_value;
         std::string_view string_value = {};
         Ast::CompoundExpression *compound_value;
@@ -75,8 +47,18 @@ constexpr Value create_value_bool(bool value) {
     return Value{.kind = Value::Kind::BOOL, .bool_value = value};
 }
 
-constexpr Value create_value_int(s64 value) {
+constexpr Value create_value_int(BigInt value) {
     return Value{.kind = Value::Kind::INTEGER, .int_value = value};
+}
+
+constexpr Value create_value_s64(s64 value) {
+    auto big_value = big_int_create_from_s64(value);
+    return create_value_int(big_value);
+}
+
+constexpr Value create_value_s64(u64 value) {
+    auto big_value = big_int_create_from_u64(value);
+    return create_value_int(big_value);
 }
 
 constexpr Value create_value_float(f64 value) {
@@ -92,8 +74,7 @@ constexpr Value create_value_compound(Ast::CompoundExpression *compound) {
 }
 
 constexpr Value create_value_pointer(u64 pointer) {
-    return Value{.kind = Value::Kind::POINTER, .pointer_value= pointer};
+    return Value{.kind = Value::Kind::POINTER, .pointer_value = pointer};
 }
-
 
 #endif

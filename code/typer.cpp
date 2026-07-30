@@ -29,7 +29,7 @@ static Value create_default_value_for_type(Ast::Parser &parser, Type *type) {
         return new_compound_value;
     }
     if (base->is_integer()) {
-        return create_value_int(0);
+        return create_value_int(big_int_create_from_s64(0));
     }
     if (base->is_bool()) {
         return create_value_bool(false);
@@ -67,12 +67,14 @@ static bool check_representable_as_constant_internal(Value &value, Type *to) {
         return value.kind == Value::Kind::BOOL;
     }
     if (type->is_integer()) {
-        auto v = value.as_int();
+        auto v = value.try_convert_to_int();
         if (v.kind == Value::Kind::INVALID) {
             return false;
         }
         value = v;
-           
+
+        u64 unsigned_max = 0;
+
         s64 min = 0;
         s64 max = 0;
         if (type == s8_t) {
@@ -91,26 +93,33 @@ static bool check_representable_as_constant_internal(Value &value, Type *to) {
             min = std::numeric_limits<s64>::min();
             max = std::numeric_limits<s64>::max();
         } else if (type == u8_t) {
-            min = static_cast<s64>(std::numeric_limits<u8>::min());
             max = static_cast<s64>(std::numeric_limits<u8>::max());
+            unsigned_max = static_cast<u64>(std::numeric_limits<u8>::max());
         } else if (type == u16_t) {
-            min = static_cast<s64>(std::numeric_limits<u16>::min());
             max = static_cast<s64>(std::numeric_limits<u16>::max());
+            unsigned_max = static_cast<u64>(std::numeric_limits<u16>::max());
         } else if (type == u32_t) {
-            min = static_cast<s64>(std::numeric_limits<u32>::min());
-            max = static_cast<s64>(std::numeric_limits<u32>::max());
+            unsigned_max = static_cast<u64>(std::numeric_limits<u32>::max());
         } else if (type == u64_t) {
-            // temporary
-            return false;
+            unsigned_max = static_cast<u64>(std::numeric_limits<u64>::max());
         } else if (type == uint_t) {
-            // temporary
-            return false;
+            unsigned_max = static_cast<u64>(std::numeric_limits<u64>::max());
         }
-        
-        return min <= value.int_value && value.int_value <= max;
+
+        auto big_int_min = BigInt{};
+        auto big_int_max = BigInt{};
+        if (type->is_unsigned()) {
+            big_int_min = big_int_create_from_u64(0);
+            big_int_max = big_int_create_from_u64(unsigned_max);
+        } else {
+            big_int_min = big_int_create_from_s64(min);
+            big_int_max = big_int_create_from_s64(max);
+        }
+
+        return big_int_greater_equal(value.int_value, big_int_min) && big_int_less_equal(value.int_value, big_int_max);
     }
     if (type->is_float()) {
-        auto v = value.as_float();
+        auto v = value.try_convert_to_float();
         if (v.kind == Value::Kind::INVALID) {
             return false;
         }
@@ -392,30 +401,25 @@ void Typer::check_expr_internal(TyperContext &context, Operand &operand, Ast::Ex
         }
 
         case INTEGER_LITERAL: {
-            auto parse_s64 = [](std::string_view str) -> Maybe<s64> {
-                u64 value = 0;
-                for (auto digit : str) {
-                    auto digit_value = static_cast<u8>(digit - '0');
-                    auto old_value = value;
-                    value = value * 10 + digit_value;
-                    if (value < old_value || value > static_cast<u64>(std::numeric_limits<s64>::max())) {
-                        // Overflowed
-                        return {};
-                    }
-                }
-                return static_cast<s64>(value);
-            };
-
             auto literal = expression->as<Ast::IntegerLiteralExpression>();
             operand.kind = Operand::Kind::CONSTANT;
-            auto value = parse_s64(literal->token.value);
-            if (value) {
+
+            auto value = big_int_create_from_string(literal->token.value);
+            assert(!big_int_is_negative(value));
+            if (big_int_less_equal(value, BIG_INT_MAX_S64)) {
                 operand.type = int_t;
-                operand.value = create_value_int(*value);
+                operand.value = create_value_int(value);
+            } else if (big_int_less_equal(value, BIG_INT_MAX_U64)) {
+                operand.type = uint_t;
+                operand.value = create_value_int(value);
             } else {
-                error(reporter, literal->token, "Literal '{}' is bigger than max signed 64-bit integer, those are not supported for now",
+                error(reporter, literal->token,
+                      "Literal '{}' is larger then max unsigned 64-bit integer, those are not supported for now",
                       literal->token.value);
+                operand = Operand{};
+                return;
             }
+
             set_type_and_value(expression, operand);
             return;
         }
@@ -589,18 +593,19 @@ static Value apply_unary_operator(const Value &value, TokenType op) {
             switch (value.kind) {
                 using enum Value::Kind;
                 case INTEGER: {
-                    assert(value.int_value != std::numeric_limits<s64>::min());
-                    return Value{.kind = INTEGER, .int_value = -value.int_value};
+                    auto result = big_int_create();
+                    big_int_negate(&result, value.int_value);
+                    return create_value_int(result);   
                 }
                 case FLOAT: {
-                    return Value{.kind = FLOAT, .float_value = -value.float_value};
+                    return create_value_float(-value.float_value);
                 }
                 default: return Value{};
             }
         }
         case bang: {
             if (value.kind == Value::Kind::BOOL) {
-                return Value{.kind = Value::Kind::BOOL, .bool_value = !value.bool_value};
+                return create_value_bool(!value.bool_value);
             }
             return Value{};
         }
@@ -713,32 +718,33 @@ bool Typer::check_binary_operator(TyperContext &/*context*/, const Operand &left
     }
 }
 
-#define APPLY_BINARY_COMPARISON_OPERATOR(op)                                                                              \
+#define APPLY_BINARY_COMPARISON_OPERATOR(op, op_func)                                                                  \
     {                                                                                                                  \
         switch (left.kind) {                                                                                           \
             using enum Value::Kind;                                                                                    \
                                                                                                                        \
             case INTEGER: {                                                                                            \
-                return create_value_bool(((left.int_value)op(right.int_value)));                                                          \
+                return create_value_bool(op_func(left.int_value, right.int_value));                                    \
             }                                                                                                          \
             case FLOAT: {                                                                                              \
-                return create_value_bool(((left.float_value)op(right.float_value)));                                                      \
+                return create_value_bool(left.float_value op right.float_value);                                       \
             }                                                                                                          \
             default: return Value{};                                                                                   \
         }                                                                                                              \
     }
 
-
-#define APPLY_BINARY_NUMERIC_OPERATOR(op)                                                                              \
+#define APPLY_BINARY_NUMERIC_OPERATOR(op, op_func)                                                                     \
     {                                                                                                                  \
         switch (left.kind) {                                                                                           \
             using enum Value::Kind;                                                                                    \
                                                                                                                        \
             case INTEGER: {                                                                                            \
-                return create_value_int(((left.int_value)op(right.int_value)));                                                          \
+                auto result = big_int_create();                                                                        \
+                op_func(&result, left.int_value, right.int_value);                                                      \
+                return create_value_int(result);                                                                       \
             }                                                                                                          \
             case FLOAT: {                                                                                              \
-                return create_value_float(((left.float_value)op(right.float_value)));                                                      \
+                return create_value_float(left.float_value op right.float_value);                                      \
             }                                                                                                          \
             default: return Value{};                                                                                   \
         }                                                                                                              \
@@ -762,7 +768,7 @@ static Value apply_binary_operator(const Value &left, const Value &right, TokenT
                     return create_value_bool(left.bool_value == right.bool_value);
                 }
                 case INTEGER: {
-                    return create_value_bool(left.int_value == right.int_value);
+                    return create_value_bool(big_int_cmp(left.int_value, right.int_value));
                 }
                 case FLOAT: {
                     return create_value_bool(left.float_value == right.float_value);
@@ -771,21 +777,41 @@ static Value apply_binary_operator(const Value &left, const Value &right, TokenT
             }
         }
         
-        case less: APPLY_BINARY_COMPARISON_OPERATOR(<)
-        case greater: APPLY_BINARY_COMPARISON_OPERATOR(>)
-        case less_equals: APPLY_BINARY_COMPARISON_OPERATOR(<=)
-        case greater_equals: APPLY_BINARY_COMPARISON_OPERATOR(>=)
+        case less: APPLY_BINARY_COMPARISON_OPERATOR(<, big_int_less)
+        case greater: APPLY_BINARY_COMPARISON_OPERATOR(>, big_int_greater)
+        case less_equals: APPLY_BINARY_COMPARISON_OPERATOR(<=, big_int_less_equal)
+        case greater_equals: APPLY_BINARY_COMPARISON_OPERATOR(>=, big_int_greater_equal)
 
-        case plus: APPLY_BINARY_NUMERIC_OPERATOR(+)
-        case minus: APPLY_BINARY_NUMERIC_OPERATOR(-)
-        case star: APPLY_BINARY_NUMERIC_OPERATOR(*)
-        case divide: APPLY_BINARY_NUMERIC_OPERATOR(/)
+        case plus: APPLY_BINARY_NUMERIC_OPERATOR(+, big_int_add)
+        case minus: APPLY_BINARY_NUMERIC_OPERATOR(-, big_int_sub)
+        case star: APPLY_BINARY_NUMERIC_OPERATOR(*, big_int_mul)
+
+        case divide: {
+            switch (left.kind) {
+                using enum Value::Kind;
+
+                case INTEGER: {
+                    auto quotient = big_int_create();
+                    big_int_div(&quotient, nullptr, left.int_value, right.int_value);
+                    return create_value_int(quotient);
+                }
+                case FLOAT: {
+                    return create_value_float(left.float_value / right.float_value);
+                }
+                default: return Value{};
+            }
+        }
 
         case modulo: {
             switch (left.kind) {
                 using enum Value::Kind;
                 case INTEGER: {
-                    return create_value_int(left.int_value % right.int_value);
+                    if (big_int_is_zero(right.int_value)) {
+                        return Value{};
+                    }
+                    auto remainder = big_int_create();
+                    big_int_div(nullptr, &remainder, left.int_value, right.int_value);
+                    return create_value_int(remainder);
                 }
                 default: return Value{};
             }
@@ -846,20 +872,14 @@ void Typer::check_deref_expr(TyperContext &context, Operand &operand, Ast::Deref
     set_type_and_value(expression, operand);
 }
 
-static Value apply_index_operator(Ast::Parser &parser, const Value &array, const Value &index) {
-    auto a = array.as_compound();
-    auto i = index.as_int();
-    if (a.kind == Value::Kind::INVALID || i.kind == Value::Kind::INVALID) {
+static Value apply_index_operator(Ast::Parser &parser, const Value &array, u64 index) {
+    auto a = array.as_compound_or_invalid();
+    if (a.kind == Value::Kind::INVALID) {
         return Value{};
     }
 
     auto compound = a.compound_value;
-
-    if (i.int_value < 0) {
-        return Value{};
-    }
-
-    auto compound_index = static_cast<u64>(i.int_value);
+    auto compound_index = index;
 
     if (!compound->values.empty()) {
         if (compound_index >= compound->values.size()) {
@@ -918,24 +938,30 @@ void Typer::check_index_expr(TyperContext &context, Operand &operand, Ast::Index
             operand = Operand{};
             return;
         }
+
+        auto index_big = operand_index.value.int_value;
         auto array_type = operand_expr.type->get_base_type()->as<ArrayType>();
-        auto index = operand_index.value.int_value;
-        if (index < 0 || static_cast<u64>(index) >= array_type->count) {
-            if (index < 0) {
-                error(reporter, operand_index.expr, "Index is negative ('{}')", index);
-            } else {
-                error(reporter, operand_index.expr, "Index out of range, array count is '{}' but index is '{}'", array_type->count, index);
-            }
+        auto array_count = array_type->count;
+
+        if (big_int_is_negative(index_big)) {
+            error(reporter, operand_index.expr, "Index is negative ('{}')", big_int_to_string(index_big));
             operand = Operand{};
             return;
         }
-        
+        auto index = big_int_to_u64(index_big);
+        if (index >= array_count) {
+            error(reporter, operand_index.expr, "Index out of range, array count is '{}' but index is '{}'",
+                  array_count, index);
+            operand = Operand{};
+            return;
+        }
+
         operand.kind = Operand::Kind::CONSTANT;
-        operand.value = apply_index_operator(parser_, operand_expr.value, operand_index.value);
+        operand.value = apply_index_operator(parser_, operand_expr.value, index);
         if (!check_representable_as_constant(operand.value, operand.type, expression)) {
             operand = Operand{};
             return;
-        } 
+        }
     } else {
         if (operand_expr.kind == Operand::Kind::CONSTANT) {
             // Array is constant, but index is not
@@ -1175,7 +1201,7 @@ void Typer::check_slice_expr(TyperContext &context, Operand &operand, Ast::Slice
         error(reporter, expression->expression, "Expression is not an array or slice");
         operand = Operand{};
         return;
-    } 
+    }
 
     auto operand_open = Maybe<Operand>{};
     auto operand_close = Maybe<Operand>{};
@@ -1198,22 +1224,23 @@ void Typer::check_slice_expr(TyperContext &context, Operand &operand, Ast::Slice
         count = operand_slice.type->get_base_type()->as<ArrayType>()->count;
     }
 
-    auto open = Maybe<s64>{};
-    auto close = Maybe<s64>{};
+    auto open = Maybe<u64>{};
+    auto close = Maybe<u64>{};
     bool err = false;
     if (operand_open) {
         if (!operand_open->type->is_integer()) {
             error(reporter, *expression->interval_open, "Expected integer");
             err = true;
-        }
-        if (operand_open->kind == Operand::Kind::CONSTANT) {
-            if (operand_open->value.as_int().kind == Value::Kind::INTEGER) {
-                open = operand_open->value.int_value;
-                if (*open < 0) {
-                    error(reporter, *expression->interval_open, "Integer for slicing can not be negative, got '{}'",
-                          *open);
-                    err = true;
-                } else if (count && static_cast<u64>(*open) > *count) {
+        } else if (operand_open->kind == Operand::Kind::CONSTANT &&
+                   operand_open->value.as_int_or_invalid().kind == Value::Kind::INTEGER) {
+            auto open_big = operand_open->value.int_value;
+            if (big_int_is_negative(open_big)) {
+                error(reporter, operand_open->expr, "Integer for slicing can not be negative, got '{}'",
+                      big_int_to_string(open_big));
+                err = true;
+            } else {
+                open = big_int_to_u64(open_big);
+                if (count && *open > *count) {
                     error(reporter, *expression->interval_open,
                           "Index out of range, array count is '{}' but index is '{}'", *count, *open);
                     err = true;
@@ -1225,15 +1252,16 @@ void Typer::check_slice_expr(TyperContext &context, Operand &operand, Ast::Slice
         if (!operand_close->type->is_integer()) {
             error(reporter, *expression->interval_close, "Expected integer");
             err = true;
-        }
-        if (operand_close->kind == Operand::Kind::CONSTANT) {
-            if (operand_close->value.as_int().kind == Value::Kind::INTEGER) {
-                close = operand_close->value.int_value;
-                if (*close < 0) {
-                    error(reporter, *expression->interval_close, "Integer for slicing can not be negative, got '{}'",
-                          *close);
-                    err = true;
-                } else if (count && static_cast<u64>(*close) > *count) {
+        } else if (operand_close->kind == Operand::Kind::CONSTANT &&
+                   operand_close->value.as_int().kind == Value::Kind::INTEGER) {
+            auto close_big = operand_close->value.int_value;
+            if (big_int_is_negative(close_big)) {
+                error(reporter, operand_close->expr, "Integer for slicing can not be negative, got '{}'",
+                      big_int_to_string(close_big));
+                err = true;
+            } else {
+                close = big_int_to_u64(close_big);
+                if (count && *close > *count) {
                     error(reporter, *expression->interval_close,
                           "Index out of range, array count is '{}' but index is '{}'", *count, *close);
                     err = true;
@@ -1379,9 +1407,8 @@ Maybe<Entity *> Typer::check_selector(TyperContext &context, Operand &operand, A
     if (operand_expr.kind == Operand::Kind::CONSTANT) {
         auto index = operand_expr.type->get_base_type()->as<StructType>()->index_of_field(entity->as<VariableEntity>());
         operand.kind = Operand::Kind::CONSTANT;
-        operand.value =
-            apply_index_operator(parser_, operand_expr.value,
-                                 create_value_int(index.expect("we found entity earlier, so it has to be there")));
+        operand.value = apply_index_operator(parser_, operand_expr.value,
+                                             index.expect("we found entity earlier, so it has to be there"));
     }
 
     operand.type = entity->type;
@@ -1437,23 +1464,19 @@ u64 Typer::check_array_count(TyperContext &context, Operand &operand, Ast::Expre
     }
 
     if (operand.type->is_integer()) {
-        switch (operand.value.kind) {
-            using enum Value::Kind;
-            
-            case INTEGER: {
-                if (operand.value.int_value <= 0) {
-                    error(reporter, expression, "Array count must be a positive integer, got {}", operand.value.int_value);
-                    return 0;
-                }
-                return operand.value.int_value;
-            }
-            case INVALID: {
-                // Error happened somewhere else and was already reported
-                return 0;
-            }
-
-            default: panic("Incorrect value");
+        if (operand.value.as_int().kind == Value::Kind::INVALID) {
+            return 0;
         }
+
+        if (big_int_is_negative(operand.value.int_value)) {
+            error(reporter, expression, "Array count must be a positive integer, got {}",
+                  big_int_to_string(operand.value.int_value));
+            return 0;
+        }
+        // NOTE: For now, count is guranteed to fit in u64 because this is the largest type, but in the future when constants are
+        // going to be untyped there will have to be a check for that here (the same is true for check_index_expr and
+        // check_slice_expr)
+        return big_int_to_u64(operand.value.int_value);
     }
 
     error(reporter, expression, "Array count must be a constant integer");
