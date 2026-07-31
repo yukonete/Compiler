@@ -84,6 +84,9 @@ Token Expression::start_token() const {
         case TYPE: return as<TypeExpression>()->type->start_token();
         case DEREF: return as<DerefExpression>()->expression->start_token();
         case SLICE: return as<SliceExpression>()->expression->start_token();
+        case SIZE_OF: return as<SizeOfExpression>()->token;
+        case TRANSMUTE_OPERATOR: return as<TransmuteOperatorExpression>()->token;
+        case AUTO_CAST_OPERATOR: return as<AutoCastOperatorExpression>()->token;
     }
     panic("expression.kind is not Expression::Kind");
 }
@@ -108,8 +111,11 @@ Token Expression::end_token() const {
         case CAST_OPERATOR: return as<CastOperatorExpression>()->expression->end_token();
         case COMPOUND: return as<CompoundExpression>()->close;
         case TYPE: return as<TypeExpression>()->type->end_token();
-        case DEREF: return as<DerefExpression>()->expression->end_token();
+        case DEREF: return as<DerefExpression>()->star;
         case SLICE: return as<SliceExpression>()->close;
+        case SIZE_OF: return as<SizeOfExpression>()->close;
+        case TRANSMUTE_OPERATOR: return as<TransmuteOperatorExpression>()->expression->end_token();
+        case AUTO_CAST_OPERATOR: return as<AutoCastOperatorExpression>()->expression->end_token();
     }
     panic("expression.kind is not Expression::Kind");
 }
@@ -323,16 +329,10 @@ void Expression::dump(std::string& out, u32 indent_level) const {
 
         case UNARY_OPERATOR: {
             auto unary_operator = as<UnaryOperatorExpression>();
-            if (unary_operator->op.type == TokenType::keyword_size_of) {
-                append(out, "size_of(");
-                unary_operator->right->dump(out, indent_level);
-                append(out, ")");
-            } else {
-                append(out, "(");
-                appendf(out, unary_operator->op.type);
-                unary_operator->right->dump(out, indent_level);
-                append(out, ")");
-            }
+            append(out, "(");
+            appendf(out, unary_operator->op.type);
+            unary_operator->right->dump(out, indent_level);
+            append(out, ")");
             return;
         }
 
@@ -415,10 +415,32 @@ void Expression::dump(std::string& out, u32 indent_level) const {
 
         case CAST_OPERATOR: {
             auto cast = as<CastOperatorExpression>();
+            append(out, "(");
             append(out, "cast(");
             cast->cast_type->dump(out, indent_level);
             append(out, ")");
             cast->expression->dump(out, indent_level);
+            append(out, ")");
+            return;
+        }
+
+        case TRANSMUTE_OPERATOR: {
+            auto transmute = as<TransmuteOperatorExpression>();
+            append(out, "(");
+            append(out, "transmute(");
+            transmute->transmute_type->dump(out, indent_level);
+            append(out, ")");
+            transmute->expression->dump(out, indent_level);
+            append(out, ")");
+            return;
+        }
+
+        case AUTO_CAST_OPERATOR: {
+            auto auto_cast= as<AutoCastOperatorExpression>();
+            append(out, "(");
+            append(out, "auto_cast ");
+            auto_cast->expression->dump(out, indent_level);
+            append(out, ")");
             return;
         }
 
@@ -447,6 +469,14 @@ void Expression::dump(std::string& out, u32 indent_level) const {
                 slice->interval_close->dump(out, indent_level);
             }
             append(out, "]");
+            return;
+        }
+
+        case SIZE_OF: {
+            auto size_of = as<SizeOfExpression>();
+            append(out, "size_of(");
+            size_of->expression->dump(out, indent_level);
+            append(out, ")");
             return;
         }
     }

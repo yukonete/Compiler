@@ -366,11 +366,14 @@ struct Expression {
         FLOAT_LITERAL,
         SELECTOR,
         INDEX,
+        AUTO_CAST_OPERATOR,
         CAST_OPERATOR,
+        TRANSMUTE_OPERATOR,
         COMPOUND,
         TYPE,
         DEREF,
         SLICE,
+        SIZE_OF,
     };
 
     DEFINE_AST_NODE_DOWNCAST_FUNCTIONS_FOR(Expression);
@@ -429,6 +432,30 @@ struct UnaryOperatorExpression : public Expression {
     Expression *right;
 };
 
+struct SizeOfExpression : public Expression {
+    static constexpr auto KIND = Kind::SIZE_OF;
+
+    constexpr SizeOfExpression(const Token &token, const Token &open, Expression *expression, const Token &close)
+        : Expression{KIND}, token{token}, open{open}, close{close}, expression{expression} {
+    }
+
+    Token token;
+    Token open;
+    Token close;
+    Expression *expression;
+};
+
+struct AutoCastOperatorExpression : public Expression {
+    static constexpr auto KIND = Kind::AUTO_CAST_OPERATOR;
+
+    constexpr AutoCastOperatorExpression(const Token &token, Expression *expression)
+        : Expression{KIND}, token{token}, expression{expression} {
+    }
+
+    Token token;
+    Expression *expression;
+};
+
 struct CastOperatorExpression : public Expression {
     static constexpr auto KIND = Kind::CAST_OPERATOR;
 
@@ -439,6 +466,19 @@ struct CastOperatorExpression : public Expression {
 
     Token cast;
     Type *cast_type;
+    Expression *expression;
+};
+
+struct TransmuteOperatorExpression : public Expression {
+    static constexpr auto KIND = Kind::TRANSMUTE_OPERATOR;
+
+    constexpr TransmuteOperatorExpression(const Token &token, Type *type,
+                                     Expression *expression)
+        : Expression{KIND}, token{token}, transmute_type{type}, expression{expression} {
+    }
+
+    Token token;
+    Type *transmute_type;
     Expression *expression;
 };
 

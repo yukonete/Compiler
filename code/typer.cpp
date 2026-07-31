@@ -11,6 +11,74 @@
 
 namespace Typing {
 
+static void calculate_size_and_alignment(Type *type) {
+    if (has_flag(type->flags, Type::Flags::SIZED)) {
+        return;
+    }
+
+    type->flags |= Type::Flags::SIZED;
+    switch (type->kind) {
+        using enum Type::Kind;
+        
+        case BASIC:
+        case PROCEDURE:
+        case POINTER:
+        case SLICE: panic("Size should be known");
+
+        case NAMED: {
+            auto named = type->as<NamedType>();
+            calculate_size_and_alignment(named->type);
+            named->size = named->type->size;
+            named->align = named->type->align;
+            return;
+        } 
+        case ARRAY: {
+            auto array = type->as<ArrayType>();
+            calculate_size_and_alignment(array->type);
+            array->size = array->type->size * array->count;
+            if (array->size != 0) {
+                array->align = array->type->align;
+            }
+            return;
+        }
+        case STRUCT: {
+            auto struct_type = type->as<StructType>();
+            u64 size = 0;
+            u64 max_align = 0;
+            for (auto member : struct_type->members) {
+                calculate_size_and_alignment(member->type);
+                if (member->type->align != 0) {
+                    if (type->align > max_align) {
+                        max_align = type->align;
+                    }
+                    size = align_forward(size, member->type->align);
+                    size += member->type->size;
+                }
+            }
+            struct_type->size = size;
+            struct_type->align = max_align;
+            return;
+        }
+    }
+    panic("Type not handled");
+}
+
+static u64 size_of_type(Type *type) {
+    if (has_flag(type->flags, Type::Flags::SIZED)) {
+        return type->size;
+    }
+    calculate_size_and_alignment(type);
+    return type->size;
+}
+
+static u64 align_of_type(Type *type) {
+    if (has_flag(type->flags, Type::Flags::SIZED)) {
+        return type->align;
+    }
+    calculate_size_and_alignment(type);
+    return type->align;
+}
+
 static void set_type_and_value(Ast::Expression *expression, Operand &operand) {
     expression->type = operand.type;
     expression->value = operand.value;
@@ -93,10 +161,8 @@ static bool check_representable_as_constant_internal(Value &value, Type *to) {
             min = std::numeric_limits<s64>::min();
             max = std::numeric_limits<s64>::max();
         } else if (type == u8_t) {
-            max = static_cast<s64>(std::numeric_limits<u8>::max());
             unsigned_max = static_cast<u64>(std::numeric_limits<u8>::max());
         } else if (type == u16_t) {
-            max = static_cast<s64>(std::numeric_limits<u16>::max());
             unsigned_max = static_cast<u64>(std::numeric_limits<u16>::max());
         } else if (type == u32_t) {
             unsigned_max = static_cast<u64>(std::numeric_limits<u32>::max());
@@ -132,7 +198,7 @@ static bool check_representable_as_constant_internal(Value &value, Type *to) {
 
 bool Typer::check_representable_as_constant(Value &value, Type *to, Ast::Expression *expression) {
     if (!check_representable_as_constant_internal(value, to)) {
-        error(reporter, expression, "Value is not representable as type {}", type_to_string(to));  
+        error(reporter, expression, "Value '{}' is not representable as type '{}'", value_to_string(value), type_to_string(to));  
         return false;
     }
     return true;
@@ -374,6 +440,10 @@ Maybe<Entity *> Typer::check_identifier(TyperContext &context, Operand &operand,
     return entity;
 }
 
+void Typer::check_type_expr(TyperContext &context, Operand &operand, Ast::Expression *expression) {
+    check_expr_internal(context, operand, expression, nullptr);
+}
+
 void Typer::check_expr(TyperContext &context, Operand &operand, Ast::Expression *expression, Type *type_hint) {
     check_expr_internal(context, operand, expression, type_hint);
     if (operand.kind == Operand::Kind::TYPE) {
@@ -497,6 +567,12 @@ void Typer::check_expr_internal(TyperContext &context, Operand &operand, Ast::Ex
             return;
         }
 
+        case SIZE_OF: {
+            auto size_of = expression->as<Ast::SizeOfExpression>();
+            check_size_of_expression(context, operand, size_of);
+            return;
+        }
+
         case DEREF: {
             auto deref = expression->as<Ast::DerefExpression>();
             check_deref_expr(context, operand, deref); 
@@ -521,6 +597,18 @@ void Typer::check_expr_internal(TyperContext &context, Operand &operand, Ast::Ex
             return;
         }
 
+        case AUTO_CAST_OPERATOR: {
+            auto auto_cast = expression->as<Ast::AutoCastOperatorExpression>();
+            check_auto_cast_expr(context, operand, auto_cast, type_hint);
+            return;
+        }
+        
+        case TRANSMUTE_OPERATOR: {
+            auto transmute = expression->as<Ast::TransmuteOperatorExpression>();
+            check_transmute_expr(context, operand, transmute);
+            return;
+        }
+
         case COMPOUND: {
             auto compound = expression->as<Ast::CompoundExpression>();
             check_compound_expr(context, operand, compound, type_hint);
@@ -534,6 +622,21 @@ void Typer::check_expr_internal(TyperContext &context, Operand &operand, Ast::Ex
         }
     }
 } 
+
+void Typer::check_size_of_expression(TyperContext &context, Operand &operand, Ast::SizeOfExpression *size_of) {
+    auto operand_expression = Operand{};
+    check_type_expr(context, operand_expression, size_of->expression);
+    if (operand_expression.kind == Operand::Kind::INVALID) {
+        operand = Operand{};
+        return;
+    }
+
+    operand.kind = Operand::Kind::CONSTANT;
+    operand.type = uint_t;
+    operand.value = create_value_u64(size_of_type(operand_expression.type));
+
+    set_type_and_value(size_of, operand);
+}
 
 bool Typer::check_unary_operator(TyperContext &/*context*/, const Operand &operand, const Token &token) {
     if (operand.kind == Operand::Kind::INVALID) {
@@ -1028,7 +1131,7 @@ void Typer::check_call_expr(TyperContext &context, Operand &operand, Ast::CallOp
         return;
     }
 
-    operand.kind = Operand::Kind::NO_VALUE;
+    operand.kind = Operand::Kind::VALUE;
     if (proc_type->return_type) {
         operand.type = proc_type->return_type;
     } else {
@@ -1036,6 +1139,61 @@ void Typer::check_call_expr(TyperContext &context, Operand &operand, Ast::CallOp
     }
     set_type_and_value(expression, operand);
 }
+
+void Typer::check_transmute_expr(TyperContext &context, Operand &operand, Ast::TransmuteOperatorExpression *expression) {
+    auto type = check_type(context, expression->transmute_type);
+    check_expr(context, operand, expression->expression);
+    if (operand.kind == Operand::Kind::INVALID) {
+        operand = Operand{};
+        return;
+    }
+
+    auto operand_type_size = size_of_type(operand.type);
+    auto type_dest_size = size_of_type(type);
+    if (operand_type_size != type_dest_size) {
+        error(reporter, expression,
+              "Cannot transmute '{}' to '{}' because types have different sizes ('{}' vs '{}' bytes)",
+              type_to_string(operand.type), type_to_string(type), operand_type_size, type_dest_size);
+        operand = Operand{};
+        return;
+    }
+
+    operand.kind = Operand::Kind::VALUE;
+    operand.type = type;
+    operand.value = Value{};
+
+    set_type_and_value(expression, operand);
+}
+
+void Typer::check_auto_cast_expr(TyperContext &context, Operand &operand, Ast::AutoCastOperatorExpression *expression, Type *type_hint) {
+    check_expr(context, operand, expression->expression, nullptr);
+    if (operand.kind == Operand::Kind::INVALID) {
+        operand = Operand{};
+        return;
+    }
+
+    if (type_hint == nullptr) {
+        error(reporter, expression, "Can not determine type to auto_cast to");
+        operand = Operand{};
+        return;
+    }
+
+    if (!operand.type->is_convertible_to(type_hint)) {
+        error(reporter, operand.expr, "Cannot convert '{}' to '{}'", type_to_string(operand.type), type_to_string(type_hint));
+        operand = Operand{};
+        return;
+    }
+
+    operand.type = type_hint;
+    if (operand.kind == Operand::Kind::CONSTANT) {
+        if (!check_representable_as_constant(operand.value, type_hint, operand.expr)) {
+            operand = Operand{};
+            return;
+        }
+    }
+
+    set_type_and_value(expression, operand);
+}   
 
 void Typer::check_cast_expr(TyperContext &context, Operand &operand, Ast::CastOperatorExpression *expression) {
     auto type = check_type(context, expression->cast_type);
@@ -1053,7 +1211,7 @@ void Typer::check_cast_expr(TyperContext &context, Operand &operand, Ast::CastOp
 
     operand.type = type;
     if (operand.kind == Operand::Kind::CONSTANT) {
-        if (type->is_basic() && !check_representable_as_constant(operand.value, type, operand.expr)) {
+        if (!check_representable_as_constant(operand.value, type, operand.expr)) {
             operand = Operand{};
             return;
         }
@@ -1183,6 +1341,9 @@ void Typer::check_compound_expr(TyperContext &context, Operand &operand, Ast::Co
     if (is_const) {
         operand.kind = Operand::Kind::CONSTANT;
         operand.value = create_value_compound(expression);
+        operand.type = type;
+    } else {
+        operand.kind = Operand::Kind::VALUE;
         operand.type = type;
     }
 
@@ -1750,74 +1911,6 @@ void Typer::check_procedure_body(TyperContext &context, ProcedureEntity *proc) {
         }
     }
 }
-
-
-static void calculate_size_and_alignment(Type *type) {
-    if (has_flag(type->flags, Type::Flags::SIZED)) {
-        return;
-    }
-
-    type->flags |= Type::Flags::SIZED;
-    switch (type->kind) {
-        using enum Type::Kind;
-        
-        case BASIC:
-        case PROCEDURE:
-        case POINTER:
-        case SLICE: panic("Size should be known");
-
-        case NAMED: {
-            auto named = type->as<NamedType>();
-            calculate_size_and_alignment(named->type);
-            named->size = named->type->size;
-            named->align = named->type->align;
-            return;
-        } 
-        case ARRAY: {
-            auto array = type->as<ArrayType>();
-            calculate_size_and_alignment(array->type);
-            array->size = array->type->size;
-            array->align = array->type->align;
-            return;
-        }
-        case STRUCT: {
-            auto struct_type = type->as<StructType>();
-            u64 size = 0;
-            u64 max_align = 0;
-            for (auto member : struct_type->members) {
-                calculate_size_and_alignment(member->type);
-                if (member->type->align != 0) {
-                    if (type->align > max_align) {
-                        max_align = type->align;
-                    }
-                    size = align_forward(size, member->type->align);
-                    size += member->type->size;
-                }
-            }
-            struct_type->size = size;
-            struct_type->align = max_align;
-            return;
-        }
-    }
-    panic("Type not handled");
-}
-
-static u64 size_of_type(Type *type) {
-    if (has_flag(type->flags, Type::Flags::SIZED)) {
-        return type->size;
-    }
-    calculate_size_and_alignment(type);
-    return type->size;
-}
-
-static u64 align_of_type(Type *type) {
-    if (has_flag(type->flags, Type::Flags::SIZED)) {
-        return type->align;
-    }
-    calculate_size_and_alignment(type);
-    return type->align;
-}
-
 
 // Returns whether statement always returns
 bool Typer::check_statement(TyperContext &context, Ast::Statement *statement, Scope *block_scope) {

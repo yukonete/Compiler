@@ -27,6 +27,7 @@ static TokenType check_identifier_for_keyword(std::string_view identifier) {
         Keyword{TokenType::keyword_false, "false"},
         Keyword{TokenType::keyword_cast, "cast"},       
         Keyword{TokenType::keyword_transmute, "transmute"},
+        Keyword{TokenType::keyword_auto_cast, "auto_cast"},
         Keyword{TokenType::keyword_type, "type"},       
         Keyword{TokenType::keyword_const, "const"},
         Keyword{TokenType::keyword_struct, "struct"},   

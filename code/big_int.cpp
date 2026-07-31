@@ -147,7 +147,11 @@ bool big_int_is_zero(const BigInt &value) {
 }
 
 std::string big_int_to_string(const BigInt &value) {
-    return std::string{"i dont know how to do this now"};
+    int size = 0;
+    mp_radix_size(&value, 10, &size);
+    auto result = std::string(static_cast<usize>(size), '\0');
+    mp_to_radix(&value, result.data(), size, nullptr, 10); 
+    return result;
 }
 
 void big_int_mul_d(BigInt *destination, const BigInt &source1, u32 digit) {

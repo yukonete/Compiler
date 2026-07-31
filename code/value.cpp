@@ -1,5 +1,8 @@
-#include "value.h"
+#include <format>
+
 #include "base/panic.h"
+#include "value.h"
+#include "ast.h"
 
 Value Value::as_int() const {
     switch (kind) {
@@ -85,4 +88,19 @@ Value Value::as_compound_or_invalid() const {
         return *this;
     }
     return Value{};
+}
+
+std::string value_to_string(const Value &value) {
+    switch (value.kind) {
+        using enum Value::Kind;
+
+        case INVALID: return std::string{"invalid"};
+        case BOOL: return std::format("{}", value.bool_value);
+        case INTEGER: return big_int_to_string(value.int_value);
+        case FLOAT: return std::format("{}", value.float_value);
+        case STRING: return std::string{value.string_value};
+        case COMPOUND: return Ast::expression_to_string(value.compound_value);
+        case POINTER: return big_int_to_string(value.int_value);
+    }
+    panic("Value not handled");
 }

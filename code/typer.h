@@ -46,7 +46,6 @@ struct TyperContext {
 struct Operand {
     enum class Kind {
         INVALID,
-        NO_VALUE,
         VALUE,
         CONSTANT,
         VARIABLE,
@@ -125,6 +124,7 @@ struct Typer {
 
     bool check_representable_as_constant(Value &value, Type *to, Ast::Expression *expression);
 
+    void check_type_expr(TyperContext &context, Operand &operand, Ast::Expression *expression);
     void check_expr_internal(TyperContext &context, Operand &operand, Ast::Expression *expression, Type *type_hint);
     void check_expr(TyperContext &context, Operand &operand, Ast::Expression *expression, Type *type_hint = nullptr);
     void check_unary_expr(TyperContext &context, Operand &operand, Ast::UnaryOperatorExpression *expression);
@@ -132,9 +132,12 @@ struct Typer {
     void check_deref_expr(TyperContext &context, Operand &operand, Ast::DerefExpression *expression);
     void check_index_expr(TyperContext &context, Operand &operand, Ast::IndexExpression *expression);
     void check_call_expr(TyperContext &context, Operand &operand, Ast::CallOperatorExpression *expression);
+    void check_auto_cast_expr(TyperContext &context, Operand &operand, Ast::AutoCastOperatorExpression *expression, Type *type_hint);
     void check_cast_expr(TyperContext &context, Operand &operand, Ast::CastOperatorExpression *expression);
+    void check_transmute_expr(TyperContext &context, Operand &operand, Ast::TransmuteOperatorExpression *expression);
     void check_compound_expr(TyperContext &context, Operand &operand, Ast::CompoundExpression *expression, Type *type_hint);
     void check_slice_expr(TyperContext &context, Operand &operand, Ast::SliceExpression *expression);
+    void check_size_of_expression(TyperContext &context, Operand &operand, Ast::SizeOfExpression *size_of);
 
     bool check_unary_operator(TyperContext &context, const Operand &operand, const Token &token);
     bool check_binary_operator(TyperContext &context, const Operand &left, const Operand &right, const Token &token);

@@ -47,6 +47,7 @@ enum class TokenType {
     keyword_false,
     keyword_cast,
     keyword_transmute,
+    keyword_auto_cast,
     keyword_type,
     keyword_const,
     keyword_struct,
@@ -138,6 +139,7 @@ constexpr std::string_view token_type_to_string(TokenType type) {
         case keyword_false: return "false";
         case keyword_cast: return "cast";
         case keyword_transmute: return "transmute";
+        case keyword_auto_cast: return "auto_cast";
         case keyword_type: return "type";
         case keyword_var: return "var";
         case keyword_break: return "break";

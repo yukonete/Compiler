@@ -56,7 +56,7 @@ constexpr Value create_value_s64(s64 value) {
     return create_value_int(big_value);
 }
 
-constexpr Value create_value_s64(u64 value) {
+constexpr Value create_value_u64(u64 value) {
     auto big_value = big_int_create_from_u64(value);
     return create_value_int(big_value);
 }
@@ -76,5 +76,7 @@ constexpr Value create_value_compound(Ast::CompoundExpression *compound) {
 constexpr Value create_value_pointer(u64 pointer) {
     return Value{.kind = Value::Kind::POINTER, .pointer_value = pointer};
 }
+
+std::string value_to_string(const Value &value);
 
 #endif

@@ -70,6 +70,7 @@ Statement *Parser::parse_statement() {
         case float_literal:
         case open_paren:
         // Unary operators
+        case keyword_transmute:
         case keyword_cast:
         case keyword_size_of:
         case ampersand:
@@ -119,8 +120,8 @@ Statement *Parser::parse_statement() {
         case colon:
         case comma:
         case keyword_else:
-        case keyword_for:
-        case keyword_transmute: {
+        case keyword_auto_cast:
+        case keyword_for: {
             auto token_string = token_type_to_string(token.type);
             error(reporter, token, "Unexpected token {}({})", token_string, token.value);
             lexer.eat_token();
@@ -531,14 +532,23 @@ Expression *Parser::parse_unary_expression(bool lhs) {
             return New<UnaryOperatorExpression>(op, right);
         }
 
-        // Should size_of be a separete type, like SizeOfExpression?
         case keyword_size_of: {
             lexer.eat_token();
             auto size_of = token;
-            expect_token(TokenType::open_paren);
+            auto open = expect_token(TokenType::open_paren);
             auto expression = parse_expression();
+            auto close = expect_token(TokenType::close_paren);
+            return New<SizeOfExpression>(size_of, open, expression, close);
+        }
+
+        case keyword_transmute: {
+            lexer.eat_token();
+            auto transmute = token;
+            expect_token(TokenType::open_paren);
+            auto type = parse_type();
             expect_token(TokenType::close_paren);
-            return New<UnaryOperatorExpression>(size_of, expression);
+            auto expression = parse_expression(Precedence::prefix, lhs);
+            return New<TransmuteOperatorExpression>(transmute, type, expression);
         }
 
         case keyword_cast: {
@@ -551,8 +561,15 @@ Expression *Parser::parse_unary_expression(bool lhs) {
             return New<CastOperatorExpression>(cast, type, expression);
         }
 
+        case keyword_auto_cast: {
+            lexer.eat_token();
+            auto auto_cast = token;
+            auto expression = parse_expression(Precedence::prefix, lhs);
+            return New<AutoCastOperatorExpression>(auto_cast, expression);
+        }
+
         // Types
-        // TypeIdentifier is parsed as IdentifierExpression
+        // TypeIdentifier is parsed above as IdentifierExpression
         case star:
         case open_bracket:
         case keyword_struct: {
