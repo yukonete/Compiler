@@ -3,7 +3,10 @@
 #include "error.h"
 
 void Reporter::add(Diagnostic &&diagnostic) {
-    count += 1;
+    assert(diagnostic.kind != Diagnostic::Kind::INVALID);
+    if (diagnostic.kind == Diagnostic::Kind::ERROR) {
+        error_count += 1;
+    }
     if (diagnostic.kind == Diagnostic::Kind::WARNING) {
         warning_count += 1;
     }
@@ -13,8 +16,16 @@ void Reporter::add(Diagnostic &&diagnostic) {
     diagnostics.push_back(std::move(diagnostic));
 }
 
+void Reporter::add_silent(Diagnostic &&diagnostic) {
+    assert(diagnostic.kind == Diagnostic::Kind::ERROR);
+    if (report_on_add && (error_count == 0 || always_report_silent_errors)) {
+        std::println(log, "{}", diagnostic.message);
+    }
+    diagnostics.push_back(std::move(diagnostic));
+}
+
 bool Reporter::any_errors() const {
-    return count != 0;
+    return error_count != 0 || silent_errors.size() != 0;
 }
 
 void Reporter::print_all_diagnostics() {
@@ -23,7 +34,7 @@ void Reporter::print_all_diagnostics() {
     }
 }
 
-void highlight_location_on_line(Reporter &reporter, std::string &out, const FileLocation &start, const FileLocation &end) {
+void highlight_location_on_line(const Reporter &reporter, std::string &out, const FileLocation &start, const FileLocation &end) {
     auto line = reporter.lexer->get_line(start.byte);
     u64 spaces = 0;
     for (auto ch : line) {

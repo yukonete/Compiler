@@ -85,7 +85,7 @@ static void set_type_and_value(Ast::Expression *expression, Operand &operand) {
     operand.expr = expression;
 }
 
-// This will create new node each time there is access to a constant value that was created from empty literal and is not basic type
+// This will create new ast node each time there is access to a constant value that was created from empty literal and is not basic type
 // Which is not perfect but fine for now
 static Value create_default_value_for_type(Ast::Parser &parser, Type *type) {
     auto base = type->get_base_type();   
@@ -260,7 +260,8 @@ bool Typer::add_entity(Scope *scope, Entity *entity, std::string_view name) {
 
 Scope *Typer::create_scope(Scope *parent) {
     auto allocator = scopes_storage_.create_allocator();
-    auto scope = scopes_storage_.new_object<Scope>(allocator);
+    scopes_.push_back(make_unique_with_allocator<Scope>(allocator));
+    auto scope = scopes_.back().get();
     if (parent != nullptr) {
         scope->parent = parent;
     }
@@ -627,6 +628,7 @@ void Typer::check_size_of_expression(TyperContext &context, Operand &operand, As
     auto operand_expression = Operand{};
     check_type_expr(context, operand_expression, size_of->expression);
     if (operand_expression.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, size_of->expression, "Can not apply size_of() to an invalid expression");
         operand = Operand{};
         return;
     }
@@ -640,6 +642,7 @@ void Typer::check_size_of_expression(TyperContext &context, Operand &operand, As
 
 bool Typer::check_unary_operator(TyperContext &/*context*/, const Operand &operand, const Token &token) {
     if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, token, "Operand for unary operator is invalid");
         return false;
     }
     
@@ -719,6 +722,8 @@ static Value apply_unary_operator(const Value &value, TokenType op) {
 void Typer::check_unary_expr(TyperContext &context, Operand &operand, Ast::UnaryOperatorExpression *expression) {
     check_expr(context, operand, expression->right);
     if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->right, "Can not apply unary operator to an invalid expression");
+        operand = Operand{};
         return;
     }
     
@@ -752,6 +757,7 @@ void Typer::check_unary_expr(TyperContext &context, Operand &operand, Ast::Unary
 
 bool Typer::check_binary_operator(TyperContext &/*context*/, const Operand &left, const Operand &right, const Token &token) {
     if (left.kind == Operand::Kind::INVALID || right.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, token, "Can not apply binary operator to invalid operands");
         return false;
     }
 
@@ -929,7 +935,14 @@ void Typer::check_binary_expr(TyperContext &context, Operand &operand, Ast::Bina
     check_expr(context, operand_left, expression->left);
     check_expr(context, operand_right, expression->right);
 
-    if (operand_left.kind == Operand::Kind::INVALID || operand_right.kind == Operand::Kind::INVALID) {
+    if (operand_left.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->left, "Can not use invalid expresion as an operand for a binary operator");
+        operand = Operand{};
+        return;
+    }
+    if (operand_right.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->right, "Can not use invalid expresion as an operand for a binary operator");
+        operand = Operand{};
         return;
     }
 
@@ -960,6 +973,8 @@ void Typer::check_binary_expr(TyperContext &context, Operand &operand, Ast::Bina
 void Typer::check_deref_expr(TyperContext &context, Operand &operand, Ast::DerefExpression *expression) {
     check_expr(context, operand, expression->expression);
     if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->expression, "Can not dereference invalid expression");
+        operand = Operand{};
         return;
     }
 
@@ -1017,7 +1032,14 @@ void Typer::check_index_expr(TyperContext &context, Operand &operand, Ast::Index
     check_expr(context, operand_expr, expression->expression);
     check_expr(context, operand_index, expression->index);
 
-    if (operand_expr.kind == Operand::Kind::INVALID || operand_index.kind == Operand::Kind::INVALID) {
+    if (operand_expr.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->expression, "Can not index invalid expression");
+        operand = Operand{};
+        return;
+    }
+    if (operand_index.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->index, "Can not use invalid expresion as an index");
+        operand = Operand{};
         return;
     }
 
@@ -1081,6 +1103,7 @@ void Typer::check_call_expr(TyperContext &context, Operand &operand, Ast::CallOp
     auto operand_callable = Operand{};
     check_expr(context, operand_callable, expression->expression);
     if (operand_callable.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->expression, "Can not call invalid expression");
         operand = Operand{};
         return;
     }     
@@ -1113,11 +1136,9 @@ void Typer::check_call_expr(TyperContext &context, Operand &operand, Ast::CallOp
         auto operand_argument = Operand{};
         check_expr(context, operand_argument, argument, parameter_type);
         if (operand_argument.kind == Operand::Kind::INVALID) {
+            silent_error(reporter, argument, "Can not use invalid expression as an argument");
             err = true;
-            continue;
-        }
-
-        if (parameter_type != nullptr) {
+        } else if (parameter_type != nullptr) {
             if (!are_types_the_same(operand_argument.type, parameter_type)) {
                 error(reporter, argument, "Procedure takes parameter of type {}, got argument of type {}",
                       type_to_string(parameter_type), type_to_string(operand_argument.type));
@@ -1144,6 +1165,7 @@ void Typer::check_transmute_expr(TyperContext &context, Operand &operand, Ast::T
     auto type = check_type(context, expression->transmute_type);
     check_expr(context, operand, expression->expression);
     if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->expression, "Can not transmute invalid expression");
         operand = Operand{};
         return;
     }
@@ -1168,6 +1190,7 @@ void Typer::check_transmute_expr(TyperContext &context, Operand &operand, Ast::T
 void Typer::check_auto_cast_expr(TyperContext &context, Operand &operand, Ast::AutoCastOperatorExpression *expression, Type *type_hint) {
     check_expr(context, operand, expression->expression, nullptr);
     if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->expression, "Can not auto_cast invalid expression");
         operand = Operand{};
         return;
     }
@@ -1199,8 +1222,9 @@ void Typer::check_cast_expr(TyperContext &context, Operand &operand, Ast::CastOp
     auto type = check_type(context, expression->cast_type);
     check_expr(context, operand, expression->expression);
     if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->expression, "Can not cast invalid expression");
         operand = Operand{};
-        return; 
+        return;
     }
 
     if (!operand.type->is_convertible_to(type)) {
@@ -1215,6 +1239,8 @@ void Typer::check_cast_expr(TyperContext &context, Operand &operand, Ast::CastOp
             operand = Operand{};
             return;
         }
+    } else {
+        operand.kind = Operand::Kind::VALUE;
     }
 
     set_type_and_value(expression, operand);
@@ -1258,6 +1284,7 @@ void Typer::check_compound_expr(TyperContext &context, Operand &operand, Ast::Co
             auto operand_value = Operand{};
             check_expr(context, operand_value, value->value, core_type);
             if (operand_value.kind == Operand::Kind::INVALID) {
+                silent_error(reporter, value->value, "Can not use invalid expression in a compound");
                 err = true;
             } else {
                 if (operand_value.kind != Operand::Kind::CONSTANT) {
@@ -1312,6 +1339,7 @@ void Typer::check_compound_expr(TyperContext &context, Operand &operand, Ast::Co
             auto operand_value = Operand{};
             check_expr(context, operand_value, value->value, member_type);
             if (operand_value.kind == Operand::Kind::INVALID) {
+                silent_error(reporter, value->value, "Can not use invalid expression in a compound");
                 err = true;
             } else {
                 if (operand_value.kind != Operand::Kind::CONSTANT) {
@@ -1354,6 +1382,7 @@ void Typer::check_slice_expr(TyperContext &context, Operand &operand, Ast::Slice
     auto operand_slice = Operand{};
     check_expr(context, operand_slice, expression->expression, nullptr);
     if (operand_slice.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression->expression, "Can not slice an invalid expression");
         operand = Operand{};
         return;
     }
@@ -1447,6 +1476,14 @@ void Typer::check_slice_expr(TyperContext &context, Operand &operand, Ast::Slice
 }
 
 void Typer::check_init_variable(TyperContext &context, const Operand &operand, VariableEntity *entity) {
+    if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, *entity->init_expression, "Can not initialize variable with an invalid expression");
+        if (entity->type == nullptr) {
+            entity->type = bad_t;
+        }
+        return;
+    }
+
     if (entity->type == nullptr) {
         entity->type = operand.type;
     }
@@ -1456,6 +1493,7 @@ void Typer::check_init_variable(TyperContext &context, const Operand &operand, V
 
 void Typer::check_init_constant(TyperContext &context, const Operand &operand, ConstantEntity *entity) {
     if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, entity->init_expression, "Can not initialize constant with invalid expression");
         if (entity->type == nullptr) {
             entity->type = bad_t;
         }
@@ -1482,7 +1520,12 @@ void Typer::check_init_constant(TyperContext &context, const Operand &operand, C
 }
 
 bool Typer::check_assignment(TyperContext &/*context*/, const Operand &operand, Type *type) {
-    if (operand.kind == Operand::Kind::INVALID || type->is_bad()) {
+    if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, Token{}, "Can not assign invalid expression"); 
+        return false;
+    }
+    if (type->is_bad()) {
+        silent_error(reporter, Token{}, "Can not assign to a bad type"); 
         return false;
     }
 
@@ -1504,6 +1547,8 @@ Maybe<Entity *> Typer::check_selector(TyperContext &context, Operand &operand, A
     auto operand_expr = Operand{};
     check_expr_internal(context, operand_expr, selector->expression, nullptr);
     if (operand_expr.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, selector->expression, "Can not apply selector to an invalid expression");
+        operand = Operand{};
         return {};
     }
 
@@ -1530,7 +1575,7 @@ Maybe<Entity *> Typer::check_selector(TyperContext &context, Operand &operand, A
         case VARIABLE:
         case NAMED_TYPE: {
             if (check_cycle(context, *entity)) {
-                assert(operand.kind == Operand::Kind::INVALID);
+                operand = Operand{};
                 return entity;
             }
             break;
@@ -1617,6 +1662,7 @@ Maybe<Entity*> Typer::check_identifier_or_selector(TyperContext &context, Operan
 u64 Typer::check_array_count(TyperContext &context, Operand &operand, Ast::Expression *expression) {
     check_expr(context, operand, expression);
     if (operand.kind == Operand::Kind::INVALID) {
+        silent_error(reporter, expression, "Can not use invalid expresion as an array size");
         return 0;
     }
     if (operand.kind != Operand::Kind::CONSTANT) {
@@ -1661,7 +1707,10 @@ Type *Typer::check_type(TyperContext &context, Ast::Type *ast_type) {
             auto ast_identifier = ast_type->as<Ast::IdentifierType>();
             auto operand = Operand{};
             check_identifier_or_selector(context, operand, ast_identifier->expression);
-            if (operand.kind != Operand::Kind::INVALID && operand.kind != Operand::Kind::TYPE) {
+            if (operand.kind == Operand::Kind::INVALID) {
+                silent_error(reporter, ast_identifier->expression, "Can not use invalid operand as a type");
+                ast_type->type = bad_t;
+            } else if (operand.kind != Operand::Kind::TYPE) {
                 error(reporter, ast_identifier, "Not a type");
                 ast_type->type = bad_t;
             } else {
@@ -2012,7 +2061,12 @@ bool Typer::check_statement(TyperContext &context, Ast::Statement *statement, Sc
             auto operand_right = Operand{};
             check_expr(context, operand_left, assignment->expression);
             check_expr(context, operand_right, assignment->value, operand_left.type);
-            if (operand_left.kind == Operand::Kind::INVALID || operand_right.kind == Operand::Kind::INVALID) {
+            if (operand_left.kind == Operand::Kind::INVALID) {
+                silent_error(reporter, assignment->expression, "Can not assign to an invalid expression");
+                return false;
+            } 
+            if (operand_right.kind == Operand::Kind::INVALID) {
+                silent_error(reporter, assignment->value, "Can not assign invalid expression");
                 return false;
             } 
 
@@ -2043,6 +2097,7 @@ bool Typer::check_statement(TyperContext &context, Ast::Statement *statement, Sc
                 auto operand = Operand{};
                 check_expr(context, operand, *return_statement->value, current_proc_return_type);
                 if (operand.kind == Operand::Kind::INVALID) {
+                    silent_error(reporter, *return_statement->value, "Can not return an invalid expression");
                     return true;
                 }
                 return_type = operand.type;

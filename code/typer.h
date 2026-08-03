@@ -21,12 +21,9 @@
 namespace Typing {
 
 struct Scope {
-    constexpr Scope(StdAllocator<Entity*> allocator) : entities{allocator} {
-    }
-
     Maybe<Scope *> parent;
     Maybe<Entity *> entity;
-    AllocatorUnorderedMap<std::string_view, Entity *> entities;
+    std::unordered_map<std::string_view, Entity *> entities;
 
     bool is_loop = false;
 
@@ -155,6 +152,7 @@ private:
     DynamicArena entities_storage_;
     DynamicArena scopes_storage_;
 
+    std::vector<AllocatorUniquePtr<Scope>> scopes_;
     Scope *file_scope_;
     
     Ast::Parser &parser_;

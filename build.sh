@@ -8,7 +8,7 @@ INCLUDE=-I../code/
 
 mkdir build 2> /dev/null
 cd build
-CMD="$CC ../unity.cpp $OPTS $INCLUDE -o compiler $LINK"
+CMD="$CC ../unity.cpp ../code/libtommath.cpp $OPTS $INCLUDE -o compiler $LINK"
 echo $CMD
 $CMD
 cd ..

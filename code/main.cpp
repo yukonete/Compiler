@@ -28,10 +28,14 @@ int main(int argc, char **argv) {
 
     parser.reporter.lexer = &parser.lexer;
     parser.reporter.report_on_add = true;
+    parser.reporter.always_report_silent_errors = true;
 
     if (!parser.parse_program()) {
+        std::println("Encountered parsing errors. Not moving to next stage");
         return 1;
     }
+
+    temp_allocator.free_all();
 
     std::println("AST to code:");
     auto buffer = std::string{};
