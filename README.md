@@ -14,8 +14,4 @@ Eventually:
 
 ## What is mostly done
 - Parsing
-- Typing:
-    - Entity collection
-    - Entity resolution
-    - Recursive declaration detection
-    - Sizing
+- Typing
