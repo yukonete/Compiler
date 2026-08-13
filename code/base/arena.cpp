@@ -135,7 +135,7 @@ void DynamicArena::free(void *pointer, usize size) {
             return;
         }
     }
-    assert("pointer is not in any of the memory blocks");
+    assert(false && "pointer is not in any of the memory blocks");
 }
 
 void DynamicArena::free_all() {
